@@ -15,23 +15,24 @@ try {
 }
 
 export function createAdapter(config = {}) {
-  const model = config.model || process.env.CODEX_MODEL || "";
+  const defaultModel = config.model || process.env.CODEX_MODEL || "";
   const cwd = config.cwd || process.env.CC_CWD || process.env.HOME;
 
-  let codex = null;
+  // 按模型缓存 SDK 实例
+  const sdkCache = new Map();
 
-  function ensureSDK() {
+  function ensureSDK(modelOverride) {
     if (!Codex) {
       throw new Error("@openai/codex-sdk not installed. Run: bun add @openai/codex-sdk");
     }
-    if (!codex) {
+    const m = modelOverride || defaultModel;
+    const key = m || "__default__";
+    if (!sdkCache.has(key)) {
       const opts = {};
-      if (model) {
-        opts.config = { model };
-      }
-      codex = new Codex(opts);
+      if (m) opts.config = { model: m };
+      sdkCache.set(key, new Codex(opts));
     }
-    return codex;
+    return sdkCache.get(key);
   }
 
   return {
@@ -39,8 +40,18 @@ export function createAdapter(config = {}) {
     label: "Codex",
     icon: "🟢",
 
-    async *streamQuery(prompt, sessionId, abortSignal) {
-      const sdk = ensureSDK();
+    availableModels() {
+      return [
+        { id: "__default__", label: `默认${defaultModel ? ` (${defaultModel})` : "（跟随 Codex 配置）"}` },
+        { id: "o3", label: "o3" },
+        { id: "o4-mini", label: "o4-mini" },
+        { id: "codex-mini", label: "Codex Mini" },
+      ];
+    },
+
+    async *streamQuery(prompt, sessionId, abortSignal, overrides = {}) {
+      const effectiveModel = (overrides.model && overrides.model !== "__default__") ? overrides.model : defaultModel;
+      const sdk = ensureSDK(effectiveModel);
 
       const thread = sessionId
         ? sdk.resumeThread(sessionId)
@@ -117,9 +128,10 @@ export function createAdapter(config = {}) {
       }
     },
 
-    statusInfo() {
+    statusInfo(overrideModel) {
+      const m = overrideModel || defaultModel;
       return {
-        model: model || "(default)",
+        model: m || "(default)",
         cwd,
         mode: "Codex SDK direct",
       };
