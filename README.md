@@ -1,53 +1,56 @@
-# telegram-cc-sdk
+# telegram-ai-bridge
 
-Telegram → Claude Code bridge via Agent SDK — direct connection, no task-api middleware.
+Telegram → AI bridge with dual backend support: Claude Code (Agent SDK) + Codex SDK.
 
-> Telegram 直连 Claude Code 桥 — Agent SDK 直连，去掉 task-api 中间层，延迟更低、实时进度、会话持久化。
+> Telegram 多后端 AI 桥 — Claude Agent SDK + Codex SDK 双后端，统一适配器，一键切换，终端互通。
 
-Replaces the task-api relay in [telegram-cli-bridge](https://github.com/AliceLJY/telegram-cli-bridge) with a direct [Agent SDK](https://docs.anthropic.com/en/docs/claude-code/sdk) connection. Codex and Gemini bridges remain in the original repo.
+Switch between Claude Code and Codex from Telegram with `/backend claude|codex`. Both backends support terminal resume — chat in Telegram, continue in your terminal.
 
 ## Features
 
-- **Agent SDK direct** — no task-api middleware, lower latency
-- **SQLite sessions** — survive bridge restarts (bun:sqlite, WAL mode)
-- **Real-time progress** — see which tools CC is using as it works
+- **Dual backend** — Claude Code (Agent SDK) + Codex SDK, switchable per chat
+- **Unified adapter interface** — consistent streaming events across backends
+- **SQLite sessions** — survive bridge restarts, tracks backend per session (bun:sqlite, WAL mode)
+- **Real-time progress** — see which tools the AI is using as it works
+- **Terminal interop** — `claude --resume <id>` / `codex --resume <id>` works with bridge sessions
 - **Verbose levels** — `/verbose 0|1|2` for progress detail control
-- **Session resume** — `/sessions` to list and restore previous conversations
-- **Terminal interop** — `claude --resume <id>` works with bridge sessions
+- **Session resume** — `/sessions` to list and restore previous conversations (labeled by backend)
 - **Group context** — shared message context in Telegram groups
 - **Quick replies** — inline buttons for yes/no questions
 - **File handling** — photos, documents, voice messages
 
-> 直连、持久化会话、实时进度（工具图标）、verbose 三级、会话恢复、终端互通、群聊上下文、快捷按钮、文件支持。
+> 双后端、统一适配器、SQLite 持久化、实时进度、终端互通（核心）、verbose 三级、群聊上下文。
 
 ## Architecture
 
 ```
-                     ┌─ telegram-cc-sdk (this repo)
-Phone (Telegram) ────┤     Agent SDK → Claude Code (direct)
-                     │     SQLite sessions (survive restarts)
-                     │
-                     └─ telegram-cli-bridge (Codex / Gemini)
-                           task-api → Codex CLI / Gemini CLI
+                          ┌─ adapters/claude.js ──→ Agent SDK ──→ Claude Code
+Phone (Telegram) ──→ bridge.js ──┤
+                          └─ adapters/codex.js ───→ Codex SDK ──→ Codex CLI
+                               ↕
+                         SQLite (sessions.db)
+                         backend per session
 ```
 
 ```
-Telegram ←→ grammy Bot ←→ Agent SDK query() ←→ Claude Code
-                              ↕
-                        SQLite (sessions.db)
+/backend claude  →  🟣 Agent SDK direct → Claude Code
+/backend codex   →  🟢 Codex SDK direct → Codex CLI
 ```
+
+> Terminal resume: TG conversations are real SDK sessions. `claude --resume <id>` or `codex --resume <threadId>` picks up exactly where Telegram left off.
 
 ## Prerequisites
 
 - [Bun](https://bun.sh) runtime (bun:sqlite used for session persistence)
 - Claude Code CLI installed (`claude` command available)
+- Codex CLI installed (`codex` command available) — optional, only needed for Codex backend
 - Telegram Bot token (from [@BotFather](https://t.me/BotFather))
 
 ## Setup
 
 ```bash
-git clone https://github.com/AliceLJY/telegram-cc-sdk.git
-cd telegram-cc-sdk
+git clone https://github.com/AliceLJY/telegram-ai-bridge.git
+cd telegram-ai-bridge
 bun install  # or npm install
 
 cp .env.example .env
@@ -61,12 +64,12 @@ cp .env.example .env
 | `TELEGRAM_BOT_TOKEN` | Yes | — | Bot token from BotFather |
 | `OWNER_TELEGRAM_ID` | Yes | — | Your Telegram user ID (owner only) |
 | `HTTPS_PROXY` | No | — | Proxy for Telegram API (for blocked regions) |
+| `DEFAULT_BACKEND` | No | `claude` | Default backend: `claude` or `codex` |
 | `CC_MODEL` | No | `claude-sonnet-4-6` | Claude model to use |
-| `CC_CWD` | No | `$HOME` | Working directory for CC |
+| `CC_CWD` | No | `$HOME` | Working directory for both backends |
+| `CODEX_MODEL` | No | *(codex default)* | Codex model override |
 | `DEFAULT_VERBOSE_LEVEL` | No | `1` | Default progress verbosity (0/1/2) |
 | `ENABLE_GROUP_SHARED_CONTEXT` | No | `true` | Enable group chat shared context |
-| `GROUP_CONTEXT_MAX_MESSAGES` | No | `30` | Max context messages in group |
-| `GROUP_CONTEXT_MAX_TOKENS` | No | `3000` | Max context token budget in group |
 
 ## Usage
 
@@ -76,7 +79,7 @@ bun bridge.js
 
 ### macOS LaunchAgent (recommended)
 
-For auto-start on login with crash recovery, create `~/Library/LaunchAgents/com.telegram-cc-sdk.plist`:
+For auto-start on login with crash recovery, create `~/Library/LaunchAgents/com.telegram-ai-bridge.plist`:
 
 > macOS 推荐 LaunchAgent 守护进程，开机自启 + 崩溃重启。
 
@@ -84,14 +87,14 @@ For auto-start on login with crash recovery, create `~/Library/LaunchAgents/com.
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.telegram-cc-sdk</string>
+    <string>com.telegram-ai-bridge</string>
     <key>ProgramArguments</key>
     <array>
         <string>/path/to/bun</string>
-        <string>/path/to/telegram-cc-sdk/bridge.js</string>
+        <string>/path/to/telegram-ai-bridge/bridge.js</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/path/to/telegram-cc-sdk</string>
+    <string>/path/to/telegram-ai-bridge</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
@@ -104,68 +107,85 @@ For auto-start on login with crash recovery, create `~/Library/LaunchAgents/com.
 
 | Command | Description |
 |---------|-------------|
+| `/backend claude\|codex` | Switch backend for current chat |
 | `/new` | Reset session, start fresh |
-| `/sessions` | List recent sessions, tap to restore |
-| `/status` | Show SDK mode, model, cwd, current session |
+| `/sessions` | List recent sessions (labeled by backend), tap to restore |
+| `/status` | Show current backend, model, cwd, session |
 | `/verbose 0\|1\|2` | Set progress verbosity level |
+
+### Terminal Resume
+
+The core feature: chat in Telegram, continue in your terminal.
+
+```bash
+# After chatting via Telegram with Claude backend:
+claude --resume <session-id>
+
+# After chatting via Telegram with Codex backend:
+codex --resume <thread-id>
+```
+
+Session IDs are shown in `/status` and `/sessions`. Both SDKs store sessions locally (`~/.claude/` and `~/.codex/sessions/`), so terminal resume is seamless.
 
 ### Sending Files
 
-Use the Telegram paperclip button to send files with an optional caption:
-
 | Type | Support | Handling |
 |------|---------|----------|
-| Photos | ✅ | CC reads images (multimodal) |
-| PDF / text / code | ✅ | CC reads file content |
-| Voice | ✅ | CC processes audio |
+| Photos | ✅ | AI reads images (multimodal) |
+| PDF / text / code | ✅ | AI reads file content |
+| Voice | ✅ | AI processes audio |
 | Video | ❌ | Send screenshot instead |
 
 ### Inline Keyboard Buttons
 
-**Session picker** — tap `/sessions` to get a button list. Tap any session to restore it:
+**Session picker** — `/sessions` shows backend-labeled buttons:
 
 ```
-┌─────────────────────────────────┐
-│ 03-03 14:07  Fix the auth bug    │
-├─────────────────────────────────┤
-│ 03-03 10:15  Write API docs      │
-├─────────────────────────────────┤
-│ 🆕 New session                   │
-└─────────────────────────────────┘
+┌──────────────────────────────────────┐
+│ 🟣 03-03 14:07  Fix the auth bug     │
+├──────────────────────────────────────┤
+│ 🟢 03-03 10:15  Optimize build       │
+├──────────────────────────────────────┤
+│ 🆕 New session                        │
+└──────────────────────────────────────┘
 ```
 
-**Smart quick replies** — when CC asks a yes/no question, buttons appear automatically:
+**Smart quick replies** — yes/no buttons appear automatically for both backends.
 
+## Adapter Interface
+
+Each backend implements the same interface:
+
+```javascript
+// adapters/interface.js
+{
+  name: "claude" | "codex",
+  label: "CC" | "Codex",
+  icon: "🟣" | "🟢",
+
+  async *streamQuery(prompt, sessionId, abortSignal) {
+    yield { type: "session_init", sessionId }
+    yield { type: "progress", toolName, detail }
+    yield { type: "text", text }
+    yield { type: "result", success, text, cost?, duration? }
+  },
+
+  statusInfo() { return { model, cwd, mode } }
+}
 ```
-CC: Should I refactor this into two functions?
 
-        ┌──────┐  ┌──────┐
-        │  Yes │  │  No  │
-        └──────┘  └──────┘
-```
-
-Detected patterns: 要吗 / 好吗 / 是吗 / 对吗 / 可以吗 / 继续吗 / 确认吗 + numbered options (1. 2. 3.)
-
-## Key Improvements over task-api Bridge
-
-| Before (task-api) | After (Agent SDK) |
-|---|---|
-| Sessions in memory, lost on restart | SQLite persistence, survives restarts |
-| Static "Processing..." message | Real-time tool progress with icons |
-| Telegram → task-api → Worker → CC (2 hops) | Telegram → Agent SDK → CC (direct) |
-| Long-polling for result | Streaming via async iterator |
-| No concurrency control | Per-chat message queuing |
+Adding a new backend = writing one adapter file. The bridge doesn't need to change.
 
 ## Ecosystem
 
-This bridge is part of a personal AI infrastructure. Each project handles one layer — from task execution to content publishing.
+Part of a personal AI infrastructure. Each project handles one layer.
 
-> 个人 AI 基础设施的一部分。每个项目负责一层，组合起来是完整的远程 AI 工作流。
+> 个人 AI 基础设施的一部分。每个项目负责一层。
 
 | Project | Layer | What it does |
 |---------|-------|-------------|
-| **[telegram-cc-sdk](https://github.com/AliceLJY/telegram-cc-sdk)** | Frontend | *This project.* Telegram → CC via Agent SDK |
-| **[telegram-cli-bridge](https://github.com/AliceLJY/telegram-cli-bridge)** | Frontend | Telegram → Codex / Gemini via task-api |
+| **[telegram-ai-bridge](https://github.com/AliceLJY/telegram-ai-bridge)** | Frontend | *This project.* Telegram → CC / Codex via SDK |
+| **[telegram-cli-bridge](https://github.com/AliceLJY/telegram-cli-bridge)** | Frontend | Telegram → Gemini via task-api |
 | **[openclaw-worker](https://github.com/AliceLJY/openclaw-worker)** | Backend | Task queue + CC/Codex/Gemini Worker |
 | **[openclaw-cc-bridge](https://github.com/AliceLJY/openclaw-cc-bridge)** | Frontend | Discord → CC via OpenClaw Bot plugin |
 | **[content-alchemy](https://github.com/AliceLJY/content-alchemy)** | Skill | 5-stage content pipeline: Research → Writing |
