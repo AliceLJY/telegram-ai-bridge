@@ -4,9 +4,9 @@
 
 > Telegram 直连 Claude Code 桥（Agent SDK 直连，无 task-api 中间层）
 
-Replaces the task-api relay in [telegram-cc-bridge](https://github.com/AliceLJY/telegram-cc-bridge) with a direct Agent SDK connection for lower latency, real-time progress, and persistent sessions.
+Replaces the task-api relay in [telegram-cli-bridge](https://github.com/AliceLJY/telegram-cli-bridge) with a direct Agent SDK connection for lower latency, real-time progress, and persistent sessions.
 
-> 从 [telegram-cc-bridge](https://github.com/AliceLJY/telegram-cc-bridge) 拆分出来，用 Agent SDK 直连替代 task-api 中转层，延迟更低、实时进度、会话持久化。Codex/Gemini 桥留在原仓库。
+> 从 [telegram-cli-bridge](https://github.com/AliceLJY/telegram-cli-bridge) 拆分出来，用 Agent SDK 直连替代 task-api 中转层，延迟更低、实时进度、会话持久化。Codex/Gemini 桥留在原仓库。
 
 ## Features
 
@@ -33,7 +33,7 @@ Replaces the task-api relay in [telegram-cc-bridge](https://github.com/AliceLJY/
 Phone (Telegram) ────┤     Agent SDK → Claude Code (direct)
                      │     SQLite sessions (survive restarts)
                      │
-                     └─ telegram-cc-bridge (Codex / Gemini)
+                     └─ telegram-cli-bridge (Codex / Gemini)
                            task-api → Codex CLI / Gemini CLI
 ```
 
@@ -171,7 +171,7 @@ CC: 要把这段代码重构成两个函数吗？
         └──────┘  └──────┘
 ```
 
-## Key Improvements over telegram-cc-bridge
+## Key Improvements over telegram-cli-bridge
 
 > 相比旧版的改进
 
@@ -192,7 +192,7 @@ CC: 要把这段代码重构成两个函数吗？
 | Project | Layer | What it does |
 |---------|-------|-------------|
 | **[telegram-cc-sdk](https://github.com/AliceLJY/telegram-cc-sdk)** | Frontend | *This project.* Telegram → CC via Agent SDK |
-| **[telegram-cc-bridge](https://github.com/AliceLJY/telegram-cc-bridge)** | Frontend | Telegram → Codex/Gemini via task-api |
+| **[telegram-cli-bridge](https://github.com/AliceLJY/telegram-cli-bridge)** | Frontend | Telegram → Codex/Gemini via task-api |
 | **[openclaw-worker](https://github.com/AliceLJY/openclaw-worker)** | Backend | Task queue + CC/Codex/Gemini Worker |
 | **[openclaw-cc-bridge](https://github.com/AliceLJY/openclaw-cc-bridge)** | Frontend | Discord → CC via OpenClaw Bot |
 | **[content-alchemy](https://github.com/AliceLJY/content-alchemy)** | Skill | Research → Analysis → Writing pipeline |
