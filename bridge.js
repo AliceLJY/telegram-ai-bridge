@@ -303,6 +303,18 @@ async function submitAndWait(ctx, prompt) {
     } else {
       await ctx.reply(`${adapter.label} 无输出。`);
     }
+
+    // 新会话首条：显示 session ID + 终端 resume 命令（只在新建时发一次）
+    if (capturedSessionId && capturedSessionId !== sessionId) {
+      const sid = capturedSessionId;
+      const resumeCmd = backendName === "codex"
+        ? `codex -C ${CC_CWD} resume ${sid}`
+        : `claude --resume ${sid}`;
+      await ctx.reply(
+        `${adapter.icon} 新会话 \`${sid}\`\n终端接续: \`${resumeCmd}\``,
+        { parse_mode: "Markdown" }
+      ).catch(() => {});
+    }
   } catch (e) {
     await progress.finish();
     await ctx.reply(`桥接错误: ${e.message}`);
