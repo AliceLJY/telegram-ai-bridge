@@ -1,11 +1,15 @@
 node_modules/
 .env
 .env.codex
+.env.gemini
 files/
 sessions.db
 sessions-codex.db
 sessions-codex.db-wal
 sessions-codex.db-shm
+sessions-gemini.db
+sessions-gemini.db-wal
+sessions-gemini.db-shm
 sessions.db-wal
 sessions.db-shm
 *.log
