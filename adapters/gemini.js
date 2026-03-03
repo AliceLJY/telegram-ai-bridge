@@ -167,17 +167,31 @@ export function createAdapter(config = {}) {
       };
 
       const startTime = Date.now();
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
-        signal: abortSignal,
-      });
+      const MAX_RETRIES = 3;
+      let res;
 
-      if (!res.ok) {
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(body),
+          signal: abortSignal,
+        });
+
+        if (res.ok) break;
+
+        // 429/503 自动重试
+        if ((res.status === 429 || res.status === 503) && attempt < MAX_RETRIES) {
+          const wait = (attempt + 1) * 5; // 5s, 10s, 15s
+          console.log(`[Gemini] ${res.status} 容量不足，${wait}s 后重试 (${attempt + 1}/${MAX_RETRIES})`);
+          yield { type: "progress", toolName: "retry", detail: `服务端繁忙，${wait}s 后重试...` };
+          await new Promise(r => setTimeout(r, wait * 1000));
+          continue;
+        }
+
         const errText = await res.text();
         yield {
           type: "result",
