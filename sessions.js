@@ -88,6 +88,20 @@ const stmtSetBackendPref = db.prepare(`
   ON CONFLICT(chat_id) DO UPDATE SET backend = excluded.backend
 `);
 
+// 模型偏好表（每个 chat 独立选模型，跨重启持久化）
+db.exec(`
+  CREATE TABLE IF NOT EXISTS chat_model (
+    chat_id INTEGER PRIMARY KEY,
+    model TEXT NOT NULL
+  )
+`);
+const stmtGetModelPref = db.prepare("SELECT model FROM chat_model WHERE chat_id = ?");
+const stmtSetModelPref = db.prepare(`
+  INSERT INTO chat_model (chat_id, model) VALUES (?, ?)
+  ON CONFLICT(chat_id) DO UPDATE SET model = excluded.model
+`);
+const stmtDeleteModelPref = db.prepare("DELETE FROM chat_model WHERE chat_id = ?");
+
 export function getSession(chatId) {
   const row = stmtGet.get(chatId);
   if (!row) return null;
@@ -139,6 +153,19 @@ export function getChatBackend(chatId) {
 
 export function setChatBackend(chatId, backend) {
   stmtSetBackendPref.run(chatId, backend);
+}
+
+export function getChatModel(chatId) {
+  const row = stmtGetModelPref.get(chatId);
+  return row?.model || null;
+}
+
+export function setChatModel(chatId, model) {
+  stmtSetModelPref.run(chatId, model);
+}
+
+export function deleteChatModel(chatId) {
+  stmtDeleteModelPref.run(chatId);
 }
 
 // 每 30 分钟自动清理过期会话

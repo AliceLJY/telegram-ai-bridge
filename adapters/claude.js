@@ -5,7 +5,7 @@ import { join } from "path";
 import { createInterface } from "readline";
 
 export function createAdapter(config = {}) {
-  const model = config.model || process.env.CC_MODEL || "claude-sonnet-4-6";
+  const defaultModel = config.model || process.env.CC_MODEL || "claude-sonnet-4-6";
   const cwd = config.cwd || process.env.CC_CWD || process.env.HOME;
 
   return {
@@ -13,7 +13,17 @@ export function createAdapter(config = {}) {
     label: "CC",
     icon: "🟣",
 
-    async *streamQuery(prompt, sessionId, abortSignal) {
+    availableModels() {
+      return [
+        { id: "__default__", label: `默认 (${defaultModel})` },
+        { id: "claude-sonnet-4-6", label: "Sonnet 4.6" },
+        { id: "claude-opus-4-6", label: "Opus 4.6" },
+        { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5" },
+      ];
+    },
+
+    async *streamQuery(prompt, sessionId, abortSignal, overrides = {}) {
+      const model = (overrides.model && overrides.model !== "__default__") ? overrides.model : defaultModel;
       const options = {
         model,
         permissionMode: "bypassPermissions",
@@ -85,8 +95,8 @@ export function createAdapter(config = {}) {
       }
     },
 
-    statusInfo() {
-      return { model, cwd, mode: "Agent SDK direct" };
+    statusInfo(overrideModel) {
+      return { model: overrideModel || defaultModel, cwd, mode: "Agent SDK direct" };
     },
 
     async listSessions(limit = 10) {
