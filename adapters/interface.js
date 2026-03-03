@@ -9,10 +9,12 @@
 
 import { createAdapter as createClaudeAdapter } from "./claude.js";
 import { createAdapter as createCodexAdapter } from "./codex.js";
+import { createAdapter as createGeminiAdapter } from "./gemini.js";
 
 const ADAPTERS = {
   claude: createClaudeAdapter,
   codex: createCodexAdapter,
+  gemini: createGeminiAdapter,
 };
 
 export function createBackend(name, config = {}) {
