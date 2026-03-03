@@ -1,13 +1,13 @@
 #!/usr/bin/env bun
-// Telegram → Claude Code 直连桥（Agent SDK，无 task-api 中间层）
+// Telegram → AI Bridge（多后端：Claude Agent SDK / Codex SDK）
 
 import { Bot, InlineKeyboard } from "grammy";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync } from "fs";
 import { join } from "path";
-import { query } from "@anthropic-ai/claude-agent-sdk";
-import { getSession, setSession, deleteSession, recentSessions } from "./sessions.js";
+import { getSession, setSession, deleteSession, recentSessions, getChatBackend, setChatBackend } from "./sessions.js";
 import { createProgressTracker } from "./progress.js";
+import { createBackend, AVAILABLE_BACKENDS } from "./adapters/interface.js";
 
 // 防止嵌套检测（从 CC 内部启动时需要）
 delete process.env.CLAUDECODE;
@@ -16,14 +16,34 @@ delete process.env.CLAUDECODE;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const OWNER_ID = Number(process.env.OWNER_TELEGRAM_ID);
 const PROXY = process.env.HTTPS_PROXY;
-const CC_MODEL = process.env.CC_MODEL || "claude-sonnet-4-6";
 const CC_CWD = process.env.CC_CWD || process.env.HOME;
 const DEFAULT_VERBOSE = Number(process.env.DEFAULT_VERBOSE_LEVEL || 1);
+const DEFAULT_BACKEND = process.env.DEFAULT_BACKEND || "claude";
 const ENABLE_GROUP_SHARED_CONTEXT = process.env.ENABLE_GROUP_SHARED_CONTEXT !== "false";
 const GROUP_CONTEXT_MAX_MESSAGES = Number(process.env.GROUP_CONTEXT_MAX_MESSAGES || 30);
 const GROUP_CONTEXT_MAX_TOKENS = Number(process.env.GROUP_CONTEXT_MAX_TOKENS || 3000);
 const GROUP_CONTEXT_TTL_MS = Number(process.env.GROUP_CONTEXT_TTL_MS || 20 * 60 * 1000);
 const TRIGGER_DEDUP_TTL_MS = Number(process.env.TRIGGER_DEDUP_TTL_MS || 5 * 60 * 1000);
+
+// ── 初始化后端适配器 ──
+const adapters = {};
+for (const name of AVAILABLE_BACKENDS) {
+  try {
+    adapters[name] = createBackend(name, { cwd: CC_CWD });
+  } catch (e) {
+    console.warn(`[适配器] ${name} 初始化失败: ${e.message}`);
+  }
+}
+
+function getAdapter(chatId) {
+  const pref = getChatBackend(chatId) || DEFAULT_BACKEND;
+  return adapters[pref] || adapters.claude;
+}
+
+function getBackendName(chatId) {
+  const pref = getChatBackend(chatId) || DEFAULT_BACKEND;
+  return adapters[pref] ? pref : "claude";
+}
 
 if (!TOKEN || TOKEN.includes("BotFather")) {
   console.error("请在 .env 中填入 TELEGRAM_BOT_TOKEN");
@@ -191,44 +211,34 @@ function detectQuickReplies(text) {
   return null;
 }
 
-// ── 核心：提交 prompt 并实时流式返回结果 ──
+// ── 核心：提交 prompt 并实时流式返回结果（通过适配器）──
 async function submitAndWait(ctx, prompt) {
   const chatId = ctx.chat.id;
 
   // 并发控制：每个 chatId 同时只处理一条
   if (processingChats.has(chatId)) {
-    await ctx.reply("CC 仍在处理上一条消息，请稍等...");
+    const adapter = getAdapter(chatId);
+    await ctx.reply(`${adapter.label} 仍在处理上一条消息，请稍等...`);
     return;
   }
   processingChats.add(chatId);
 
+  const adapter = getAdapter(chatId);
+  const backendName = getBackendName(chatId);
   const verboseLevel = verboseSettings.get(chatId) ?? DEFAULT_VERBOSE;
-  const progress = createProgressTracker(ctx, chatId, verboseLevel);
+  const progress = createProgressTracker(ctx, chatId, verboseLevel, adapter.label);
 
   try {
     await progress.start();
 
     const fullPrompt = buildPromptWithContext(ctx, prompt);
-    const sessionId = getSession(chatId);
-
-    // 构建 SDK options
-    const options = {
-      model: CC_MODEL,
-      permissionMode: "bypassPermissions",
-      allowDangerouslySkipPermissions: true,
-      cwd: CC_CWD,
-    };
-
-    if (sessionId) {
-      options.resume = sessionId;
-    } else {
-      options.settingSources = ["user", "project"];
-    }
+    const session = getSession(chatId);
+    // 只复用同后端的 session
+    const sessionId = (session && session.backend === backendName) ? session.session_id : null;
 
     let capturedSessionId = sessionId || null;
     let resultText = "";
-    let resultErrors = [];
-    let resultSubtype = "success";
+    let resultSuccess = true;
 
     // 超时保护（15 分钟）
     const abortController = new AbortController();
@@ -237,40 +247,31 @@ async function submitAndWait(ctx, prompt) {
     }, 15 * 60 * 1000);
 
     try {
-      for await (const msg of query({
-        prompt: fullPrompt,
-        options: { ...options, abortController },
-      })) {
-        // 捕获 session ID
-        if (msg.type === "system" && msg.subtype === "init") {
-          capturedSessionId = msg.session_id;
+      for await (const event of adapter.streamQuery(fullPrompt, sessionId, abortController.signal)) {
+        if (event.type === "session_init") {
+          capturedSessionId = event.sessionId;
         }
 
-        // 实时进度
-        progress.processMessage(msg);
+        // 实时进度（progress + text 事件）
+        progress.processEvent(event);
 
         // 捕获最终结果
-        if (msg.type === "result") {
-          resultSubtype = msg.subtype;
-          if (msg.subtype === "success") {
-            resultText = msg.result || "";
-          } else {
-            resultErrors = msg.errors || [];
-            resultText = resultErrors.join("\n");
-          }
-          console.log(
-            `[SDK] 结果: ${msg.subtype}, 耗时 ${msg.duration_ms}ms, 花费 $${msg.total_cost_usd?.toFixed(4) || "?"}`
-          );
+        if (event.type === "result") {
+          resultSuccess = event.success;
+          resultText = event.text || "";
+          const costStr = event.cost != null ? ` 花费 $${event.cost.toFixed(4)}` : "";
+          const durStr = event.duration != null ? ` 耗时 ${event.duration}ms` : "";
+          console.log(`[${adapter.label}] 结果: ${resultSuccess ? "success" : "error"}${durStr}${costStr}`);
         }
       }
     } catch (err) {
       const isAbort = err.name === "AbortError" || abortController.signal.aborted;
       if (isAbort) {
         resultText = "超时（15 分钟未完成）";
-        resultSubtype = "error";
+        resultSuccess = false;
       } else {
         resultText = `SDK 错误: ${err.message}`;
-        resultSubtype = "error";
+        resultSuccess = false;
       }
     } finally {
       clearTimeout(timeoutHandle);
@@ -279,15 +280,15 @@ async function submitAndWait(ctx, prompt) {
     // 存 session
     if (capturedSessionId) {
       const displayName = prompt.slice(0, 30);
-      setSession(chatId, capturedSessionId, displayName);
+      setSession(chatId, capturedSessionId, displayName, backendName);
     }
 
     // 删进度消息
     await progress.finish();
 
     // 发最终结果
-    if (resultSubtype !== "success") {
-      await sendLong(ctx, `CC 错误: ${resultText}`);
+    if (!resultSuccess) {
+      await sendLong(ctx, `${adapter.label} 错误: ${resultText}`);
     } else if (resultText) {
       const replies = detectQuickReplies(resultText);
       if (replies && resultText.length <= 4000) {
@@ -300,7 +301,7 @@ async function submitAndWait(ctx, prompt) {
         await sendLong(ctx, resultText);
       }
     } else {
-      await ctx.reply("CC 无输出。");
+      await ctx.reply(`${adapter.label} 无输出。`);
     }
   } catch (e) {
     await progress.finish();
@@ -335,7 +336,8 @@ bot.use((ctx, next) => {
 // ── /new 命令：重置会话 ──
 bot.command("new", async (ctx) => {
   deleteSession(ctx.chat.id);
-  await ctx.reply("会话已重置，下条消息将开启新 CC 会话。");
+  const adapter = getAdapter(ctx.chat.id);
+  await ctx.reply(`会话已重置，下条消息将开启新 ${adapter.label} 会话。`);
 });
 
 // ── /sessions 命令：从 SQLite 读取历史会话 ──
@@ -349,11 +351,11 @@ bot.command("sessions", async (ctx) => {
     const current = getSession(ctx.chat.id);
     const kb = new InlineKeyboard();
     for (const s of sessions) {
-      const short = s.session_id.slice(0, 8);
-      const mark = current === s.session_id ? " ✦当前" : "";
+      const backendIcon = s.backend === "codex" ? "🟢" : "🟣";
+      const mark = (current && current.session_id === s.session_id) ? " ✦当前" : "";
       const time = new Date(s.last_active).toISOString().slice(5, 16).replace("T", " ");
-      const topic = (s.display_name || "").slice(0, 30) || "(空)";
-      kb.text(`${time} ${topic}${mark}`, `resume:${s.session_id}`).row();
+      const topic = (s.display_name || "").slice(0, 25) || "(空)";
+      kb.text(`${backendIcon} ${time} ${topic}${mark}`, `resume:${s.session_id}:${s.backend || "claude"}`).row();
     }
     kb.text("🆕 开新会话", "action:new").row();
     await ctx.reply("选择要恢复的会话：", { reply_markup: kb });
@@ -362,16 +364,46 @@ bot.command("sessions", async (ctx) => {
   }
 });
 
-// ── /status 命令：显示 SDK 状态 ──
+// ── /backend 命令：切换后端 ──
+bot.command("backend", async (ctx) => {
+  const arg = ctx.match?.trim().toLowerCase();
+  if (!arg || !AVAILABLE_BACKENDS.includes(arg)) {
+    const current = getBackendName(ctx.chat.id);
+    const list = AVAILABLE_BACKENDS.map((b) => {
+      const a = adapters[b];
+      const mark = b === current ? " ← 当前" : "";
+      const status = a ? "✅" : "❌ 未安装";
+      return `  ${status} ${b}${mark}`;
+    }).join("\n");
+    await ctx.reply(`当前后端: ${current}\n用法: /backend claude|codex\n\n可用后端:\n${list}`);
+    return;
+  }
+  if (!adapters[arg]) {
+    await ctx.reply(`后端 ${arg} 未安装或初始化失败。`);
+    return;
+  }
+  setChatBackend(ctx.chat.id, arg);
+  // 切后端时清掉旧 session，避免 resume 到错误后端
+  deleteSession(ctx.chat.id);
+  const adapter = adapters[arg];
+  await ctx.reply(`已切换到 ${adapter.icon} ${adapter.label}，下条消息将使用新后端。`);
+});
+
+// ── /status 命令：显示状态 ──
 bot.command("status", async (ctx) => {
-  const sessionId = getSession(ctx.chat.id);
+  const adapter = getAdapter(ctx.chat.id);
+  const backendName = getBackendName(ctx.chat.id);
+  const session = getSession(ctx.chat.id);
   const verbose = verboseSettings.get(ctx.chat.id) ?? DEFAULT_VERBOSE;
+  const info = adapter.statusInfo();
   await ctx.reply(
-    `模式: Agent SDK 直连\n` +
-    `模型: ${CC_MODEL}\n` +
-    `工作目录: ${CC_CWD}\n` +
-    `当前会话: ${sessionId ? sessionId.slice(0, 8) + "..." : "无（下条消息开新会话）"}\n` +
-    `进度详细度: ${verbose}（0=关/1=工具名/2=详细）`
+    `${adapter.icon} 后端: ${adapter.label} (${backendName})\n` +
+    `模式: ${info.mode}\n` +
+    `模型: ${info.model}\n` +
+    `工作目录: ${info.cwd}\n` +
+    `当前会话: ${session ? session.session_id.slice(0, 8) + "..." : "无（下条消息开新会话）"}\n` +
+    `进度详细度: ${verbose}（0=关/1=工具名/2=详细）\n` +
+    `可用后端: ${AVAILABLE_BACKENDS.filter((b) => adapters[b]).join(", ")}`
   );
 });
 
@@ -384,7 +416,7 @@ bot.command("verbose", async (ctx) => {
     await ctx.reply(
       `当前进度详细度: ${current}\n` +
       `用法: /verbose 0|1|2\n` +
-      `  0 = 只显示"CC 正在处理..."\n` +
+      `  0 = 只显示"正在处理..."\n` +
       `  1 = 显示工具名+图标\n` +
       `  2 = 工具名+输入+推理片段`
     );
@@ -396,17 +428,30 @@ bot.command("verbose", async (ctx) => {
 
 // ── 按钮回调：恢复会话 ──
 bot.callbackQuery(/^resume:/, async (ctx) => {
-  const sessionId = ctx.callbackQuery.data.replace("resume:", "");
-  setSession(ctx.chat.id, sessionId, "");
+  const data = ctx.callbackQuery.data.replace("resume:", "");
+  // 格式: sessionId:backend
+  const lastColon = data.lastIndexOf(":");
+  let sessionId, backend;
+  if (lastColon > 0 && AVAILABLE_BACKENDS.includes(data.slice(lastColon + 1))) {
+    sessionId = data.slice(0, lastColon);
+    backend = data.slice(lastColon + 1);
+  } else {
+    sessionId = data;
+    backend = "claude";
+  }
+  setSession(ctx.chat.id, sessionId, "", backend);
+  setChatBackend(ctx.chat.id, backend);
+  const icon = adapters[backend]?.icon || "🟣";
   await ctx.answerCallbackQuery({ text: "已恢复 ✓" });
-  await ctx.editMessageText(`已恢复会话 \`${sessionId.slice(0, 8)}\`\n继续发消息即可。`, { parse_mode: "Markdown" });
+  await ctx.editMessageText(`${icon} 已恢复会话 \`${sessionId.slice(0, 8)}\`（${backend}）\n继续发消息即可。`, { parse_mode: "Markdown" });
 });
 
 // ── 按钮回调：新会话 ──
 bot.callbackQuery("action:new", async (ctx) => {
   deleteSession(ctx.chat.id);
   await ctx.answerCallbackQuery({ text: "已重置 ✓" });
-  await ctx.editMessageText("会话已重置，下条消息将开启新 CC 会话。");
+  const adapter = getAdapter(ctx.chat.id);
+  await ctx.editMessageText(`会话已重置，下条消息将开启新 ${adapter.label} 会话。`);
 });
 
 // ── 按钮回调：快捷回复 ──
@@ -489,8 +534,10 @@ function cleanOldFiles() {
 setInterval(cleanOldFiles, 60 * 60 * 1000);
 
 // ── 启动 ──
-console.log("Telegram-CC-SDK Bridge 启动中...");
-console.log(`  模型: ${CC_MODEL}`);
+const activeBackends = AVAILABLE_BACKENDS.filter((b) => adapters[b]);
+console.log("Telegram-AI-Bridge 启动中...");
+console.log(`  可用后端: ${activeBackends.join(", ")}`);
+console.log(`  默认后端: ${DEFAULT_BACKEND}`);
 console.log(`  工作目录: ${CC_CWD}`);
 console.log(`  进度详细度: ${DEFAULT_VERBOSE}`);
 bot.start({
