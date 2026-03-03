@@ -5,7 +5,7 @@ import { Bot, InlineKeyboard } from "grammy";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync } from "fs";
 import { join } from "path";
-import { getSession, setSession, deleteSession, recentSessions, getChatBackend, setChatBackend } from "./sessions.js";
+import { getSession, setSession, deleteSession, recentSessions, getChatBackend, setChatBackend, getHistorySession } from "./sessions.js";
 import { createProgressTracker } from "./progress.js";
 import { createBackend, AVAILABLE_BACKENDS } from "./adapters/interface.js";
 

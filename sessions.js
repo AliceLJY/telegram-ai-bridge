@@ -28,6 +28,18 @@ try {
   // 列已存在，忽略
 }
 
+// 会话历史表（保留所有历史会话，不被 /new 或 upsert 覆盖）
+db.exec(`
+  CREATE TABLE IF NOT EXISTS session_history (
+    session_id TEXT PRIMARY KEY,
+    chat_id INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_active INTEGER NOT NULL,
+    display_name TEXT DEFAULT '',
+    backend TEXT DEFAULT 'claude'
+  )
+`);
+
 // 后端偏好表（每个 chat 独立选后端）
 db.exec(`
   CREATE TABLE IF NOT EXISTS chat_backend (
@@ -48,11 +60,26 @@ const stmtUpsert = db.prepare(`
     backend = excluded.backend
 `);
 const stmtDelete = db.prepare("DELETE FROM sessions WHERE chat_id = ?");
-const stmtRecent = db.prepare(
-  "SELECT chat_id, session_id, created_at, last_active, display_name, backend FROM sessions ORDER BY last_active DESC LIMIT ?"
-);
+const stmtRecent = db.prepare(`
+  SELECT chat_id, session_id, created_at, last_active, display_name, backend FROM (
+    SELECT chat_id, session_id, created_at, last_active, display_name, backend FROM sessions
+    UNION ALL
+    SELECT chat_id, session_id, created_at, last_active, display_name, backend FROM session_history
+  ) ORDER BY last_active DESC LIMIT ?
+`);
 const stmtCleanup = db.prepare("DELETE FROM sessions WHERE last_active < ?");
+const stmtCleanupHistory = db.prepare("DELETE FROM session_history WHERE last_active < ?");
 const stmtTouch = db.prepare("UPDATE sessions SET last_active = ? WHERE chat_id = ?");
+
+// History statements
+const stmtArchive = db.prepare(`
+  INSERT OR REPLACE INTO session_history (session_id, chat_id, created_at, last_active, display_name, backend)
+  SELECT session_id, chat_id, created_at, last_active, display_name, backend FROM sessions WHERE chat_id = ?
+`);
+const stmtGetHistory = db.prepare(
+  "SELECT session_id, chat_id, created_at, last_active, display_name, backend FROM session_history WHERE session_id = ?"
+);
+const stmtDeleteFromHistory = db.prepare("DELETE FROM session_history WHERE session_id = ?");
 
 // Prepared statements — chat_backend
 const stmtGetBackendPref = db.prepare("SELECT backend FROM chat_backend WHERE chat_id = ?");
@@ -74,12 +101,22 @@ export function getSession(chatId) {
 }
 
 export function setSession(chatId, sessionId, displayName = "", backend = "claude") {
+  // 归档旧会话（如果有）
+  stmtArchive.run(chatId);
+  // 从历史中移除（避免恢复后重复出现）
+  stmtDeleteFromHistory.run(sessionId);
   const now = Date.now();
   stmtUpsert.run(chatId, sessionId, now, now, displayName, backend);
 }
 
 export function deleteSession(chatId) {
+  // 归档到历史再删除
+  stmtArchive.run(chatId);
   stmtDelete.run(chatId);
+}
+
+export function getHistorySession(sessionId) {
+  return stmtGetHistory.get(sessionId) || null;
 }
 
 export function recentSessions(limit = 8) {
@@ -89,6 +126,9 @@ export function recentSessions(limit = 8) {
 export function cleanupExpired() {
   const cutoff = Date.now() - SESSION_TIMEOUT;
   const result = stmtCleanup.run(cutoff);
+  // 历史表保留更久（7 天）
+  const historyCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  stmtCleanupHistory.run(historyCutoff);
   return result.changes;
 }
 
