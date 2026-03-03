@@ -5,7 +5,7 @@ import { Bot, InlineKeyboard } from "grammy";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync } from "fs";
 import { join } from "path";
-import { getSession, setSession, deleteSession, recentSessions, getChatBackend, setChatBackend, getHistorySession } from "./sessions.js";
+import { getSession, setSession, deleteSession, recentSessions, getChatBackend, setChatBackend, getHistorySession, getChatModel, setChatModel, deleteChatModel } from "./sessions.js";
 import { createProgressTracker } from "./progress.js";
 import { createBackend, AVAILABLE_BACKENDS } from "./adapters/interface.js";
 
@@ -246,8 +246,11 @@ async function submitAndWait(ctx, prompt) {
       abortController.abort();
     }, 15 * 60 * 1000);
 
+    const modelOverride = getChatModel(chatId);
+    const streamOverrides = modelOverride ? { model: modelOverride } : {};
+
     try {
-      for await (const event of adapter.streamQuery(fullPrompt, sessionId, abortController.signal)) {
+      for await (const event of adapter.streamQuery(fullPrompt, sessionId, abortController.signal, streamOverrides)) {
         if (event.type === "session_init") {
           capturedSessionId = event.sessionId;
         }
@@ -438,7 +441,8 @@ bot.command("status", async (ctx) => {
   const backendName = getBackendName(ctx.chat.id);
   const session = getSession(ctx.chat.id);
   const verbose = verboseSettings.get(ctx.chat.id) ?? DEFAULT_VERBOSE;
-  const info = adapter.statusInfo();
+  const modelOverride = getChatModel(ctx.chat.id);
+  const info = adapter.statusInfo(modelOverride);
 
   let sessionLine = "当前会话: 无（下条消息开新会话）";
   let resumeHint = "";
@@ -482,6 +486,61 @@ bot.command("verbose", async (ctx) => {
   }
   verboseSettings.set(ctx.chat.id, level);
   await ctx.reply(`进度详细度已设为 ${level}`);
+});
+
+// ── /model 命令：切换当前后端的模型 ──
+bot.command("model", async (ctx) => {
+  const adapter = getAdapter(ctx.chat.id);
+  const models = adapter.availableModels ? adapter.availableModels() : [];
+  const currentModel = getChatModel(ctx.chat.id);
+  const arg = ctx.match?.trim();
+
+  if (!arg) {
+    // 无参数：显示 inline 按钮选择
+    if (!models.length) {
+      await ctx.reply(`${adapter.icon} ${adapter.label} 不支持模型切换。`);
+      return;
+    }
+    const kb = new InlineKeyboard();
+    for (const m of models) {
+      const isCurrent = (m.id === "__default__" && !currentModel) || (m.id === currentModel);
+      const mark = isCurrent ? " ✦" : "";
+      kb.text(`${m.label}${mark}`, `model:${m.id}`).row();
+    }
+    const displayModel = currentModel || models[0]?.label || "(default)";
+    await ctx.reply(`${adapter.icon} 当前模型: ${displayModel}\n选择模型：`, { reply_markup: kb });
+    return;
+  }
+
+  // 有参数：直接设置
+  if (arg === "default" || arg === "__default__") {
+    deleteChatModel(ctx.chat.id);
+    await ctx.reply(`${adapter.icon} 已恢复默认模型。`);
+    return;
+  }
+  const found = models.find(m => m.id === arg || m.label === arg);
+  if (!found && models.length) {
+    const list = models.map(m => `  ${m.id} — ${m.label}`).join("\n");
+    await ctx.reply(`未知模型: ${arg}\n\n可用模型:\n${list}`);
+    return;
+  }
+  setChatModel(ctx.chat.id, arg);
+  await ctx.reply(`${adapter.icon} 模型已切换为: ${arg}`);
+});
+
+// ── 按钮回调：模型选择 ──
+bot.callbackQuery(/^model:/, async (ctx) => {
+  const modelId = ctx.callbackQuery.data.replace("model:", "");
+  const adapter = getAdapter(ctx.chat.id);
+  if (modelId === "__default__") {
+    deleteChatModel(ctx.chat.id);
+    await ctx.answerCallbackQuery({ text: "已恢复默认 ✓" });
+    await ctx.editMessageText(`${adapter.icon} 已恢复默认模型。`);
+  } else {
+    setChatModel(ctx.chat.id, modelId);
+    await ctx.answerCallbackQuery({ text: `已切换 ✓` });
+    await ctx.editMessageText(`${adapter.icon} 模型已切换为: ${modelId}`);
+  }
 });
 
 // ── 按钮回调：恢复会话 ──

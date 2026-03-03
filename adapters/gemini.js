@@ -19,7 +19,7 @@ const CODE_ASSIST_API_VERSION =
 const OAUTH_CREDS_PATH = join(process.env.HOME, ".gemini/oauth_creds.json");
 
 export function createAdapter(config = {}) {
-  const model =
+  const defaultModel =
     config.model || process.env.GEMINI_MODEL || "gemini-2.5-pro";
   const proxy = process.env.HTTPS_PROXY || null;
 
@@ -141,8 +141,18 @@ export function createAdapter(config = {}) {
     label: "Gemini",
     icon: "🔵",
 
-    async *streamQuery(prompt, sessionId, abortSignal) {
+    availableModels() {
+      return [
+        { id: "__default__", label: `默认 (${defaultModel})` },
+        { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+        { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+        { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
+      ];
+    },
+
+    async *streamQuery(prompt, sessionId, abortSignal, overrides = {}) {
       await ensureAuth();
+      const model = (overrides.model && overrides.model !== "__default__") ? overrides.model : defaultModel;
 
       const sid = sessionId || randomUUID();
       yield { type: "session_init", sessionId: sid };
@@ -258,9 +268,9 @@ export function createAdapter(config = {}) {
       };
     },
 
-    statusInfo() {
+    statusInfo(overrideModel) {
       return {
-        model,
+        model: overrideModel || defaultModel,
         cwd: process.env.HOME,
         mode: "Code Assist OAuth (Pro)",
       };
