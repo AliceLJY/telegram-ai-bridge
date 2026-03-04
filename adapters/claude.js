@@ -7,6 +7,7 @@ import { createInterface } from "readline";
 export function createAdapter(config = {}) {
   const defaultModel = config.model || process.env.CC_MODEL || "claude-sonnet-4-6";
   const cwd = config.cwd || process.env.CC_CWD || process.env.HOME;
+  const permMode = process.env.CC_PERMISSION_MODE || "default";
 
   return {
     name: "claude",
@@ -26,8 +27,8 @@ export function createAdapter(config = {}) {
       const model = (overrides.model && overrides.model !== "__default__") ? overrides.model : defaultModel;
       const options = {
         model,
-        permissionMode: "bypassPermissions",
-        allowDangerouslySkipPermissions: true,
+        permissionMode: permMode,
+        ...(permMode === "bypassPermissions" && { allowDangerouslySkipPermissions: true }),
         cwd,
       };
 

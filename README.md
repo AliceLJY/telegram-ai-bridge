@@ -1,14 +1,14 @@
 # telegram-ai-bridge
 
-Telegram → AI bridge with dual backend support: Claude Code (Agent SDK) + Codex SDK.
+Telegram → AI bridge with tri-backend support: Claude Code (Agent SDK) + Codex SDK + Gemini (Code Assist API).
 
-> Telegram 多后端 AI 桥 — Claude Agent SDK + Codex SDK 双后端，统一适配器，一键切换，终端互通。
+> Telegram 三后端 AI 桥 — Claude Agent SDK + Codex SDK + Gemini Code Assist API，统一适配器，一键切换，终端互通。
 
-Switch between Claude Code and Codex from Telegram with `/backend claude|codex`. Both backends support terminal resume — chat in Telegram, continue in your terminal.
+Switch between backends from Telegram with `/backend claude|codex|gemini`. Claude and Codex support terminal resume — chat in Telegram, continue in your terminal.
 
 ## Features
 
-- **Dual backend** — Claude Code (Agent SDK) + Codex SDK, switchable per chat
+- **Tri-backend** — Claude Code (Agent SDK) + Codex SDK + Gemini (Code Assist API), switchable per chat
 - **Unified adapter interface** — consistent streaming events across backends
 - **SQLite sessions** — survive bridge restarts, tracks backend per session (bun:sqlite, WAL mode)
 - **Real-time progress** — see which tools the AI is using as it works
@@ -19,25 +19,38 @@ Switch between Claude Code and Codex from Telegram with `/backend claude|codex`.
 - **Quick replies** — inline buttons for yes/no questions
 - **File handling** — photos, documents, voice messages
 
-> 双后端、统一适配器、SQLite 持久化、实时进度、终端互通（核心）、verbose 三级、群聊上下文。
+> 三后端、统一适配器、SQLite 持久化、实时进度、终端互通（核心）、verbose 三级、群聊上下文。
 
 ## Architecture
 
 ```
                           ┌─ adapters/claude.js ──→ Agent SDK ──→ Claude Code
-Phone (Telegram) ──→ bridge.js ──┤
-                          └─ adapters/codex.js ───→ Codex SDK ──→ Codex CLI
+Phone (Telegram) ──→ bridge.js ──┼─ adapters/codex.js ───→ Codex SDK ──→ Codex CLI
+                          └─ adapters/gemini.js ──→ Code Assist API ──→ Gemini (chat only)
                                ↕
                          SQLite (sessions.db)
                          backend per session
 ```
 
 ```
-/backend claude  →  🟣 Agent SDK direct → Claude Code
-/backend codex   →  🟢 Codex SDK direct → Codex CLI
+/backend claude  →  🟣 Agent SDK direct  → Claude Code (full tool use)
+/backend codex   →  🟢 Codex SDK direct  → Codex CLI (sandbox execution)
+/backend gemini  →  🔵 Code Assist API   → Gemini (chat only, no file access)
 ```
 
 > Terminal resume: TG conversations are real SDK sessions. `claude --resume <id>` or `codex --resume <threadId>` picks up exactly where Telegram left off.
+
+### Gemini Limitations
+
+The Gemini backend uses **Google Code Assist API** (`cloudcode-pa.googleapis.com`), NOT the Gemini CLI SDK. This means:
+
+- **Chat only** — cannot read/write local files, cannot execute commands
+- **No terminal resume** — sessions are in-memory, not persisted to Gemini CLI
+- **Requires Google Cloud / Gemini Pro subscription** and OAuth credentials
+
+If you need Gemini with **full CLI capabilities** (file access, command execution, tool use), use **[telegram-cli-bridge](https://github.com/AliceLJY/telegram-cli-bridge)** instead — it routes through task-api to Gemini CLI.
+
+> Gemini 后端走的是 Code Assist API（纯聊天接口），不能操作本地文件。如果需要 Gemini 完整 CLI 能力，请用 [telegram-cli-bridge](https://github.com/AliceLJY/telegram-cli-bridge)（通过 task-api 调用 Gemini CLI）。
 
 ## Prerequisites
 
@@ -64,18 +77,37 @@ cp .env.example .env
 | `TELEGRAM_BOT_TOKEN` | Yes | — | Bot token from BotFather |
 | `OWNER_TELEGRAM_ID` | Yes | — | Your Telegram user ID (owner only) |
 | `HTTPS_PROXY` | No | — | Proxy for Telegram API (for blocked regions) |
-| `DEFAULT_BACKEND` | No | `claude` | Default backend: `claude` or `codex` |
+| `DEFAULT_BACKEND` | No | `claude` | Default backend: `claude`, `codex`, or `gemini` |
 | `CC_MODEL` | No | `claude-sonnet-4-6` | Claude model to use |
 | `CC_CWD` | No | `$HOME` | Working directory for both backends |
 | `CODEX_MODEL` | No | *(codex default)* | Codex model override |
 | `DEFAULT_VERBOSE_LEVEL` | No | `1` | Default progress verbosity (0/1/2) |
 | `ENABLE_GROUP_SHARED_CONTEXT` | No | `true` | Enable group chat shared context |
+| `SESSION_TIMEOUT_MS` | No | `900000` | Session timeout in ms (default 15 min) |
+| `CC_PERMISSION_MODE` | No | `default` | Claude permission mode: `default` or `bypassPermissions` |
+| `GEMINI_OAUTH_CLIENT_ID` | No | — | Gemini OAuth client ID (for Gemini backend) |
+| `GEMINI_OAUTH_CLIENT_SECRET` | No | — | Gemini OAuth client secret (for Gemini backend) |
+| `GEMINI_MODEL` | No | `gemini-2.5-pro` | Gemini model to use |
 
 ## Usage
 
 ```bash
 bun bridge.js
 ```
+
+### Docker
+
+```bash
+docker build -t telegram-ai-bridge .
+docker run -d --name tg-ai-bridge \
+  --env-file .env \
+  -v ~/.claude:/root/.claude \
+  -v ~/.codex:/root/.codex \
+  -v ~/.gemini:/root/.gemini \
+  telegram-ai-bridge
+```
+
+> Mount the credential directories for each backend you use. Only Claude needs `~/.claude`, only Gemini needs `~/.gemini`, etc.
 
 ### macOS LaunchAgent (recommended)
 
@@ -107,7 +139,7 @@ For auto-start on login with crash recovery, create `~/Library/LaunchAgents/com.
 
 | Command | Description |
 |---------|-------------|
-| `/backend claude\|codex` | Switch backend for current chat |
+| `/backend claude\|codex\|gemini` | Switch backend for current chat |
 | `/new` | Reset session, start fresh |
 | `/sessions` | List recent sessions (labeled by backend), tap to restore |
 | `/status` | Show current backend, model, cwd, session |
@@ -159,9 +191,9 @@ Each backend implements the same interface:
 ```javascript
 // adapters/interface.js
 {
-  name: "claude" | "codex",
-  label: "CC" | "Codex",
-  icon: "🟣" | "🟢",
+  name: "claude" | "codex" | "gemini",
+  label: "CC" | "Codex" | "Gemini",
+  icon: "🟣" | "🟢" | "🔵",
 
   async *streamQuery(prompt, sessionId, abortSignal) {
     yield { type: "session_init", sessionId }
@@ -184,7 +216,8 @@ Part of a personal AI infrastructure. Each project handles one layer.
 
 | Project | Layer | What it does |
 |---------|-------|-------------|
-| **[telegram-ai-bridge](https://github.com/AliceLJY/telegram-ai-bridge)** | Frontend | *This project.* Telegram → CC / Codex via SDK |
+| **[telegram-ai-bridge](https://github.com/AliceLJY/telegram-ai-bridge)** | Frontend | *This project.* Telegram → CC / Codex / Gemini via SDK (Gemini chat-only) |
+| **[telegram-cli-bridge](https://github.com/AliceLJY/telegram-cli-bridge)** | Frontend | Telegram → CC / Codex / Gemini via task-api (all backends get full CLI) |
 | **[openclaw-worker](https://github.com/AliceLJY/openclaw-worker)** | Backend | Task queue + CC/Codex/Gemini Worker |
 | **[openclaw-content-alchemy](https://github.com/AliceLJY/openclaw-content-alchemy)** | Skill | Bot-native content pipeline (OpenClaw plugin) |
 | **[openclaw-cli-pipeline](https://github.com/AliceLJY/openclaw-cli-pipeline)** | CLI | Multi-turn CC orchestration CLI |
