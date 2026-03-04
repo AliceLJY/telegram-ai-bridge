@@ -24,6 +24,7 @@ const GROUP_CONTEXT_MAX_MESSAGES = Number(process.env.GROUP_CONTEXT_MAX_MESSAGES
 const GROUP_CONTEXT_MAX_TOKENS = Number(process.env.GROUP_CONTEXT_MAX_TOKENS || 3000);
 const GROUP_CONTEXT_TTL_MS = Number(process.env.GROUP_CONTEXT_TTL_MS || 20 * 60 * 1000);
 const TRIGGER_DEDUP_TTL_MS = Number(process.env.TRIGGER_DEDUP_TTL_MS || 5 * 60 * 1000);
+const SESSION_TIMEOUT_MS = Number(process.env.SESSION_TIMEOUT_MS || 15 * 60 * 1000);
 
 // ── 初始化后端适配器 ──
 const adapters = {};
@@ -240,11 +241,11 @@ async function submitAndWait(ctx, prompt) {
     let resultText = "";
     let resultSuccess = true;
 
-    // 超时保护（15 分钟）
+    // 超时保护
     const abortController = new AbortController();
     const timeoutHandle = setTimeout(() => {
       abortController.abort();
-    }, 15 * 60 * 1000);
+    }, SESSION_TIMEOUT_MS);
 
     const modelOverride = getChatModel(chatId);
     const streamOverrides = modelOverride ? { model: modelOverride } : {};
@@ -288,7 +289,7 @@ async function submitAndWait(ctx, prompt) {
     } catch (err) {
       const isAbort = err.name === "AbortError" || abortController.signal.aborted;
       if (isAbort) {
-        resultText = "超时（15 分钟未完成）";
+        resultText = `超时（${Math.round(SESSION_TIMEOUT_MS / 60000)} 分钟未完成）`;
         resultSuccess = false;
       } else {
         resultText = `SDK 错误: ${err.message}`;
