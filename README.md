@@ -37,7 +37,7 @@ Each instance is a separate process managed by its own macOS LaunchAgent:
 - **Quick replies** — inline buttons for yes/no questions
 - **File handling** — photos, documents, voice messages
 
-> 三 bot 独立运行、统一适配器、SQLite 隔离、终端互通（核心）、verbose 三级、群聊上下文。
+> 三独立 bot、统一适配器、SQLite 隔离、终端互通（核心）、verbose 三级、群聊上下文。
 
 ### Gemini Limitations
 
