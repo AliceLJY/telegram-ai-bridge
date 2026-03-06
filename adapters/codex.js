@@ -1,9 +1,9 @@
 // Codex SDK 适配器
 // @openai/codex-sdk — CLI wrapper，sessions 存 ~/.codex/sessions/
-// codex --resume <threadId> 终端可直接接续
+// codex resume <threadId> 终端可直接接续
 
 import { readdirSync, statSync, createReadStream } from "fs";
-import { join } from "path";
+import { basename, join } from "path";
 import { createInterface } from "readline";
 
 let Codex;
@@ -33,6 +33,133 @@ export function createAdapter(config = {}) {
       sdkCache.set(key, new Codex(opts));
     }
     return sdkCache.get(key);
+  }
+
+  function listRecentSessionFiles(limit = 10) {
+    const sessionsDir = join(process.env.HOME, ".codex", "sessions");
+    const allFiles = [];
+
+    try {
+      const now = new Date();
+      for (let d = 0; d < 7; d++) {
+        const date = new Date(now - d * 86400000);
+        const yyyy = String(date.getFullYear());
+        const mm = String(date.getMonth() + 1).padStart(2, "0");
+        const dd = String(date.getDate()).padStart(2, "0");
+        const dayDir = join(sessionsDir, yyyy, mm, dd);
+
+        try {
+          const files = readdirSync(dayDir)
+            .filter(f => f.endsWith(".jsonl"))
+            .map(f => {
+              const fp = join(dayDir, f);
+              const stat = statSync(fp);
+              const uuidMatch = f.match(/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.jsonl$/i);
+              const sessionId = uuidMatch ? uuidMatch[1] : f.replace(".jsonl", "");
+              return { file: f, path: fp, mtime: stat.mtimeMs, size: stat.size, sessionId };
+            });
+          allFiles.push(...files);
+        } catch { /* day dir not found */ }
+      }
+    } catch {
+      return [];
+    }
+
+    allFiles.sort((a, b) => b.mtime - a.mtime);
+    return allFiles.slice(0, limit);
+  }
+
+  function findSessionFile(sessionId) {
+    const sessionsDir = join(process.env.HOME, ".codex", "sessions");
+    try {
+      for (const yyyy of readdirSync(sessionsDir)) {
+        const yearDir = join(sessionsDir, yyyy);
+        try {
+          if (!statSync(yearDir).isDirectory()) continue;
+        } catch {
+          continue;
+        }
+        for (const mm of readdirSync(yearDir)) {
+          const monthDir = join(yearDir, mm);
+          try {
+            if (!statSync(monthDir).isDirectory()) continue;
+          } catch {
+            continue;
+          }
+          for (const dd of readdirSync(monthDir)) {
+            const dayDir = join(monthDir, dd);
+            try {
+              if (!statSync(dayDir).isDirectory()) continue;
+            } catch {
+              continue;
+            }
+            const match = readdirSync(dayDir).find(f => f.endsWith(`${sessionId}.jsonl`));
+            if (match) {
+              const path = join(dayDir, match);
+              const stat = statSync(path);
+              return { file: match, path, mtime: stat.mtimeMs, size: stat.size, sessionId };
+            }
+          }
+        }
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
+  function detectSessionSource(meta) {
+    const originator = String(meta.originator || "");
+    const source = String(meta.source || "");
+    if (source === "cli" || originator.includes("cli")) return "CLI";
+    if (originator.includes("sdk")) return "SDK";
+    if (source === "exec") return "Exec";
+    return source || originator || "";
+  }
+
+  async function parseSessionFile(fileInfo) {
+    let topic = "";
+    let sessionMeta = null;
+
+    try {
+      const stream = createReadStream(fileInfo.path, { encoding: "utf8" });
+      const rl = createInterface({ input: stream });
+      for await (const line of rl) {
+        try {
+          const d = JSON.parse(line);
+          if (!sessionMeta && d.type === "session_meta" && d.payload) {
+            sessionMeta = d.payload;
+          }
+          if (!topic && d.type === "event_msg" && d.payload?.type === "user_message") {
+            const msg = String(d.payload.message || "").trim();
+            if (msg && !/^\/[a-z]/i.test(msg)) {
+              topic = msg.slice(0, 80);
+            }
+          }
+          if (!topic && d.message?.role === "user") {
+            const content = d.message.content;
+            if (typeof content === "string" && content.trim()) {
+              topic = content.trim().slice(0, 80);
+            }
+          }
+          if (sessionMeta && topic) break;
+        } catch { /* skip */ }
+      }
+      rl.close();
+      stream.destroy();
+    } catch { /* skip */ }
+
+    const resolvedCwd = sessionMeta?.cwd || cwd;
+    return {
+      session_id: fileInfo.sessionId,
+      display_name: topic || "(空)",
+      last_active: fileInfo.mtime,
+      backend: "codex",
+      cwd: resolvedCwd,
+      project_name: basename(resolvedCwd) || resolvedCwd,
+      session_source: detectSessionSource(sessionMeta || {}),
+      originator: sessionMeta?.originator || "",
+    };
   }
 
   return {
@@ -138,72 +265,18 @@ export function createAdapter(config = {}) {
     },
 
     async listSessions(limit = 10) {
-      // Codex sessions: ~/.codex/sessions/YYYY/MM/DD/rollout-{timestamp}-{uuid}.jsonl
-      const sessionsDir = join(process.env.HOME, ".codex", "sessions");
-      const allFiles = [];
-
-      try {
-        const now = new Date();
-        for (let d = 0; d < 7; d++) {
-          const date = new Date(now - d * 86400000);
-          const yyyy = String(date.getFullYear());
-          const mm = String(date.getMonth() + 1).padStart(2, "0");
-          const dd = String(date.getDate()).padStart(2, "0");
-          const dayDir = join(sessionsDir, yyyy, mm, dd);
-
-          try {
-            const files = readdirSync(dayDir)
-              .filter(f => f.endsWith(".jsonl"))
-              .map(f => {
-                const fp = join(dayDir, f);
-                const stat = statSync(fp);
-                const uuidMatch = f.match(/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.jsonl$/i);
-                const sessionId = uuidMatch ? uuidMatch[1] : f.replace(".jsonl", "");
-                return { file: f, path: fp, mtime: stat.mtimeMs, size: stat.size, sessionId };
-              });
-            allFiles.push(...files);
-          } catch { /* day dir not found */ }
-        }
-      } catch { return []; }
-
-      allFiles.sort((a, b) => b.mtime - a.mtime);
-      const recent = allFiles.slice(0, limit);
-
+      const recent = listRecentSessionFiles(limit);
       const results = [];
       for (const s of recent) {
-        let topic = "";
-        try {
-          const stream = createReadStream(s.path, { encoding: "utf8" });
-          const rl = createInterface({ input: stream });
-          for await (const line of rl) {
-            try {
-              const d = JSON.parse(line);
-              if (d.type === "event_msg" && d.payload?.type === "user_message") {
-                const msg = String(d.payload.message || "").trim();
-                if (!msg || /^\/[a-z]/i.test(msg)) continue;
-                topic = msg.slice(0, 80);
-                break;
-              }
-              // 兼容 role: user 格式
-              if (d.message?.role === "user") {
-                const content = d.message.content;
-                if (typeof content === "string") topic = content.slice(0, 80);
-                if (topic) break;
-              }
-            } catch { /* skip */ }
-          }
-          rl.close();
-          stream.destroy();
-        } catch { /* skip */ }
-
-        results.push({
-          session_id: s.sessionId,
-          display_name: topic || "(空)",
-          last_active: s.mtime,
-          backend: "codex",
-        });
+        results.push(await parseSessionFile(s));
       }
       return results;
+    },
+
+    async resolveSession(sessionId) {
+      const fileInfo = findSessionFile(sessionId);
+      if (!fileInfo) return null;
+      return await parseSessionFile(fileInfo);
     },
   };
 }

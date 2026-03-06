@@ -6,7 +6,7 @@ import { join, isAbsolute } from "path";
 const DB_PATH = process.env.SESSIONS_DB
   ? (isAbsolute(process.env.SESSIONS_DB) ? process.env.SESSIONS_DB : join(import.meta.dir, process.env.SESSIONS_DB))
   : join(import.meta.dir, "sessions.db");
-const SESSION_TIMEOUT = 2 * 60 * 60 * 1000; // 2 小时不活跃自动过期
+const SESSION_TIMEOUT = Number(process.env.SESSION_TIMEOUT_MS || 15 * 60 * 1000);
 
 const db = new Database(DB_PATH);
 db.exec("PRAGMA journal_mode = WAL");
@@ -60,12 +60,28 @@ const stmtUpsert = db.prepare(`
     backend = excluded.backend
 `);
 const stmtDelete = db.prepare("DELETE FROM sessions WHERE chat_id = ?");
-const stmtRecent = db.prepare(`
+const stmtRecentAll = db.prepare(`
   SELECT chat_id, session_id, created_at, last_active, display_name, backend FROM (
     SELECT chat_id, session_id, created_at, last_active, display_name, backend FROM sessions
     UNION ALL
     SELECT chat_id, session_id, created_at, last_active, display_name, backend FROM session_history
   ) ORDER BY last_active DESC LIMIT ?
+`);
+const stmtRecentByChat = db.prepare(`
+  SELECT chat_id, session_id, created_at, last_active, display_name, backend FROM (
+    SELECT chat_id, session_id, created_at, last_active, display_name, backend FROM sessions
+    UNION ALL
+    SELECT chat_id, session_id, created_at, last_active, display_name, backend FROM session_history
+  ) WHERE chat_id = ?
+  ORDER BY last_active DESC LIMIT ?
+`);
+const stmtRecentByChatAndBackend = db.prepare(`
+  SELECT chat_id, session_id, created_at, last_active, display_name, backend FROM (
+    SELECT chat_id, session_id, created_at, last_active, display_name, backend FROM sessions
+    UNION ALL
+    SELECT chat_id, session_id, created_at, last_active, display_name, backend FROM session_history
+  ) WHERE chat_id = ? AND backend = ?
+  ORDER BY last_active DESC LIMIT ?
 `);
 const stmtCleanup = db.prepare("DELETE FROM sessions WHERE last_active < ?");
 const stmtCleanupHistory = db.prepare("DELETE FROM session_history WHERE last_active < ?");
@@ -133,8 +149,15 @@ export function getHistorySession(sessionId) {
   return stmtGetHistory.get(sessionId) || null;
 }
 
-export function recentSessions(limit = 8) {
-  return stmtRecent.all(limit);
+export function recentSessions(limit = 8, options = {}) {
+  const { chatId = null, backend = null } = options;
+  if (chatId != null && backend) {
+    return stmtRecentByChatAndBackend.all(chatId, backend, limit);
+  }
+  if (chatId != null) {
+    return stmtRecentByChat.all(chatId, limit);
+  }
+  return stmtRecentAll.all(limit);
 }
 
 export function cleanupExpired() {

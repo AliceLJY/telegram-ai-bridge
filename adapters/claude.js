@@ -1,13 +1,108 @@
 // Claude Agent SDK 适配器
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { readdirSync, statSync, createReadStream } from "fs";
-import { join } from "path";
+import { basename, join } from "path";
 import { createInterface } from "readline";
 
 export function createAdapter(config = {}) {
   const defaultModel = config.model || process.env.CC_MODEL || "claude-sonnet-4-6";
   const cwd = config.cwd || process.env.CC_CWD || process.env.HOME;
   const permMode = process.env.CC_PERMISSION_MODE || "default";
+
+  function listSessionFiles(limit = 10) {
+    const projectsDir = join(process.env.HOME, ".claude", "projects");
+    const allFiles = [];
+
+    try {
+      const dirs = readdirSync(projectsDir).filter(d => {
+        try { return statSync(join(projectsDir, d)).isDirectory(); } catch { return false; }
+      });
+      for (const dir of dirs) {
+        const fullDir = join(projectsDir, dir);
+        try {
+          const files = readdirSync(fullDir)
+            .filter(f => f.endsWith(".jsonl"))
+            .map(f => {
+              const fp = join(fullDir, f);
+              const stat = statSync(fp);
+              return { file: f, path: fp, mtime: stat.mtimeMs, size: stat.size, sessionId: f.replace(".jsonl", "") };
+            });
+          allFiles.push(...files);
+        } catch { /* skip */ }
+      }
+    } catch {
+      return [];
+    }
+
+    allFiles.sort((a, b) => b.mtime - a.mtime);
+    return allFiles.slice(0, limit);
+  }
+
+  function findSessionFile(sessionId) {
+    const projectsDir = join(process.env.HOME, ".claude", "projects");
+    try {
+      const dirs = readdirSync(projectsDir);
+      for (const dir of dirs) {
+        const fullDir = join(projectsDir, dir);
+        try {
+          if (!statSync(fullDir).isDirectory()) continue;
+        } catch {
+          continue;
+        }
+        const match = readdirSync(fullDir).find(f => f === `${sessionId}.jsonl`);
+        if (match) {
+          const path = join(fullDir, match);
+          const stat = statSync(path);
+          return { file: match, path, mtime: stat.mtimeMs, size: stat.size, sessionId };
+        }
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
+  async function parseSessionFile(fileInfo) {
+    let topic = "";
+    let resolvedCwd = "";
+
+    try {
+      const stream = createReadStream(fileInfo.path, { encoding: "utf8" });
+      const rl = createInterface({ input: stream });
+      for await (const line of rl) {
+        try {
+          const d = JSON.parse(line);
+          if (!resolvedCwd && typeof d.cwd === "string" && d.cwd) {
+            resolvedCwd = d.cwd;
+          }
+          if (d.message?.role === "user") {
+            const content = d.message.content;
+            if (Array.isArray(content)) {
+              const txt = content.find(c => typeof c === "object" && c.type === "text");
+              if (txt?.text) topic = txt.text.slice(0, 80);
+            } else if (typeof content === "string") {
+              topic = content.slice(0, 80);
+            }
+            if (topic && !topic.startsWith("[Request interrupted")) break;
+            topic = "";
+          }
+        } catch { /* skip */ }
+      }
+      rl.close();
+      stream.destroy();
+    } catch { /* skip */ }
+
+    const finalCwd = resolvedCwd || cwd;
+    return {
+      session_id: fileInfo.sessionId,
+      display_name: topic || "(空)",
+      last_active: fileInfo.mtime,
+      backend: "claude",
+      cwd: finalCwd,
+      project_name: basename(finalCwd) || finalCwd,
+      session_source: "CLI",
+    };
+  }
 
   return {
     name: "claude",
@@ -109,65 +204,18 @@ export function createAdapter(config = {}) {
     },
 
     async listSessions(limit = 10) {
-      const projectsDir = join(process.env.HOME, ".claude", "projects");
-      const allFiles = [];
-
-      try {
-        const dirs = readdirSync(projectsDir).filter(d => {
-          try { return statSync(join(projectsDir, d)).isDirectory(); } catch { return false; }
-        });
-        for (const dir of dirs) {
-          const fullDir = join(projectsDir, dir);
-          try {
-            const files = readdirSync(fullDir)
-              .filter(f => f.endsWith(".jsonl"))
-              .map(f => {
-                const fp = join(fullDir, f);
-                const stat = statSync(fp);
-                return { file: f, path: fp, mtime: stat.mtimeMs, size: stat.size };
-              });
-            allFiles.push(...files);
-          } catch { /* skip */ }
-        }
-      } catch { return []; }
-
-      allFiles.sort((a, b) => b.mtime - a.mtime);
-      const recent = allFiles.slice(0, limit);
-
+      const recent = listSessionFiles(limit);
       const results = [];
       for (const s of recent) {
-        let topic = "";
-        try {
-          const stream = createReadStream(s.path, { encoding: "utf8" });
-          const rl = createInterface({ input: stream });
-          for await (const line of rl) {
-            try {
-              const d = JSON.parse(line);
-              if (d.message?.role === "user") {
-                const content = d.message.content;
-                if (Array.isArray(content)) {
-                  const txt = content.find(c => typeof c === "object" && c.type === "text");
-                  if (txt) topic = txt.text.slice(0, 80);
-                } else if (typeof content === "string") {
-                  topic = content.slice(0, 80);
-                }
-                if (topic && !topic.startsWith("[Request interrupted")) break;
-                topic = "";
-              }
-            } catch { /* skip */ }
-          }
-          rl.close();
-          stream.destroy();
-        } catch { /* skip */ }
-
-        results.push({
-          session_id: s.file.replace(".jsonl", ""),
-          display_name: topic || "(空)",
-          last_active: s.mtime,
-          backend: "claude",
-        });
+        results.push(await parseSessionFile(s));
       }
       return results;
+    },
+
+    async resolveSession(sessionId) {
+      const fileInfo = findSessionFile(sessionId);
+      if (!fileInfo) return null;
+      return await parseSessionFile(fileInfo);
     },
   };
 }
