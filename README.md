@@ -29,10 +29,12 @@ Each instance is a separate process managed by its own macOS LaunchAgent:
 - **Three independent bots** — each backend has its own Telegram bot, no switching needed
 - **Unified adapter interface** — same `bridge.js`, different config, consistent behavior
 - **SQLite sessions** — survive restarts, per-instance isolation (bun:sqlite, WAL mode)
-- **Terminal resume** — `claude --resume <id>` / `codex --resume <id>` picks up where Telegram left off
+- **Terminal resume** — `claude --resume <id>` / `codex resume <id>` picks up where Telegram left off
 - **Real-time progress** — see which tools the AI is using as it works
 - **Verbose levels** — `/verbose 0|1|2` for progress detail control
-- **Session management** — `/sessions` to list and restore previous conversations
+- **Session management** — `/sessions` to list, `/resume <id>` to bind an existing conversation
+- **Session metadata** — `/sessions` and `/status` show project/cwd and source hints when available
+- **Project-first session list** — `/sessions` keeps current session first and prioritizes sessions from the current project
 - **Group context** — shared message context in Telegram groups
 - **Quick replies** — inline buttons for yes/no questions
 - **File handling** — photos, documents, voice messages
@@ -211,6 +213,7 @@ Available in each bot's chat:
 |---------|-------------|
 | `/new` | Reset session, start fresh |
 | `/sessions` | List recent sessions, tap to restore |
+| `/resume <session-id>` | Manually bind Telegram to an existing Claude/Codex session |
 | `/status` | Show current backend, model, cwd, session |
 | `/verbose 0\|1\|2` | Set progress verbosity level |
 
@@ -223,10 +226,16 @@ The core feature: chat in Telegram, continue in your terminal.
 claude --resume <session-id>
 
 # After chatting with Codex bot:
-codex --resume <thread-id>
+codex resume <thread-id>
 ```
 
-Session IDs are shown in `/status` and `/sessions`. Both SDKs store sessions locally (`~/.claude/` and `~/.codex/sessions/`), so terminal resume is seamless.
+Session IDs are shown in `/status` and `/sessions`. If you started the session in terminal first, bind Telegram manually with `/resume <session-id>`. Both SDKs store sessions locally (`~/.claude/` and `~/.codex/sessions/`), so terminal/TG handoff is explicit and predictable.
+
+For Codex sessions, the bridge also surfaces lightweight source hints from local session metadata:
+
+- `CLI` — started from the interactive Codex CLI
+- `SDK` — started through the SDK bridge path
+- `Exec` — persisted by Codex exec-style runs where CLI provenance is not explicit
 
 > 核心能力：Telegram 聊到一半，终端 `--resume` 接着干。
 
@@ -294,6 +303,13 @@ Not a developer. Medical background, works in cultural administration, self-taug
 > 医学出身，文化口工作，AI 野路子。公众号记录 AI 实操、踩坑、人文思考。
 
 <img src="./assets/wechat_qr.jpg" width="200" alt="WeChat QR Code">
+
+## AI Contributors
+
+- **Claude Code** — architecture iteration, bridge logic, adapter integration
+- **Codex** — session resume improvements, metadata parsing, UX polish for Telegram handoff
+
+> AI 协作贡献：Claude Code 参与架构与适配器迭代，Codex 参与会话接续、元数据解析与 TG 接力体验优化。
 
 ## License
 
