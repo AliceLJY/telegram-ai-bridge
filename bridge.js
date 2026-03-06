@@ -4,7 +4,7 @@
 import { Bot, InlineKeyboard } from "grammy";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync } from "fs";
-import { join } from "path";
+import { basename, join } from "path";
 import { getSession, setSession, deleteSession, recentSessions, getChatBackend, setChatBackend, getHistorySession, getChatModel, setChatModel, deleteChatModel } from "./sessions.js";
 import { createProgressTracker } from "./progress.js";
 import { createBackend, AVAILABLE_BACKENDS } from "./adapters/interface.js";
@@ -182,6 +182,72 @@ async function sendLong(ctx, text) {
   for (const chunk of chunks) {
     await ctx.reply(chunk);
   }
+}
+
+function getSessionProjectLabel(sessionMeta, fallbackCwd = "") {
+  const cwd = sessionMeta?.cwd || fallbackCwd || "";
+  if (!cwd) return "";
+  return sessionMeta?.project_name || basename(cwd) || cwd;
+}
+
+function getSessionSourceLabel(sessionMeta) {
+  const source = sessionMeta?.session_source || "";
+  return source ? `[${source}]` : "";
+}
+
+function getCompactSourceLabel(sessionMeta, backend) {
+  const source = sessionMeta?.session_source || "";
+  if (source === "CLI") return "CLI";
+  if (source === "SDK") return "SDK";
+  if (source === "Exec") return "EXEC";
+  if (backend === "claude") return "CC";
+  if (backend === "codex") return "CDX";
+  if (backend === "gemini") return "GEM";
+  return backend.toUpperCase();
+}
+
+function getTopicSnippet(sessionMeta, maxLen = 16) {
+  const topic = (sessionMeta?.display_name || "").replace(/\s+/g, " ").trim();
+  if (!topic || topic === "(空)") return "";
+  return topic.length > maxLen ? `${topic.slice(0, maxLen)}...` : topic;
+}
+
+function buildResumeHint(backend, sessionId, cwdHint = "") {
+  if (backend === "codex") {
+    return `codex -C ${cwdHint || CC_CWD} resume ${sessionId}`;
+  }
+  if (backend === "claude") {
+    return `claude --resume ${sessionId}`;
+  }
+  return "";
+}
+
+function buildSessionButtonLabel(sessionMeta, backend, isCurrent) {
+  const icon = backend === "codex" ? "🟢" : backend === "gemini" ? "🔵" : "🟣";
+  const time = new Date(sessionMeta.last_active).toISOString().slice(5, 16).replace("T", " ");
+  const project = getSessionProjectLabel(sessionMeta);
+  const source = getCompactSourceLabel(sessionMeta, backend);
+  const topic = getTopicSnippet(sessionMeta);
+  const parts = [icon, source, project || "(unknown)", time, topic].filter(Boolean);
+  const mark = isCurrent ? " ✦" : "";
+  return `${parts.join(" · ").slice(0, 55)}${mark}`;
+}
+
+function sortSessionsForDisplay(sessions, current, currentProject) {
+  const activeId = current?.session_id || "";
+  return [...sessions].sort((a, b) => {
+    const aCurrent = a.session_id === activeId ? 1 : 0;
+    const bCurrent = b.session_id === activeId ? 1 : 0;
+    if (aCurrent !== bCurrent) return bCurrent - aCurrent;
+
+    const aProject = getSessionProjectLabel(a);
+    const bProject = getSessionProjectLabel(b);
+    const aProjectMatch = currentProject && aProject === currentProject ? 1 : 0;
+    const bProjectMatch = currentProject && bProject === currentProject ? 1 : 0;
+    if (aProjectMatch !== bProjectMatch) return bProjectMatch - aProjectMatch;
+
+    return Number(b.last_active || 0) - Number(a.last_active || 0);
+  });
 }
 
 // ── 文件下载 ──
@@ -423,14 +489,16 @@ async function submitAndWait(ctx, prompt) {
     // 新会话首条：显示 session ID（只在新建时发一次）
     if (capturedSessionId && capturedSessionId !== sessionId) {
       const sid = capturedSessionId;
-      let resumeLine = "";
-      if (backendName === "codex") {
-        resumeLine = `\n终端接续: \`codex -C ${CC_CWD} resume ${sid}\``;
-      } else if (backendName === "claude") {
-        resumeLine = `\n终端接续: \`claude --resume ${sid}\``;
-      }
+      const sessionMeta = adapter.resolveSession ? await adapter.resolveSession(sid) : null;
+      const effectiveCwd = sessionMeta?.cwd || CC_CWD;
+      const project = getSessionProjectLabel(sessionMeta, effectiveCwd);
+      const source = getSessionSourceLabel(sessionMeta);
+      const resumeCmd = buildResumeHint(backendName, sid, effectiveCwd);
+      const resumeLine = resumeCmd ? `\n终端接续: \`${resumeCmd}\`` : "";
       await ctx.reply(
-        `${adapter.icon} 新会话 \`${sid}\`${resumeLine}`,
+        `${adapter.icon} 新会话 \`${sid}\`` +
+        `${project ? `\n项目: ${project}${source ? ` ${source}` : ""}` : ""}` +
+        `${resumeLine}`,
         { parse_mode: "Markdown" }
       ).catch(() => {});
     }
@@ -472,17 +540,42 @@ bot.command("new", async (ctx) => {
   await ctx.reply(`会话已重置，下条消息将开启新 ${adapter.label} 会话。`);
 });
 
+// ── /resume 命令：显式绑定已有 session id（适合终端/TG 手动接续） ──
+bot.command("resume", async (ctx) => {
+  const sessionId = ctx.match?.trim();
+  if (!sessionId) {
+    const backendName = getBackendName(ctx.chat.id);
+    await ctx.reply(`用法: /resume <session-id>\n当前后端: ${backendName}\n也可以先用 /sessions 直接点选。`);
+    return;
+  }
+
+  const backend = getBackendName(ctx.chat.id);
+  setSession(ctx.chat.id, sessionId, "", backend);
+  const adapter = getAdapter(ctx.chat.id);
+  const adapterInfo = adapter.statusInfo(getChatModel(ctx.chat.id));
+  const sessionMeta = adapter.resolveSession ? await adapter.resolveSession(sessionId) : null;
+  const project = getSessionProjectLabel(sessionMeta, adapterInfo.cwd);
+  const source = getSessionSourceLabel(sessionMeta);
+  await ctx.reply(
+    `${adapter.icon} 已绑定会话 \`${sessionId}\`（${backend}）\n` +
+    `${project ? `项目: ${project}${source ? ` ${source}` : ""}\n` : ""}` +
+    `后续消息会继续这个 session。`,
+    { parse_mode: "Markdown" }
+  );
+});
+
 // ── /sessions 命令：优先从本地 session 文件扫描，兜底 SQLite 历史 ──
 bot.command("sessions", async (ctx) => {
   try {
     const adapter = getAdapter(ctx.chat.id);
     const backendName = getBackendName(ctx.chat.id);
+    const adapterInfo = adapter.statusInfo(getChatModel(ctx.chat.id));
 
     // 优先用 adapter 扫描本地 session 文件（如 CC transcript / Codex sessions）
     let sessions = adapter.listSessions ? await adapter.listSessions(10) : null;
     // 兜底：SQLite 历史
     if (!sessions || !sessions.length) {
-      sessions = recentSessions(10);
+      sessions = recentSessions(10, { chatId: ctx.chat.id, backend: backendName });
     }
 
     if (!sessions.length) {
@@ -490,14 +583,13 @@ bot.command("sessions", async (ctx) => {
       return;
     }
     const current = getSession(ctx.chat.id);
+    const currentProject = adapterInfo.cwd ? basename(adapterInfo.cwd) : "";
+    const sortedSessions = sortSessionsForDisplay(sessions, current, currentProject);
     const kb = new InlineKeyboard();
-    for (const s of sessions) {
+    for (const s of sortedSessions) {
       const backend = s.backend || backendName;
-      const icon = backend === "codex" ? "🟢" : backend === "gemini" ? "🔵" : "🟣";
-      const mark = (current && current.session_id === s.session_id) ? " ✦当前" : "";
-      const time = new Date(s.last_active).toISOString().slice(5, 16).replace("T", " ");
-      const topic = (s.display_name || "").slice(0, 25) || "(空)";
-      kb.text(`${icon} ${time} ${topic}${mark}`, `resume:${s.session_id}:${backend}`).row();
+      const isCurrent = current && current.session_id === s.session_id;
+      kb.text(buildSessionButtonLabel(s, backend, isCurrent), `resume:${s.session_id}:${backend}`).row();
     }
     kb.text("🆕 开新会话", "action:new").row();
     await ctx.reply("选择要恢复的会话：", { reply_markup: kb });
@@ -542,15 +634,21 @@ bot.command("status", async (ctx) => {
 
   let sessionLine = "当前会话: 无（下条消息开新会话）";
   let resumeHint = "";
+  let sessionMetaLine = "";
   if (session) {
     const sid = session.session_id;
+    const sessionMeta = adapter.resolveSession ? await adapter.resolveSession(sid) : null;
+    const effectiveCwd = sessionMeta?.cwd || info.cwd;
+    const project = getSessionProjectLabel(sessionMeta, effectiveCwd);
+    const source = getSessionSourceLabel(sessionMeta);
     sessionLine = `当前会话: \`${sid.slice(0, 8)}...\``;
-    // 终端 resume 命令提示
-    if (session.backend === "codex") {
-      resumeHint = `\n终端接续: \`codex -C ${info.cwd} resume ${sid}\``;
-    } else if (session.backend === "claude") {
-      resumeHint = `\n终端接续: \`claude --resume ${sid}\``;
+    if (project || source || sessionMeta?.cwd) {
+      sessionMetaLine =
+        `\n会话项目: ${project || "(unknown)"}${source ? ` ${source}` : ""}` +
+        `${sessionMeta?.cwd ? `\n会话目录: ${sessionMeta.cwd}` : ""}`;
     }
+    const resumeCmd = buildResumeHint(session.backend, sid, effectiveCwd);
+    if (resumeCmd) resumeHint = `\n终端接续: \`${resumeCmd}\``;
   }
 
   await ctx.reply(
@@ -558,7 +656,7 @@ bot.command("status", async (ctx) => {
     `模式: ${info.mode}\n` +
     `模型: ${info.model}\n` +
     `工作目录: ${info.cwd}\n` +
-    `${sessionLine}${resumeHint}\n` +
+    `${sessionLine}${sessionMetaLine}${resumeHint}\n` +
     `进度详细度: ${verbose}（0=关/1=工具名/2=详细）\n` +
     `可用后端: ${AVAILABLE_BACKENDS.filter((b) => adapters[b]).join(", ")}`,
     { parse_mode: "Markdown" }
@@ -654,9 +752,19 @@ bot.callbackQuery(/^resume:/, async (ctx) => {
   }
   setSession(ctx.chat.id, sessionId, "", backend);
   setChatBackend(ctx.chat.id, backend);
-  const icon = adapters[backend]?.icon || "🟣";
+  const adapter = adapters[backend];
+  const icon = adapter?.icon || "🟣";
+  const adapterInfo = adapter ? adapter.statusInfo(getChatModel(ctx.chat.id)) : { cwd: CC_CWD };
+  const sessionMeta = adapter?.resolveSession ? await adapter.resolveSession(sessionId) : null;
+  const project = getSessionProjectLabel(sessionMeta, adapterInfo.cwd);
+  const source = getSessionSourceLabel(sessionMeta);
   await ctx.answerCallbackQuery({ text: "已恢复 ✓" });
-  await ctx.editMessageText(`${icon} 已恢复会话 \`${sessionId.slice(0, 8)}\`（${backend}）\n继续发消息即可。`, { parse_mode: "Markdown" });
+  await ctx.editMessageText(
+    `${icon} 已恢复会话 \`${sessionId.slice(0, 8)}\`（${backend}）\n` +
+    `${project ? `项目: ${project}${source ? ` ${source}` : ""}\n` : ""}` +
+    `继续发消息即可。`,
+    { parse_mode: "Markdown" }
+  );
 });
 
 // ── 按钮回调：新会话 ──
