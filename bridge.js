@@ -255,6 +255,37 @@ function formatPreviewRole(role) {
   return "?";
 }
 
+async function sendSessionPeek(ctx, adapter, sessionId, limit = 6) {
+  if (!adapter.inspectSession) {
+    await ctx.reply(`${adapter.icon} 当前后端不支持会话只读预览。`);
+    return false;
+  }
+
+  const sessionInfo = await adapter.inspectSession(sessionId, { limit });
+  if (!sessionInfo) {
+    await ctx.reply(`未找到会话: ${sessionId}`);
+    return false;
+  }
+
+  const project = getSessionProjectLabel(sessionInfo);
+  const source = getSessionSourceLabel(sessionInfo);
+  const previewLines = (sessionInfo.preview_messages || []).map(
+    (msg) => `${formatPreviewRole(msg.role)}: ${msg.text}`,
+  );
+  const previewText = previewLines.length
+    ? previewLines.join("\n")
+    : "(没有解析到可展示的消息片段)";
+
+  await sendLong(
+    ctx,
+    `${adapter.icon} 只读预览 ${sessionId}\n` +
+      `${project ? `项目: ${project}${source ? ` ${source}` : ""}\n` : ""}` +
+      `说明: 这只会把旧会话内容展示到当前 chat，不会切换当前会话。\n\n` +
+      `最近片段:\n${previewText}`,
+  );
+  return true;
+}
+
 function sortSessionsForDisplay(sessions, current, currentProject) {
   const activeId = current?.session_id || "";
   return [...sessions].sort((a, b) => {
@@ -657,33 +688,7 @@ bot.command("peek", async (ctx) => {
   }
 
   const adapter = getAdapter(ctx.chat.id);
-  if (!adapter.inspectSession) {
-    await ctx.reply(`${adapter.icon} 当前后端不支持会话只读预览。`);
-    return;
-  }
-
-  const sessionInfo = await adapter.inspectSession(sessionId, { limit: 6 });
-  if (!sessionInfo) {
-    await ctx.reply(`未找到会话: ${sessionId}`);
-    return;
-  }
-
-  const project = getSessionProjectLabel(sessionInfo);
-  const source = getSessionSourceLabel(sessionInfo);
-  const previewLines = (sessionInfo.preview_messages || []).map(
-    (msg) => `${formatPreviewRole(msg.role)}: ${msg.text}`,
-  );
-  const previewText = previewLines.length
-    ? previewLines.join("\n")
-    : "(没有解析到可展示的消息片段)";
-
-  await sendLong(
-    ctx,
-    `${adapter.icon} 只读预览 ${sessionId}\n` +
-      `${project ? `项目: ${project}${source ? ` ${source}` : ""}\n` : ""}` +
-      `说明: 这只会把旧会话内容展示到当前 chat，不会切换当前会话。\n\n` +
-      `最近片段:\n${previewText}`,
-  );
+  await sendSessionPeek(ctx, adapter, sessionId, 6);
 });
 
 // ── /sessions 命令：默认只显示当前 chat 自己的会话，`all` 才展示外部扫描结果 ──
@@ -737,11 +742,13 @@ bot.command("sessions", async (ctx) => {
       adapter,
       10,
     );
-    const externalLines = externalSessions.map(
-      (session) =>
+    const externalLines = externalSessions.map((session) => {
+      const shortId = formatSessionIdShort(session.session_id, 12);
+      return (
         `- ${buildSessionButtonLabel(session, session.backend || backendName, false)}\n` +
-        `  id: ${session.session_id}`,
-    );
+        `  id: ${shortId}  用 /peek ${session.session_id} 查看`
+      );
+    });
 
     const sections = [];
     if (sortedSessions.length) {
@@ -750,8 +757,15 @@ bot.command("sessions", async (ctx) => {
       sections.push("当前 chat 还没有可恢复的自有会话。");
     }
     if (externalLines.length) {
+      for (const session of externalSessions) {
+        const backend = session.backend || backendName;
+        kb.text(
+          `👁 ${buildSessionButtonLabel(session, backend, false).slice(0, 46)}`,
+          `peek:${session.session_id}:${backend}`,
+        ).row();
+      }
       sections.push(
-        "外部本机会话（仅展示，不可直接恢复；可用 /peek <id> 只读查看）：\n" +
+        "外部本机会话（点下方 👁 按钮可回显完整 ID 并只读查看，不会恢复）：\n" +
           externalLines.join("\n"),
       );
     } else {
@@ -762,6 +776,29 @@ bot.command("sessions", async (ctx) => {
   } catch (e) {
     await ctx.reply(`查询失败: ${e.message}`);
   }
+});
+
+// ── 按钮回调：只读查看外部会话 ──
+bot.callbackQuery(/^peek:/, async (ctx) => {
+  const data = ctx.callbackQuery.data.replace("peek:", "");
+  const lastColon = data.lastIndexOf(":");
+  let sessionId, backend;
+  if (lastColon > 0 && AVAILABLE_BACKENDS.includes(data.slice(lastColon + 1))) {
+    sessionId = data.slice(0, lastColon);
+    backend = data.slice(lastColon + 1);
+  } else {
+    sessionId = data;
+    backend = getBackendName(ctx.chat.id);
+  }
+
+  const adapter = adapters[backend];
+  if (!adapter) {
+    await ctx.answerCallbackQuery({ text: "后端不可用" });
+    return;
+  }
+
+  await ctx.answerCallbackQuery({ text: `ID: ${formatSessionIdShort(sessionId, 12)}` });
+  await sendSessionPeek(ctx, adapter, sessionId, 6);
 });
 
 // ── /backend 命令：切换后端 ──
