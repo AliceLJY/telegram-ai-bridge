@@ -142,6 +142,7 @@ bun bridge.js
 | `/new` | 重置当前聊天 session |
 | `/sessions` | 列出当前 chat 自己可恢复的 session |
 | `/sessions all` | 同时查看当前 chat 会话和外部本机会话（外部仅展示，不可直接恢复） |
+| `/peek <session-id>` | 只读查看某个 session 的最近片段，不切换当前 chat |
 | `/resume <session-id>` | 把 Telegram 重新绑定到当前 chat 自己的已有 session |
 | `/status` | 显示后端、模型、cwd 和当前 session |
 | `/verbose 0\|1\|2` | 设置进度输出等级 |
