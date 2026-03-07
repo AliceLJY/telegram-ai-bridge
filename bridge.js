@@ -279,6 +279,7 @@ async function sendSessionPeek(ctx, adapter, sessionId, limit = 6) {
   await sendLong(
     ctx,
     `${adapter.icon} 只读预览 ${sessionId}\n` +
+      `ID: \`${sessionId}\`\n` +
       `${project ? `项目: ${project}${source ? ` ${source}` : ""}\n` : ""}` +
       `说明: 这只会把旧会话内容展示到当前 chat，不会切换当前会话。\n\n` +
       `最近片段:\n${previewText}`,
@@ -344,6 +345,18 @@ async function getExternalSessionsForChat(chatId, backendName, adapter, limit = 
   }
 
   return external;
+}
+
+function mergeSessionsForPicker(ownedSessions, externalSessions) {
+  const merged = [...ownedSessions];
+  const seen = new Set(ownedSessions.map((session) => session.session_id));
+
+  for (const session of externalSessions) {
+    if (seen.has(session.session_id)) continue;
+    merged.push(session);
+  }
+
+  return merged;
 }
 
 // ── 文件下载 ──
@@ -691,33 +704,31 @@ bot.command("peek", async (ctx) => {
   await sendSessionPeek(ctx, adapter, sessionId, 6);
 });
 
-// ── /sessions 命令：默认只显示当前 chat 自己的会话，`all` 才展示外部扫描结果 ──
+// ── /sessions 命令：统一列出最近会话；点按钮只回显 ID + 片段，不切换当前会话 ──
 bot.command("sessions", async (ctx) => {
   try {
     const adapter = getAdapter(ctx.chat.id);
     const backendName = getBackendName(ctx.chat.id);
     const adapterInfo = adapter.statusInfo(getChatModel(ctx.chat.id));
-    const mode = ctx.match?.trim().toLowerCase();
-    const showAll = mode === "all";
     const ownedSessions = await getOwnedSessionsForChat(
       ctx.chat.id,
       backendName,
       adapter,
       10,
     );
+    const externalSessions = await getExternalSessionsForChat(
+      ctx.chat.id,
+      backendName,
+      adapter,
+      10,
+    );
+    const allSessions = mergeSessionsForPicker(ownedSessions, externalSessions);
     const current = getSession(ctx.chat.id);
     const currentProject = adapterInfo.cwd ? basename(adapterInfo.cwd) : "";
-    const sortedSessions = sortSessionsForDisplay(
-      ownedSessions,
-      current,
-      currentProject,
-    );
+    const sortedSessions = sortSessionsForDisplay(allSessions, current, currentProject);
 
-    if (!sortedSessions.length && !showAll) {
-      await ctx.reply(
-        "当前 chat 没有可安全恢复的历史会话。\n用 `/sessions all` 可以查看本机外部会话，但它们不会直接出现在恢复按钮里。",
-        { parse_mode: "Markdown" }
-      );
+    if (!sortedSessions.length) {
+      await ctx.reply("没有找到历史会话。");
       return;
     }
 
@@ -725,54 +736,13 @@ bot.command("sessions", async (ctx) => {
     for (const s of sortedSessions) {
       const backend = s.backend || backendName;
       const isCurrent = current && current.session_id === s.session_id;
-      kb.text(buildSessionButtonLabel(s, backend, isCurrent), `resume:${s.session_id}:${backend}`).row();
+      kb.text(buildSessionButtonLabel(s, backend, isCurrent), `peek:${s.session_id}:${backend}`).row();
     }
     kb.text("🆕 开新会话", "action:new").row();
-
-    if (!showAll) {
-      await ctx.reply("选择要恢复的会话（仅当前 chat 自己的会话）：", {
-        reply_markup: kb,
-      });
-      return;
-    }
-
-    const externalSessions = await getExternalSessionsForChat(
-      ctx.chat.id,
-      backendName,
-      adapter,
-      10,
+    await ctx.reply(
+      "选择会话：点一下会把该会话的完整 ID 和最近片段回显到当前聊天，不会切换当前会话。",
+      { reply_markup: kb },
     );
-    const externalLines = externalSessions.map((session) => {
-      const shortId = formatSessionIdShort(session.session_id, 12);
-      return (
-        `- ${buildSessionButtonLabel(session, session.backend || backendName, false)}\n` +
-        `  id: ${shortId}  用 /peek ${session.session_id} 查看`
-      );
-    });
-
-    const sections = [];
-    if (sortedSessions.length) {
-      sections.push("可恢复会话：上方按钮仅包含当前 chat 自己创建的会话。");
-    } else {
-      sections.push("当前 chat 还没有可恢复的自有会话。");
-    }
-    if (externalLines.length) {
-      for (const session of externalSessions) {
-        const backend = session.backend || backendName;
-        kb.text(
-          `👁 ${buildSessionButtonLabel(session, backend, false).slice(0, 46)}`,
-          `peek:${session.session_id}:${backend}`,
-        ).row();
-      }
-      sections.push(
-        "外部本机会话（点下方 👁 按钮可回显完整 ID 并只读查看，不会恢复）：\n" +
-          externalLines.join("\n"),
-      );
-    } else {
-      sections.push("没有额外扫描到外部本机会话。");
-    }
-
-    await ctx.reply(sections.join("\n\n"), { reply_markup: kb });
   } catch (e) {
     await ctx.reply(`查询失败: ${e.message}`);
   }
