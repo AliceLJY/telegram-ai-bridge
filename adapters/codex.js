@@ -162,6 +162,66 @@ export function createAdapter(config = {}) {
     };
   }
 
+  function normalizeTranscriptText(value, maxLen = 200) {
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+    if (!text) return "";
+    return text.length > maxLen ? `${text.slice(0, maxLen - 3)}...` : text;
+  }
+
+  async function inspectSessionFile(fileInfo, limit = 6) {
+    const meta = await parseSessionFile(fileInfo);
+    const messages = [];
+
+    try {
+      const stream = createReadStream(fileInfo.path, { encoding: "utf8" });
+      const rl = createInterface({ input: stream });
+      for await (const line of rl) {
+        try {
+          const d = JSON.parse(line);
+
+          if (d.type === "event_msg" && d.payload?.type === "user_message") {
+            const text = normalizeTranscriptText(d.payload.message);
+            if (text) messages.push({ role: "user", text });
+            continue;
+          }
+
+          if (d.type === "event_msg" && d.payload?.type === "agent_message") {
+            const text = normalizeTranscriptText(d.payload.message);
+            if (text) messages.push({ role: "assistant", text });
+            continue;
+          }
+
+          if (d.message?.role === "user" || d.message?.role === "assistant") {
+            const content = d.message.content;
+            const text =
+              typeof content === "string"
+                ? normalizeTranscriptText(content)
+                : normalizeTranscriptText(content?.text);
+            if (text) messages.push({ role: d.message.role, text });
+          }
+        } catch {
+          // skip malformed lines
+        }
+      }
+      rl.close();
+      stream.destroy();
+    } catch {
+      // skip transcript preview if file cannot be read
+    }
+
+    const deduped = [];
+    for (const msg of messages) {
+      const prev = deduped[deduped.length - 1];
+      if (prev && prev.role === msg.role && prev.text === msg.text) continue;
+      deduped.push(msg);
+    }
+
+    return {
+      ...meta,
+      preview_messages: deduped.slice(-limit),
+    };
+  }
+
   return {
     name: "codex",
     label: "Codex",
@@ -277,6 +337,12 @@ export function createAdapter(config = {}) {
       const fileInfo = findSessionFile(sessionId);
       if (!fileInfo) return null;
       return await parseSessionFile(fileInfo);
+    },
+
+    async inspectSession(sessionId, options = {}) {
+      const fileInfo = findSessionFile(sessionId);
+      if (!fileInfo) return null;
+      return await inspectSessionFile(fileInfo, options.limit || 6);
     },
   };
 }
