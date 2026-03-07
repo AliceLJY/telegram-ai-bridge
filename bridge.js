@@ -233,6 +233,11 @@ function buildResumeHint(backend, sessionId, cwdHint = "") {
   return "";
 }
 
+function formatSessionIdShort(sessionId, length = 8) {
+  if (!sessionId) return "";
+  return sessionId.length > length ? `${sessionId.slice(0, length)}...` : sessionId;
+}
+
 function buildSessionButtonLabel(sessionMeta, backend, isCurrent) {
   const icon = backend === "codex" ? "🟢" : backend === "gemini" ? "🔵" : "🟣";
   const time = new Date(sessionMeta.last_active).toISOString().slice(5, 16).replace("T", " ");
@@ -242,6 +247,12 @@ function buildSessionButtonLabel(sessionMeta, backend, isCurrent) {
   const parts = [icon, source, project || "(unknown)", time, topic].filter(Boolean);
   const mark = isCurrent ? " ✦" : "";
   return `${parts.join(" · ").slice(0, 55)}${mark}`;
+}
+
+function formatPreviewRole(role) {
+  if (role === "assistant") return "A";
+  if (role === "user") return "U";
+  return "?";
 }
 
 function sortSessionsForDisplay(sessions, current, currentProject) {
@@ -637,6 +648,44 @@ bot.command("resume", async (ctx) => {
   );
 });
 
+// ── /peek 命令：只读查看指定 session 内容，不切换当前会话 ──
+bot.command("peek", async (ctx) => {
+  const sessionId = ctx.match?.trim();
+  if (!sessionId) {
+    await ctx.reply("用法: /peek <session-id>\n只读查看该会话的最近片段，不会切换当前会话。");
+    return;
+  }
+
+  const adapter = getAdapter(ctx.chat.id);
+  if (!adapter.inspectSession) {
+    await ctx.reply(`${adapter.icon} 当前后端不支持会话只读预览。`);
+    return;
+  }
+
+  const sessionInfo = await adapter.inspectSession(sessionId, { limit: 6 });
+  if (!sessionInfo) {
+    await ctx.reply(`未找到会话: ${sessionId}`);
+    return;
+  }
+
+  const project = getSessionProjectLabel(sessionInfo);
+  const source = getSessionSourceLabel(sessionInfo);
+  const previewLines = (sessionInfo.preview_messages || []).map(
+    (msg) => `${formatPreviewRole(msg.role)}: ${msg.text}`,
+  );
+  const previewText = previewLines.length
+    ? previewLines.join("\n")
+    : "(没有解析到可展示的消息片段)";
+
+  await sendLong(
+    ctx,
+    `${adapter.icon} 只读预览 ${sessionId}\n` +
+      `${project ? `项目: ${project}${source ? ` ${source}` : ""}\n` : ""}` +
+      `说明: 这只会把旧会话内容展示到当前 chat，不会切换当前会话。\n\n` +
+      `最近片段:\n${previewText}`,
+  );
+});
+
 // ── /sessions 命令：默认只显示当前 chat 自己的会话，`all` 才展示外部扫描结果 ──
 bot.command("sessions", async (ctx) => {
   try {
@@ -689,7 +738,9 @@ bot.command("sessions", async (ctx) => {
       10,
     );
     const externalLines = externalSessions.map(
-      (session) => `- ${buildSessionButtonLabel(session, session.backend || backendName, false)}`,
+      (session) =>
+        `- ${buildSessionButtonLabel(session, session.backend || backendName, false)}\n` +
+        `  id: ${session.session_id}`,
     );
 
     const sections = [];
@@ -700,7 +751,8 @@ bot.command("sessions", async (ctx) => {
     }
     if (externalLines.length) {
       sections.push(
-        "外部本机会话（仅展示，不可直接恢复）：\n" + externalLines.join("\n"),
+        "外部本机会话（仅展示，不可直接恢复；可用 /peek <id> 只读查看）：\n" +
+          externalLines.join("\n"),
       );
     } else {
       sections.push("没有额外扫描到外部本机会话。");
