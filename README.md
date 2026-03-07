@@ -142,6 +142,7 @@ If you run this in Docker, mount the provider-specific credential directories th
 | `/new` | Reset the current chat session |
 | `/sessions` | List resumable sessions created by the current chat |
 | `/sessions all` | Show current-chat sessions plus external local sessions as non-resumable references |
+| `/peek <session-id>` | Read-only preview of a session transcript without rebinding the current chat |
 | `/resume <session-id>` | Rebind Telegram to an owned session from the current chat |
 | `/status` | Show backend, model, cwd, and session |
 | `/verbose 0\|1\|2` | Set progress verbosity |
