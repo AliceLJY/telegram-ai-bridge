@@ -1,70 +1,89 @@
 # telegram-ai-bridge
 
-Three independent Telegram bots for three AI backends: Claude Code (Agent SDK), Codex (SDK), and Gemini (Code Assist API). Same codebase, separate instances, zero interference.
+**English** | [简体中文](README_CN.md)
 
-> 三个独立 Telegram Bot，三个 AI 后端 — Claude Agent SDK / Codex SDK / Gemini Code Assist API。同一套代码，各自运行，互不干扰。
+Three separate Telegram bots for three separate AI backends: Claude, Codex, and Gemini. The codebase is shared, but the backend capabilities are not equivalent.
 
-Each bot runs its own `bridge.js` process with a dedicated `.env` file, bot token, and SQLite database. One crashes, the others keep working.
+## Tested Environment
 
-## Recommended Setup
+- macOS
+- Bun
+- One Telegram bot token per backend
+- Claude local login already available
+- Codex local login already available
+- Gemini OAuth creds already present under `~/.gemini/`
+- Multi-instance LaunchAgent workflow tested on the author's own machine
 
-Use this bridge as the primary path for **Claude Code** and **Codex**.
-For **Gemini**, the recommended production setup is **[telegram-cli-bridge](https://github.com/AliceLJY/telegram-cli-bridge)**, because Gemini's Code Assist API here is chat-only and does not expose full CLI capabilities.
+## Compatibility Notes
 
-> 推荐用法：**Claude Code / Codex** 优先用本仓库；**Gemini** 优先用 [telegram-cli-bridge](https://github.com/AliceLJY/telegram-cli-bridge)，因为这里的 Gemini 只是 Code Assist 对话接口，不是完整 CLI。
+- This project is tested in the author's own macOS multi-bot setup.
+- The helper start scripts include the author's own absolute paths and must be adapted by other users.
+- Backend capabilities differ by provider.
+- Gemini in this repository is API chat mode, not full CLI mode.
+- The bridge is owner-only by design and expects a valid `OWNER_TELEGRAM_ID`.
+
+## Backend Differences
+
+The three backends do not expose the same capability surface:
+
+| Backend | Implementation in this repo | Session source | Local tool / file capability |
+|---------|-----------------------------|----------------|------------------------------|
+| Claude | Agent SDK via [`adapters/claude.js`](adapters/claude.js) | `~/.claude/projects/` | Yes, through the local Claude Code tool model |
+| Codex | Codex SDK via [`adapters/codex.js`](adapters/codex.js) | `~/.codex/sessions/` | Yes, with resumable local Codex sessions |
+| Gemini | Code Assist API via [`adapters/gemini.js`](adapters/gemini.js) | In-memory API session plus `~/.gemini/oauth_creds.json` auth | No equivalent local CLI file or command control in this repo |
+
+Important consequence:
+
+- Claude is the strongest local-tool backend here.
+- Codex can resume local sessions and is close to terminal workflow parity.
+- Gemini here is not Gemini CLI. It is Code Assist API chat mode, so local file and command capabilities are not equivalent.
+
+If you want Gemini with fuller CLI-style behavior, use [telegram-cli-bridge](https://github.com/AliceLJY/telegram-cli-bridge).
+
+## Local Assumptions
+
+- `CC_CWD` defaults to `$HOME`
+- Session discovery reads provider-specific local directories
+- SQLite session DB is local and per instance
+- `SESSIONS_DB` controls the local SQLite file path
+- Claude session discovery reads `~/.claude/`
+- Codex session discovery reads `~/.codex/`
+- Gemini auth expects `~/.gemini/oauth_creds.json`
+- Start scripts are machine-specific examples, not universal scripts
+
+## Known Limits
+
+- This project is designed around local credentials already being present on the machine.
+- SQLite session state is local to each instance, not a shared remote session service.
+- Backend behavior differs enough that a single “same bot, different model” mental model is misleading.
+- Gemini here cannot be documented as a drop-in replacement for local CLI execution.
+- The bundled `start-codex.sh` and `start-gemini.sh` scripts are machine-specific examples with hardcoded paths.
 
 ## Architecture
 
+```text
+Telegram Bot A (.env)        -> bridge.js -> Claude adapter -> Agent SDK
+Telegram Bot B (.env.codex)  -> bridge.js -> Codex adapter  -> Codex SDK
+Telegram Bot C (.env.gemini) -> bridge.js -> Gemini adapter -> Code Assist API
+                                      |
+                               SQLite (per-instance DB)
 ```
-Telegram Bot 1 (.env)        → bridge.js → Claude adapter  → Agent SDK    → Claude Code
-Telegram Bot 2 (.env.codex)  → bridge.js → Codex adapter   → Codex SDK    → Codex CLI
-Telegram Bot 3 (.env.gemini) → bridge.js → Gemini adapter  → Code Assist  → Gemini
-                                   ↕
-                              SQLite (per-instance DB)
-```
 
-Each instance is a separate process managed by its own macOS LaunchAgent:
+Each instance is a separate `bridge.js` process with:
 
-| Instance | LaunchAgent | Env File | Sessions DB |
-|----------|-------------|----------|-------------|
-| Claude | `com.telegram-ai-bridge` | `.env` | `sessions.db` |
-| Codex | `com.telegram-ai-bridge-codex` | `.env.codex` | `sessions-codex.db` |
-| Gemini | `com.telegram-gemini-bridge` | `.env.gemini` | `sessions-gemini.db` |
-
-## Features
-
-- **Three independent bots** — each backend has its own Telegram bot, no switching needed
-- **Unified adapter interface** — same `bridge.js`, different config, consistent behavior
-- **SQLite sessions** — survive restarts, per-instance isolation (bun:sqlite, WAL mode)
-- **Terminal resume** — `claude --resume <id>` / `codex resume <id>` picks up where Telegram left off
-- **Real-time progress** — see which tools the AI is using as it works
-- **Verbose levels** — `/verbose 0|1|2` for progress detail control
-- **Session management** — `/sessions` to list, `/resume <id>` to bind an existing conversation
-- **Session metadata** — `/sessions` and `/status` show project/cwd and source hints when available
-- **Project-first session list** — `/sessions` keeps current session first and prioritizes sessions from the current project
-- **Group context** — shared message context in Telegram groups
-- **Quick replies** — inline buttons for yes/no questions
-- **File handling** — photos, documents, voice messages
-
-> 三独立 bot、统一适配器、SQLite 隔离、终端互通（核心）、verbose 三级、群聊上下文。
-
-### Gemini Limitations
-
-The Gemini backend uses **Google Code Assist API** (`cloudcode-pa.googleapis.com`), NOT the Gemini CLI SDK:
-
-- **Chat only** — cannot read/write local files, cannot execute commands
-- **No terminal resume** — sessions are API-based, not persisted to Gemini CLI
-
-If you need Gemini with **full CLI capabilities** (file access, command execution, tool use), use **[telegram-cli-bridge](https://github.com/AliceLJY/telegram-cli-bridge)** instead — it routes through task-api to Gemini CLI.
-
-> Gemini 后端走的是 Code Assist API（纯聊天），不能操作本地文件。需要 Gemini 完整 CLI 能力请用 [telegram-cli-bridge](https://github.com/AliceLJY/telegram-cli-bridge)。
+- its own `.env` file
+- its own Telegram bot token
+- its own `SESSIONS_DB`
+- its own local backend credentials
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) runtime (bun:sqlite used for session persistence)
-- Claude Code CLI installed (`claude` command available)
-- Codex CLI installed (`codex` command available) — only needed for Codex instance
-- One Telegram bot token per backend (from [@BotFather](https://t.me/BotFather))
+- Bun runtime
+- One Telegram bot token per backend
+- A valid `OWNER_TELEGRAM_ID`
+- Claude Code local login for the Claude instance
+- Codex local login for the Codex instance
+- Gemini OAuth credentials for the Gemini instance
 
 ## Setup
 
@@ -74,250 +93,75 @@ cd telegram-ai-bridge
 bun install
 ```
 
-### Configure each instance
-
-Create one `.env` file per backend. Each needs its **own bot token**:
+Create one env file per backend:
 
 ```bash
-cp .env.example .env          # Claude instance
-cp .env.example .env.codex    # Codex instance
-cp .env.example .env.gemini   # Gemini instance
+cp .env.example .env
+cp .env.example .env.codex
+cp .env.example .env.gemini
 ```
 
-**Claude** (`.env`):
+Recommended variables:
+
 ```env
-TELEGRAM_BOT_TOKEN=<claude-bot-token>
-OWNER_TELEGRAM_ID=<your-id>
+TELEGRAM_BOT_TOKEN=<bot-token>
+OWNER_TELEGRAM_ID=<your-telegram-id>
 DEFAULT_BACKEND=claude
-CC_MODEL=claude-sonnet-4-6
 CC_CWD=/Users/you
-CC_PERMISSION_MODE=default
+SESSIONS_DB=sessions.db
 ```
 
-**Codex** (`.env.codex`):
-```env
-TELEGRAM_BOT_TOKEN=<codex-bot-token>
-OWNER_TELEGRAM_ID=<your-id>
-DEFAULT_BACKEND=codex
-CODEX_MODEL=
-CC_CWD=/Users/you
-SESSIONS_DB=sessions-codex.db
-```
+Backend-specific reality:
 
-**Gemini** (`.env.gemini`):
-```env
-TELEGRAM_BOT_TOKEN=<gemini-bot-token>
-OWNER_TELEGRAM_ID=<your-id>
-DEFAULT_BACKEND=gemini
-GEMINI_MODEL=gemini-2.5-pro
-CC_CWD=/Users/you
-SESSIONS_DB=sessions-gemini.db
-GEMINI_OAUTH_CLIENT_ID=<your-client-id>
-GEMINI_OAUTH_CLIENT_SECRET=<your-client-secret>
-```
-
-### Environment Variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Yes | — | Bot token from BotFather (unique per instance) |
-| `OWNER_TELEGRAM_ID` | Yes | — | Your Telegram user ID (owner only) |
-| `HTTPS_PROXY` | No | — | Proxy for Telegram API (for blocked regions) |
-| `DEFAULT_BACKEND` | No | `claude` | Which backend this instance uses: `claude`, `codex`, or `gemini` |
-| `SESSIONS_DB` | No | `sessions.db` | SQLite DB filename (use different names per instance) |
-| `CC_MODEL` | No | `claude-sonnet-4-6` | Claude model to use |
-| `CC_CWD` | No | `$HOME` | Working directory for backends |
-| `CODEX_MODEL` | No | *(codex default)* | Codex model override |
-| `CC_PERMISSION_MODE` | No | `default` | Claude permission mode: `default` or `bypassPermissions` |
-| `DEFAULT_VERBOSE_LEVEL` | No | `1` | Default progress verbosity (0/1/2) |
-| `ENABLE_GROUP_SHARED_CONTEXT` | No | `true` | Enable group chat shared context |
-| `SESSION_TIMEOUT_MS` | No | `900000` | Session timeout in ms (default 15 min) |
-| `GEMINI_OAUTH_CLIENT_ID` | No | — | Gemini OAuth client ID |
-| `GEMINI_OAUTH_CLIENT_SECRET` | No | — | Gemini OAuth client secret |
-| `GEMINI_MODEL` | No | `gemini-2.5-pro` | Gemini model to use |
+- Claude expects local Claude state under `~/.claude/`
+- Codex expects local Codex state under `~/.codex/`
+- Gemini expects `~/.gemini/oauth_creds.json` and the OAuth client variables used by `adapters/gemini.js`
 
 ## Running
 
 ### Direct
 
 ```bash
-# Claude instance (reads .env by default)
 bun bridge.js
-
-# Codex instance
-./start-codex.sh    # sources .env.codex, then runs bridge.js
-
-# Gemini instance
-./start-gemini.sh   # sources .env.gemini, then runs bridge.js
+./start-codex.sh
+./start-gemini.sh
 ```
 
-### macOS LaunchAgent (recommended)
+### LaunchAgent workflow
 
-Each instance gets its own LaunchAgent for auto-start + crash recovery:
-
-> macOS 推荐 LaunchAgent 守护，开机自启 + 崩溃重启。每个实例一个 plist。
-
-**Claude** — `~/Library/LaunchAgents/com.telegram-ai-bridge.plist`:
-```xml
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.telegram-ai-bridge</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/path/to/bun</string>
-        <string>/path/to/telegram-ai-bridge/bridge.js</string>
-    </array>
-    <key>WorkingDirectory</key>
-    <string>/path/to/telegram-ai-bridge</string>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-</dict>
-</plist>
-```
-
-**Codex** — `~/Library/LaunchAgents/com.telegram-ai-bridge-codex.plist`:
-```xml
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.telegram-ai-bridge-codex</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/path/to/start-codex.sh</string>
-    </array>
-    <key>WorkingDirectory</key>
-    <string>/path/to/telegram-ai-bridge</string>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-</dict>
-</plist>
-```
-
-Same pattern for Gemini with `start-gemini.sh`.
+The production-tested path on the author's machine is one macOS LaunchAgent per backend instance.
 
 ### Docker
 
-```bash
-docker build -t telegram-ai-bridge .
-docker run -d --name tg-claude \
-  --env-file .env \
-  -v ~/.claude:/root/.claude \
-  telegram-ai-bridge
-```
-
-> Mount the credential directory for the specific backend. Claude needs `~/.claude`, Codex needs `~/.codex`, Gemini needs `~/.gemini`.
+If you run this in Docker, mount the provider-specific credential directories that your chosen backend actually needs.
 
 ## Commands
 
-Available in each bot's chat:
-
 | Command | Description |
 |---------|-------------|
-| `/new` | Reset session, start fresh |
-| `/sessions` | List recent sessions, tap to restore |
-| `/resume <session-id>` | Manually bind Telegram to an existing Claude/Codex session |
-| `/status` | Show current backend, model, cwd, session |
-| `/verbose 0\|1\|2` | Set progress verbosity level |
+| `/new` | Reset the current chat session |
+| `/sessions` | List recent sessions |
+| `/resume <session-id>` | Bind Telegram to an existing session |
+| `/status` | Show backend, model, cwd, and session |
+| `/verbose 0\|1\|2` | Set progress verbosity |
 
-## Terminal Resume
+## Session Storage
 
-The core feature: chat in Telegram, continue in your terminal.
+[`sessions.js`](sessions.js) stores chat binding state in SQLite using `bun:sqlite`.
 
-```bash
-# After chatting with Claude bot:
-claude --resume <session-id>
+- The DB filename comes from `SESSIONS_DB`
+- Relative DB paths resolve inside this repository
+- Each instance should use its own DB file
+- Session persistence is local, not remote
 
-# After chatting with Codex bot:
-codex resume <thread-id>
-```
+## Machine-Specific Scripts
 
-Session IDs are shown in `/status` and `/sessions`. If you started the session in terminal first, bind Telegram manually with `/resume <session-id>`. Both SDKs store sessions locally (`~/.claude/` and `~/.codex/sessions/`), so terminal/TG handoff is explicit and predictable.
-
-For Codex sessions, the bridge also surfaces lightweight source hints from local session metadata:
-
-- `CLI` — started from the interactive Codex CLI
-- `SDK` — started through the SDK bridge path
-- `Exec` — persisted by Codex exec-style runs where CLI provenance is not explicit
-
-> 核心能力：Telegram 聊到一半，终端 `--resume` 接着干。
-
-## Sending Files
-
-| Type | Support | Handling |
-|------|---------|----------|
-| Photos | Yes | AI reads images (multimodal) |
-| PDF / text / code | Yes | AI reads file content |
-| Voice | Yes | AI processes audio |
-| Video | No | Send screenshot instead |
-
-## Adapter Interface
-
-Each backend implements the same interface — adding a new backend means writing one adapter file:
-
-```javascript
-// adapters/interface.js
-{
-  name: "claude" | "codex" | "gemini",
-  label: "CC" | "Codex" | "Gemini",
-  icon: "🟣" | "🟢" | "🔵",
-
-  async *streamQuery(prompt, sessionId, abortSignal) {
-    yield { type: "session_init", sessionId }
-    yield { type: "progress", toolName, detail }
-    yield { type: "text", text }
-    yield { type: "result", success, text, cost?, duration? }
-  },
-
-  statusInfo() { return { model, cwd, mode } }
-}
-```
-
-Adding a new backend = writing one adapter file. The bridge doesn't need to change.
-
-## Ecosystem
-
-Part of a personal AI infrastructure. Each project handles one layer.
-
-> 个人 AI 基础设施的一部分。每个项目负责一层。
-
-| Project | Layer | What it does |
-|---------|-------|-------------|
-| **[telegram-ai-bridge](https://github.com/AliceLJY/telegram-ai-bridge)** | Frontend | *This project.* 3 Telegram bots for CC / Codex / Gemini via SDK |
-| **[telegram-cli-bridge](https://github.com/AliceLJY/telegram-cli-bridge)** | Frontend | Telegram → CC / Codex / Gemini via task-api (all backends get full CLI) |
-| **[openclaw-worker](https://github.com/AliceLJY/openclaw-worker)** | Backend | Task queue + CC/Codex/Gemini Worker |
-| **[openclaw-cli-bridge](https://github.com/AliceLJY/openclaw-cli-bridge)** | Frontend | Discord → CC/Codex/Gemini via OpenClaw Bot plugin |
-| **[content-alchemy](https://github.com/AliceLJY/content-alchemy)** | Skill | 5-stage content pipeline: Research → Writing |
-| **[content-publisher](https://github.com/AliceLJY/content-publisher)** | Skill | Image → Layout → WeChat Publishing |
-| **[digital-clone-skill](https://github.com/AliceLJY/digital-clone-skill)** | Skill | 6-stage digital clone from corpus data |
-| **[local-memory](https://github.com/AliceLJY/local-memory)** | Utility | Local AI conversation search (LanceDB + Jina) |
-| **[cc-shell](https://github.com/AliceLJY/cc-shell)** | UI | Lightweight Claude Code chat UI |
-
-> All projects are MIT licensed and built by one person with zero programming background — proof that AI tools can genuinely empower non-developers.
->
-> 所有项目 MIT 开源，一个零编程基础的人独立搭建。
+[`start-codex.sh`](start-codex.sh) and [`start-gemini.sh`](start-gemini.sh) contain the author's own absolute paths such as `/Users/anxianjingya/...` and a fixed Bun path. Treat them as personal examples, not portable startup scripts.
 
 ## Author
 
-**小试AI** — WeChat Public Account「我的AI小木屋」
-
-Not a developer. Medical background, works in cultural administration, self-taught AI the hard way. Writes about AI hands-on experience, real-world pitfalls, and the human side of technology.
-
-> 医学出身，文化口工作，AI 野路子。公众号记录 AI 实操、踩坑、人文思考。
-
-<img src="./assets/wechat_qr.jpg" width="200" alt="WeChat QR Code">
-
-## AI Contributors
-
-- **Claude Code** — architecture iteration, bridge logic, adapter integration
-- **Codex** — session resume improvements, metadata parsing, UX polish for Telegram handoff
-
-> AI 协作贡献：Claude Code 参与架构与适配器迭代，Codex 参与会话接续、元数据解析与 TG 接力体验优化。
+Built by **小试AI** ([@AliceLJY](https://github.com/AliceLJY)).
 
 ## License
 
-[MIT](LICENSE)
+MIT
