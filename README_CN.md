@@ -256,6 +256,39 @@ bun run check --backend claude
 
 它会校验当前后端配置、必要路径，并在本地 CLI 登录状态缺失时给出 warning。
 
+## macOS 的 launchd 常驻运行
+
+先生成 LaunchAgent plist：
+
+```bash
+./scripts/install-launch-agent.sh --backend claude
+```
+
+直接写入并加载：
+
+```bash
+./scripts/install-launch-agent.sh --backend claude --install
+./scripts/install-launch-agent.sh --backend codex --install
+```
+
+这个 launchd 包装层会先执行 `bun run check --backend <name>`，再执行 `bun run start`，这样配置坏掉时会直接失败，不会静默重启循环。
+
+如果日志里出现 `409 Conflict: terminated by other getUpdates request`，说明还有另一条进程在轮询同一个 Telegram bot token，需要先把重复实例停掉。
+
+默认 label：
+
+- `claude` → `com.telegram-ai-bridge`
+- `codex` → `com.telegram-ai-bridge-codex`
+- `gemini` → `com.telegram-ai-bridge-gemini`
+
+查看或重启已加载实例：
+
+```bash
+launchctl print gui/$(id -u)/com.telegram-ai-bridge
+launchctl kickstart -k gui/$(id -u)/com.telegram-ai-bridge
+tail -f bridge.log
+```
+
 ## Telegram 命令
 
 | 命令 | 说明 |
@@ -317,10 +350,15 @@ docker run -d \
 
 如果改成 `codex`，替换挂载目录和 `--backend` 即可。`gemini` 仅建议在你明确要开启兼容模式时使用。
 
+仓库里也附带了 `docker-compose.example.yml`。如果你要持久化 SQLite，记得把 `config.json` 里的 `sessionsDb` 和 `tasksDb` 指到 `./data` 目录下。
+
 ## 项目结构
 
 - `start.js` — `start` / `bootstrap` / `check` / `setup` / `config` CLI 入口
 - `config.js` — 配置加载、setup wizard、旧 `.env` 兼容层
+- `launchd/` — macOS LaunchAgent 模板
+- `scripts/` — launchd 安装脚本与运行包装器
+- `docker-compose.example.yml` — 自托管部署的 Compose 起步模板
 - `bridge.js` — Telegram bot 运行时
 - `sessions.js` — SQLite 会话持久化
 - `adapters/` — 后端接入层
@@ -341,7 +379,7 @@ GitHub Actions 会在每次 push 和 pull request 上运行同一套测试。
 - [x] 单命令启动后端
 - [x] 交互式 setup wizard
 - [x] 更清晰的用户文档
-- [ ] 更完整的 LaunchAgent 模板
+- [x] 更完整的 LaunchAgent 模板
 - [ ] VPS / Docker / macOS 部署示例
 - [ ] 更好的截图或 GIF 演示
 
