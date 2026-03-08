@@ -2,6 +2,7 @@ node_modules/
 .env
 .env.codex
 .env.gemini
+config.json
 files/
 sessions.db
 sessions-codex.db

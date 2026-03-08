@@ -34,7 +34,7 @@ export function createAdapter(config = {}) {
 
     if (!OAUTH_CLIENT_ID || !OAUTH_CLIENT_SECRET) {
       throw new Error(
-        "请在 .env.gemini 中设置 GEMINI_OAUTH_CLIENT_ID 和 GEMINI_OAUTH_CLIENT_SECRET"
+        "请在 config.json 或环境变量中设置 GEMINI_OAUTH_CLIENT_ID 和 GEMINI_OAUTH_CLIENT_SECRET"
       );
     }
 
