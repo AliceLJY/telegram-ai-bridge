@@ -1,11 +1,14 @@
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { resolve, dirname, join, isAbsolute } from "path";
 import { createInterface } from "readline/promises";
 import { stdin as input, stdout as output } from "process";
 
 const REPO_DIR = import.meta.dir;
 const DEFAULT_CONFIG_PATH = join(REPO_DIR, "config.json");
-const AVAILABLE_BACKENDS = ["claude", "codex", "gemini"];
+const DEFAULT_PLACEHOLDER_TELEGRAM_TOKEN = "123456:replace-me";
+export const AVAILABLE_BACKENDS = ["claude", "codex", "gemini"];
+export const AVAILABLE_EXECUTORS = ["direct", "local-agent"];
+export const CLAUDE_PERMISSION_MODES = ["default", "bypassPermissions"];
 const BACKEND_PROFILES = {
   claude: {
     label: "Claude",
@@ -24,11 +27,115 @@ const BACKEND_PROFILES = {
   },
 };
 
+function homeDir() {
+  return process.env.HOME || REPO_DIR;
+}
+
+function isNonEmptyString(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function pushIssue(issues, path, message) {
+  issues.push({ path, message });
+}
+
+function parseInteger(value) {
+  if (typeof value === "number" && Number.isInteger(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isInteger(parsed)) return parsed;
+  }
+  return null;
+}
+
+function isPositiveInteger(value) {
+  const parsed = parseInteger(value);
+  return parsed != null && parsed > 0;
+}
+
+function looksLikeTelegramUserId(value) {
+  return /^\d+$/.test(String(value ?? "").trim());
+}
+
+function looksLikeTelegramBotToken(value) {
+  const token = String(value ?? "").trim();
+  if (!token || /\s/.test(token)) return false;
+  if (/replace-me|botfather/i.test(token)) return false;
+  return /^\d{6,}:[A-Za-z0-9_-]{10,}$/.test(token);
+}
+
+function getBackendCredentialWarning(backend) {
+  if (backend === "claude") {
+    return {
+      path: join(homeDir(), ".claude"),
+      message: "Claude backend expects local login state under ~/.claude.",
+    };
+  }
+  if (backend === "codex") {
+    return {
+      path: join(homeDir(), ".codex"),
+      message: "Codex backend expects local login state under ~/.codex.",
+    };
+  }
+  return {
+    path: join(homeDir(), ".gemini", "oauth_creds.json"),
+    message: "Gemini backend expects oauth_creds.json under ~/.gemini.",
+  };
+}
+
+function ensureExistingDirectory(issues, pathLabel, targetPath) {
+  if (!isNonEmptyString(targetPath)) {
+    pushIssue(issues, pathLabel, "must be set.");
+    return;
+  }
+
+  const resolvedPath = resolve(targetPath);
+  if (!existsSync(resolvedPath)) {
+    pushIssue(issues, pathLabel, `directory does not exist: ${resolvedPath}`);
+    return;
+  }
+
+  try {
+    if (!statSync(resolvedPath).isDirectory()) {
+      pushIssue(issues, pathLabel, `must point to a directory: ${resolvedPath}`);
+    }
+  } catch {
+    pushIssue(issues, pathLabel, `could not inspect directory: ${resolvedPath}`);
+  }
+}
+
+function ensureParentDirectoryExists(issues, pathLabel, targetPath) {
+  if (!isNonEmptyString(targetPath)) {
+    pushIssue(issues, pathLabel, "must be set.");
+    return;
+  }
+
+  const parentDir = dirname(resolve(targetPath));
+  if (!existsSync(parentDir)) {
+    pushIssue(issues, pathLabel, `parent directory does not exist: ${parentDir}`);
+    return;
+  }
+
+  try {
+    if (!statSync(parentDir).isDirectory()) {
+      pushIssue(issues, pathLabel, `parent path is not a directory: ${parentDir}`);
+    }
+  } catch {
+    pushIssue(issues, pathLabel, `could not inspect parent directory: ${parentDir}`);
+  }
+}
+
+function validatePositiveIntegerField(issues, path, value) {
+  if (!isPositiveInteger(value)) {
+    pushIssue(issues, path, "must be a positive integer.");
+  }
+}
+
 export function createDefaultConfig() {
   return {
     shared: {
       ownerTelegramId: "",
-      cwd: process.env.HOME || REPO_DIR,
+      cwd: homeDir(),
       httpProxy: "",
       defaultVerboseLevel: 1,
       executor: "direct",
@@ -65,6 +172,26 @@ export function createDefaultConfig() {
       },
     },
   };
+}
+
+export function createBootstrapConfig(backend = "claude") {
+  const selectedBackend = normalizeBackendName(backend);
+  const config = createDefaultConfig();
+
+  config.shared.ownerTelegramId = "123456789";
+  for (const name of AVAILABLE_BACKENDS) {
+    config.backends[name].enabled = name === selectedBackend;
+    if (name !== selectedBackend) {
+      config.backends[name].telegramBotToken = "";
+    }
+  }
+
+  if (config.backends[selectedBackend]) {
+    config.backends[selectedBackend].enabled = true;
+    config.backends[selectedBackend].telegramBotToken = DEFAULT_PLACEHOLDER_TELEGRAM_TOKEN;
+  }
+
+  return config;
 }
 
 function mergeConfig(base, patch) {
@@ -212,6 +339,278 @@ function buildEnvFromConfig(config, backend, configPath) {
   return env;
 }
 
+export function validateConfig(config, options = {}) {
+  const issues = [];
+  const selectedBackend = normalizeBackendName(options.backend);
+  const shared = config?.shared;
+
+  if (!shared || typeof shared !== "object") {
+    pushIssue(issues, "shared", "is required.");
+    return issues;
+  }
+
+  if (!looksLikeTelegramUserId(shared.ownerTelegramId)) {
+    pushIssue(issues, "shared.ownerTelegramId", "must be a numeric Telegram user ID.");
+  }
+  if (!isNonEmptyString(shared.cwd)) {
+    pushIssue(issues, "shared.cwd", "must be set.");
+  }
+  if (!Number.isInteger(shared.defaultVerboseLevel) || shared.defaultVerboseLevel < 0 || shared.defaultVerboseLevel > 2) {
+    pushIssue(issues, "shared.defaultVerboseLevel", "must be an integer between 0 and 2.");
+  }
+  if (!AVAILABLE_EXECUTORS.includes(String(shared.executor || "").trim().toLowerCase())) {
+    pushIssue(
+      issues,
+      "shared.executor",
+      `must be one of: ${AVAILABLE_EXECUTORS.join(", ")}.`,
+    );
+  }
+  if (!isNonEmptyString(shared.tasksDb)) {
+    pushIssue(issues, "shared.tasksDb", "must be set.");
+  }
+  if (typeof shared.enableGroupSharedContext !== "boolean") {
+    pushIssue(issues, "shared.enableGroupSharedContext", "must be true or false.");
+  }
+  validatePositiveIntegerField(issues, "shared.groupContextMaxMessages", shared.groupContextMaxMessages);
+  validatePositiveIntegerField(issues, "shared.groupContextMaxTokens", shared.groupContextMaxTokens);
+  validatePositiveIntegerField(issues, "shared.groupContextTtlMs", shared.groupContextTtlMs);
+  validatePositiveIntegerField(issues, "shared.triggerDedupTtlMs", shared.triggerDedupTtlMs);
+  validatePositiveIntegerField(issues, "shared.sessionTimeoutMs", shared.sessionTimeoutMs);
+
+  const backends = config?.backends;
+  if (!backends || typeof backends !== "object") {
+    pushIssue(issues, "backends", "is required.");
+    return issues;
+  }
+
+  const targets = selectedBackend && AVAILABLE_BACKENDS.includes(selectedBackend)
+    ? [selectedBackend]
+    : AVAILABLE_BACKENDS.filter((name) => backends[name]?.enabled);
+
+  if (!targets.length) {
+    pushIssue(issues, "backends", "at least one backend must be enabled.");
+  }
+
+  for (const backend of targets) {
+    const backendConfig = backends[backend];
+    if (!backendConfig || typeof backendConfig !== "object") {
+      pushIssue(issues, `backends.${backend}`, "is required.");
+      continue;
+    }
+    if (backendConfig.enabled === false) {
+      pushIssue(issues, `backends.${backend}.enabled`, "must be true for the selected backend.");
+      continue;
+    }
+    if (typeof backendConfig.enabled !== "boolean") {
+      pushIssue(issues, `backends.${backend}.enabled`, "must be true or false.");
+    }
+    if (!looksLikeTelegramBotToken(backendConfig.telegramBotToken)) {
+      pushIssue(
+        issues,
+        `backends.${backend}.telegramBotToken`,
+        "must be a real Telegram bot token, not an empty or placeholder value.",
+      );
+    }
+    if (!isNonEmptyString(backendConfig.sessionsDb)) {
+      pushIssue(issues, `backends.${backend}.sessionsDb`, "must be set.");
+    }
+
+    if (backend === "claude" && !CLAUDE_PERMISSION_MODES.includes(String(backendConfig.permissionMode || "").trim())) {
+      pushIssue(
+        issues,
+        "backends.claude.permissionMode",
+        `must be one of: ${CLAUDE_PERMISSION_MODES.join(", ")}.`,
+      );
+    }
+
+    if (backend === "gemini") {
+      if (!isNonEmptyString(backendConfig.oauthClientId)) {
+        pushIssue(issues, "backends.gemini.oauthClientId", "must be set when Gemini is enabled.");
+      }
+      if (!isNonEmptyString(backendConfig.oauthClientSecret)) {
+        pushIssue(issues, "backends.gemini.oauthClientSecret", "must be set when Gemini is enabled.");
+      }
+    }
+  }
+
+  const seenTokens = new Map();
+  for (const backend of AVAILABLE_BACKENDS) {
+    const token = String(backends[backend]?.telegramBotToken || "").trim();
+    if (backends[backend]?.enabled !== true || !token) continue;
+    if (seenTokens.has(token)) {
+      pushIssue(
+        issues,
+        `backends.${backend}.telegramBotToken`,
+        `duplicates the bot token used by ${seenTokens.get(token)}. Use one bot token per backend.`,
+      );
+    } else {
+      seenTokens.set(token, `backends.${backend}.telegramBotToken`);
+    }
+  }
+
+  return issues;
+}
+
+export function validateResolvedEnv(env, options = {}) {
+  const issues = [];
+  const selectedBackend = normalizeBackendName(options.backend || env.DEFAULT_BACKEND);
+  const effectiveCwd = isNonEmptyString(env.CC_CWD) ? env.CC_CWD : homeDir();
+
+  if (!AVAILABLE_BACKENDS.includes(selectedBackend)) {
+    pushIssue(issues, "DEFAULT_BACKEND", `must be one of: ${AVAILABLE_BACKENDS.join(", ")}.`);
+  }
+  if (!looksLikeTelegramUserId(env.OWNER_TELEGRAM_ID)) {
+    pushIssue(issues, "OWNER_TELEGRAM_ID", "must be a numeric Telegram user ID.");
+  }
+  if (!looksLikeTelegramBotToken(env.TELEGRAM_BOT_TOKEN)) {
+    pushIssue(issues, "TELEGRAM_BOT_TOKEN", "must be a real Telegram bot token, not an empty or placeholder value.");
+  }
+
+  ensureExistingDirectory(issues, "CC_CWD", effectiveCwd);
+  if (isNonEmptyString(env.SESSIONS_DB)) {
+    ensureParentDirectoryExists(issues, "SESSIONS_DB", env.SESSIONS_DB);
+  }
+  if (isNonEmptyString(env.TASKS_DB)) {
+    ensureParentDirectoryExists(issues, "TASKS_DB", env.TASKS_DB);
+  }
+
+  const verbose = parseInteger(env.DEFAULT_VERBOSE_LEVEL);
+  if (env.DEFAULT_VERBOSE_LEVEL != null && String(env.DEFAULT_VERBOSE_LEVEL).trim() !== "" && (verbose == null || verbose < 0 || verbose > 2)) {
+    pushIssue(issues, "DEFAULT_VERBOSE_LEVEL", "must be an integer between 0 and 2.");
+  }
+  if (isNonEmptyString(env.BRIDGE_EXECUTOR) && !AVAILABLE_EXECUTORS.includes(String(env.BRIDGE_EXECUTOR).trim().toLowerCase())) {
+    pushIssue(issues, "BRIDGE_EXECUTOR", `must be one of: ${AVAILABLE_EXECUTORS.join(", ")}.`);
+  }
+
+  const enabledBackends = String(env.ENABLED_BACKENDS || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  if (!enabledBackends.length) {
+    pushIssue(issues, "ENABLED_BACKENDS", "must contain at least one backend.");
+  } else if (!enabledBackends.every((value) => AVAILABLE_BACKENDS.includes(value))) {
+    pushIssue(issues, "ENABLED_BACKENDS", `must only contain: ${AVAILABLE_BACKENDS.join(", ")}.`);
+  } else if (!enabledBackends.includes(selectedBackend)) {
+    pushIssue(issues, "ENABLED_BACKENDS", `must include the selected backend: ${selectedBackend}.`);
+  }
+
+  if (isNonEmptyString(env.GROUP_CONTEXT_MAX_MESSAGES)) {
+    validatePositiveIntegerField(issues, "GROUP_CONTEXT_MAX_MESSAGES", env.GROUP_CONTEXT_MAX_MESSAGES);
+  }
+  if (isNonEmptyString(env.GROUP_CONTEXT_MAX_TOKENS)) {
+    validatePositiveIntegerField(issues, "GROUP_CONTEXT_MAX_TOKENS", env.GROUP_CONTEXT_MAX_TOKENS);
+  }
+  if (isNonEmptyString(env.GROUP_CONTEXT_TTL_MS)) {
+    validatePositiveIntegerField(issues, "GROUP_CONTEXT_TTL_MS", env.GROUP_CONTEXT_TTL_MS);
+  }
+  if (isNonEmptyString(env.TRIGGER_DEDUP_TTL_MS)) {
+    validatePositiveIntegerField(issues, "TRIGGER_DEDUP_TTL_MS", env.TRIGGER_DEDUP_TTL_MS);
+  }
+  if (isNonEmptyString(env.SESSION_TIMEOUT_MS)) {
+    validatePositiveIntegerField(issues, "SESSION_TIMEOUT_MS", env.SESSION_TIMEOUT_MS);
+  }
+
+  if (
+    selectedBackend === "claude"
+    && isNonEmptyString(env.CC_PERMISSION_MODE)
+    && !CLAUDE_PERMISSION_MODES.includes(String(env.CC_PERMISSION_MODE).trim())
+  ) {
+    pushIssue(issues, "CC_PERMISSION_MODE", `must be one of: ${CLAUDE_PERMISSION_MODES.join(", ")}.`);
+  }
+
+  if (selectedBackend === "gemini") {
+    if (!isNonEmptyString(env.GEMINI_OAUTH_CLIENT_ID)) {
+      pushIssue(issues, "GEMINI_OAUTH_CLIENT_ID", "must be set when Gemini is enabled.");
+    }
+    if (!isNonEmptyString(env.GEMINI_OAUTH_CLIENT_SECRET)) {
+      pushIssue(issues, "GEMINI_OAUTH_CLIENT_SECRET", "must be set when Gemini is enabled.");
+    }
+  }
+
+  return issues;
+}
+
+export function formatValidationIssues(issues, heading = "Invalid configuration") {
+  if (!issues.length) return heading;
+  return [
+    heading,
+    ...issues.map((issue, index) => `${index + 1}. ${issue.path}: ${issue.message}`),
+  ].join("\n");
+}
+
+export function inspectRuntime(runtime) {
+  const warnings = [];
+  const errors = validateResolvedEnv(runtime.env, { backend: runtime.backend });
+  const cwd = isNonEmptyString(runtime.env.CC_CWD) ? runtime.env.CC_CWD : homeDir();
+  const sessionsDb = isNonEmptyString(runtime.env.SESSIONS_DB)
+    ? runtime.env.SESSIONS_DB
+    : join(REPO_DIR, "sessions.db");
+  const tasksDb = isNonEmptyString(runtime.env.TASKS_DB)
+    ? runtime.env.TASKS_DB
+    : join(REPO_DIR, "tasks.db");
+
+  if (!runtime.config) {
+    warnings.push({
+      path: "source",
+      message: "Using legacy .env fallback. New installs should migrate to config.json.",
+    });
+  }
+
+  const credentialCheck = getBackendCredentialWarning(runtime.backend);
+  if (!existsSync(credentialCheck.path)) {
+    warnings.push({
+      path: credentialCheck.path,
+      message: credentialCheck.message,
+    });
+  }
+
+  return {
+    backend: runtime.backend,
+    source: runtime.source,
+    configPath: runtime.configPath,
+    cwd,
+    sessionsDb,
+    tasksDb,
+    errors,
+    warnings,
+  };
+}
+
+export function bootstrapWorkspace(options = {}) {
+  const selectedBackend = normalizeBackendName(options.backend || "claude");
+  if (!AVAILABLE_BACKENDS.includes(selectedBackend)) {
+    throw new Error(`Unsupported backend: ${selectedBackend}`);
+  }
+
+  const configPath = options.configPath ? resolve(options.configPath) : DEFAULT_CONFIG_PATH;
+  const filesDir = join(dirname(configPath), "files");
+  const alreadyExists = existsSync(configPath);
+
+  if (alreadyExists && !options.force) {
+    mkdirSync(filesDir, { recursive: true });
+    return {
+      created: false,
+      overwritten: false,
+      configPath,
+      filesDir,
+      backend: selectedBackend,
+    };
+  }
+
+  const config = createBootstrapConfig(selectedBackend);
+  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  mkdirSync(filesDir, { recursive: true });
+
+  return {
+    created: true,
+    overwritten: alreadyExists,
+    configPath,
+    filesDir,
+    backend: selectedBackend,
+    config,
+  };
+}
+
 export function resolveCliArgs(argv) {
   const args = argv.slice(2);
   let command = "start";
@@ -219,6 +618,7 @@ export function resolveCliArgs(argv) {
   let backendSpecified = false;
   let configPath = process.env.BRIDGE_CONFIG_PATH || DEFAULT_CONFIG_PATH;
   let help = false;
+  let force = false;
 
   if (args[0] && !args[0].startsWith("-")) {
     command = args.shift();
@@ -227,18 +627,32 @@ export function resolveCliArgs(argv) {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--backend" || arg === "-b") {
+      if (!args[index + 1]) {
+        throw new Error(`${arg} requires a backend name.`);
+      }
       backend = normalizeBackendName(args[index + 1]);
       backendSpecified = true;
       index += 1;
       continue;
     }
     if (arg === "--config" || arg === "-c") {
+      if (!args[index + 1]) {
+        throw new Error(`${arg} requires a file path.`);
+      }
       configPath = resolve(REPO_DIR, args[index + 1]);
       index += 1;
       continue;
     }
+    if (arg === "--force" || arg === "-f") {
+      force = true;
+      continue;
+    }
     if (arg === "--help" || arg === "-h") {
       help = true;
+      continue;
+    }
+    if (arg.startsWith("-")) {
+      throw new Error(`Unknown option: ${arg}`);
     }
   }
 
@@ -248,6 +662,7 @@ export function resolveCliArgs(argv) {
     backendSpecified,
     configPath: resolve(configPath),
     help,
+    force,
   };
 }
 
@@ -257,23 +672,38 @@ export function loadRuntimeConfig(options = {}) {
 
   if (existsSync(configPath)) {
     const config = parseJsonConfig(configPath);
-    return {
+    const configIssues = validateConfig(config, { backend, configPath });
+    if (configIssues.length) {
+      throw new Error(formatValidationIssues(configIssues, `Invalid config file: ${configPath}`));
+    }
+
+    const runtime = {
       backend,
       configPath,
       source: configPath.split("/").pop(),
       env: buildEnvFromConfig(config, backend, configPath),
       config,
     };
+    const runtimeIssues = validateResolvedEnv(runtime.env, { backend });
+    if (runtimeIssues.length) {
+      throw new Error(formatValidationIssues(runtimeIssues, `Invalid runtime configuration for backend "${backend}"`));
+    }
+    return runtime;
   }
 
   const legacy = loadLegacyEnv(REPO_DIR, backend);
-  return {
+  const runtime = {
     backend,
     configPath,
     source: legacy.source,
     env: legacy.env,
     config: null,
   };
+  const runtimeIssues = validateResolvedEnv(runtime.env, { backend });
+  if (runtimeIssues.length) {
+    throw new Error(formatValidationIssues(runtimeIssues, `Invalid runtime environment for backend "${backend}"`));
+  }
+  return runtime;
 }
 
 export function applyRuntimeEnv(env) {
@@ -407,6 +837,11 @@ export async function runSetupWizard(options = {}) {
     }
   } finally {
     rl.close();
+  }
+
+  const issues = validateConfig(config, { backend: backendOnly, configPath });
+  if (issues.length) {
+    throw new Error(formatValidationIssues(issues, "Setup aborted because the config is still incomplete"));
   }
 
   writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
