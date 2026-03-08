@@ -1,0 +1,17 @@
+services:
+  telegram-ai-bridge-claude:
+    build:
+      context: .
+    image: telegram-ai-bridge:local
+    restart: unless-stopped
+    command: ["--backend", "claude"]
+    environment:
+      BRIDGE_CONFIG_PATH: /app/config.json
+    volumes:
+      - ./config.json:/app/config.json:ro
+      - ./data:/app/data
+      - ${HOME}/.claude:/root/.claude
+
+# Notes:
+# - Set sessionsDb/tasksDb in config.json to paths under ./data for persistence.
+# - Run one service per backend, with a separate Telegram bot token for each backend.

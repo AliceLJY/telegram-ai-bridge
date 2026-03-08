@@ -256,6 +256,39 @@ bun run check --backend claude
 
 This validates the selected backend config, required paths, and warns if local CLI login state is missing.
 
+## launchd on macOS
+
+Generate a LaunchAgent plist:
+
+```bash
+./scripts/install-launch-agent.sh --backend claude
+```
+
+Install and load it immediately:
+
+```bash
+./scripts/install-launch-agent.sh --backend claude --install
+./scripts/install-launch-agent.sh --backend codex --install
+```
+
+The launchd wrapper runs `bun run check --backend <name>` before `bun run start`, so bad config fails fast instead of silently looping.
+
+If you see `409 Conflict: terminated by other getUpdates request`, another process is already polling the same Telegram bot token. Stop the duplicate instance first.
+
+Default labels:
+
+- `claude` → `com.telegram-ai-bridge`
+- `codex` → `com.telegram-ai-bridge-codex`
+- `gemini` → `com.telegram-ai-bridge-gemini`
+
+Inspect or restart a loaded agent:
+
+```bash
+launchctl print gui/$(id -u)/com.telegram-ai-bridge
+launchctl kickstart -k gui/$(id -u)/com.telegram-ai-bridge
+tail -f bridge.log
+```
+
 ## Development
 
 Run the test suite locally:
@@ -327,10 +360,15 @@ docker run -d \
 
 Swap the mounted credential directory and `--backend` flag for `codex`. Use `gemini` only if you intentionally want the compatibility backend.
 
+There is also a compose starter at `docker-compose.example.yml`. For persistent SQLite files, point `sessionsDb` and `tasksDb` at paths under `./data`.
+
 ## Project Structure
 
 - `start.js` — CLI entry for `start`, `bootstrap`, `check`, `setup`, and `config`
 - `config.js` — config loader, setup wizard, legacy env compatibility
+- `launchd/` — LaunchAgent template for macOS background deployment
+- `scripts/` — launchd install wrapper and runtime launcher
+- `docker-compose.example.yml` — starter Compose service for self-hosted deployment
 - `bridge.js` — Telegram bot runtime
 - `sessions.js` — SQLite session persistence
 - `adapters/` — backend integrations
@@ -341,7 +379,7 @@ Swap the mounted credential directory and `--backend` flag for `codex`. Use `gem
 - [x] one-command backend launch
 - [x] interactive setup wizard
 - [x] clearer user-facing README
-- [ ] polished LaunchAgent examples
+- [x] polished LaunchAgent examples
 - [ ] deployment recipes for VPS / Docker / macOS
 - [ ] better onboarding screenshots or demo GIF
 
