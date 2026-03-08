@@ -13,7 +13,7 @@ COPY . .
 RUN mkdir -p files
 
 # The bot uses Telegram polling — no ports to expose.
-# Configure via environment variables or mount .env file.
+# Configure via environment variables or mount config.json at runtime.
 #
 # Required volume mounts for each backend:
 #   Claude:  -v ~/.claude:/root/.claude
@@ -22,10 +22,9 @@ RUN mkdir -p files
 #
 # Example:
 #   docker run -d --name tg-ai-bridge \
-#     --env-file .env \
+#     -v $(pwd)/config.json:/app/config.json:ro \
 #     -v ~/.claude:/root/.claude \
-#     -v ~/.codex:/root/.codex \
-#     -v ~/.gemini:/root/.gemini \
-#     telegram-ai-bridge
+#     telegram-ai-bridge --backend claude
 
-CMD ["bun", "bridge.js"]
+ENTRYPOINT ["bun", "start.js", "start"]
+CMD ["--backend", "claude"]
