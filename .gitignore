@@ -1,8 +1,10 @@
 node_modules/
 .env
-.env.codex
-.env.gemini
+.env*
+!.env.example
+.DS_Store
 config.json
+.envgrep
 files/
 sessions.db
 sessions-codex.db
@@ -13,4 +15,7 @@ sessions-gemini.db-wal
 sessions-gemini.db-shm
 sessions.db-wal
 sessions.db-shm
+tasks*.db
+tasks*.db-wal
+tasks*.db-shm
 *.log
