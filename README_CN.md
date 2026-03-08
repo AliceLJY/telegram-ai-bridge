@@ -71,7 +71,9 @@
 ## 你能得到什么
 
 - 统一启动入口：`bun run start --backend <name>`
+- 初始化脚手架：`bun run bootstrap --backend <name>`
 - 交互式初始化向导：`bun run setup`
+- 内置配置和依赖自检：`bun run check --backend <name>`
 - 用 `config.json` 管理配置，不再到处散落硬编码路径
 - SQLite 持久化 session
 - 任务状态持久化，可跟踪审批和最近执行记录
@@ -79,6 +81,7 @@
 - 支持列出、预览、恢复会话和切换模型
 - 已抽象执行器层，支持 `direct` 和 `local-agent` 两种模式
 - Docker 也走同一套运行方式
+- 已补 Bun 测试，并接入 GitHub Actions CI
 - 兼容旧 `.env*` 配置，便于平滑迁移
 - 保留 Gemini 兼容入口，但产品主路径明确收敛到 Claude / Codex
 
@@ -88,8 +91,9 @@
 git clone https://github.com/AliceLJY/telegram-ai-bridge.git
 cd telegram-ai-bridge
 bun install
-cp config.example.json config.json
-bun run setup
+bun run bootstrap --backend claude
+bun run setup --backend claude
+bun run check --backend claude
 bun run start --backend claude
 ```
 
@@ -143,10 +147,11 @@ Telegram bot
 
 ### 推荐：`config.json`
 
-在仓库根目录创建 `config.json`：
+最快路径：
 
 ```bash
-bun run setup
+bun run bootstrap --backend claude
+bun run setup --backend claude
 ```
 
 向导会提示你填写：
@@ -158,6 +163,8 @@ bun run setup
 - 只有在你显式启用 Gemini 兼容后端时，才需要填 Gemini OAuth 配置
 
 可以先参考 `config.example.json`。
+
+`bootstrap` 会生成一个起步版 `config.json`，并创建本地 `files/` 目录。如果你更喜欢手动维护配置，也仍然可以直接复制 `config.example.json`。
 
 ### 示例配置
 
@@ -228,6 +235,7 @@ bun run start --backend gemini
 现有脚本只是统一入口的薄包装：
 
 ```bash
+./start-claude.sh
 ./start-codex.sh
 ./start-gemini.sh
 ```
@@ -239,6 +247,14 @@ bun run config --backend claude
 ```
 
 输出会自动隐藏敏感字段。
+
+启动前建议先跑一次本地自检：
+
+```bash
+bun run check --backend claude
+```
+
+它会校验当前后端配置、必要路径，并在本地 CLI 登录状态缺失时给出 warning。
 
 ## Telegram 命令
 
@@ -303,11 +319,21 @@ docker run -d \
 
 ## 项目结构
 
-- `start.js` — `start` / `setup` / `config` CLI 入口
+- `start.js` — `start` / `bootstrap` / `check` / `setup` / `config` CLI 入口
 - `config.js` — 配置加载、setup wizard、旧 `.env` 兼容层
 - `bridge.js` — Telegram bot 运行时
 - `sessions.js` — SQLite 会话持久化
 - `adapters/` — 后端接入层
+
+## 开发
+
+本地运行测试：
+
+```bash
+bun test
+```
+
+GitHub Actions 会在每次 push 和 pull request 上运行同一套测试。
 
 ## Roadmap
 
