@@ -1,11 +1,33 @@
 {
   "name": "telegram-ai-bridge",
   "version": "2.0.0",
-  "description": "Telegram → AI bridge (Claude Agent SDK + Codex SDK + Gemini Code Assist, tri-backend)",
+  "description": "Run one local AI coding agent behind one Telegram bot.",
   "type": "module",
   "main": "bridge.js",
+  "homepage": "https://github.com/AliceLJY/telegram-ai-bridge",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AliceLJY/telegram-ai-bridge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AliceLJY/telegram-ai-bridge/issues"
+  },
+  "keywords": [
+    "telegram",
+    "claude",
+    "codex",
+    "gemini",
+    "ai-agent",
+    "cli",
+    "remote-control",
+    "bun"
+  ],
   "scripts": {
-    "start": "bun bridge.js"
+    "start": "bun start.js start",
+    "setup": "bun start.js setup",
+    "config": "bun start.js config",
+    "bridge": "bun bridge.js",
+    "agent": "bun agent/server.js"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.63",
