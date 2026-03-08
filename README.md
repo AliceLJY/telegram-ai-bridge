@@ -71,7 +71,9 @@ If you already live in Claude Code or Codex and want a practical mobile control 
 ## What You Get
 
 - one-command startup: `bun run start --backend <name>`
+- starter workspace bootstrap: `bun run bootstrap --backend <name>`
 - interactive setup wizard: `bun run setup`
+- built-in config and prerequisite checks: `bun run check --backend <name>`
 - `config.json` for portable configuration instead of scattered hardcoded paths
 - SQLite-backed session persistence
 - persistent task tracking for approvals and recent runs
@@ -79,6 +81,7 @@ If you already live in Claude Code or Codex and want a practical mobile control 
 - session listing, preview, resume, and model selection
 - executor abstraction with `direct` and `local-agent` modes
 - Docker entrypoint that follows the same runtime model
+- Bun test coverage for config/bootstrap flows, wired into GitHub Actions CI
 - legacy `.env*` fallback for older installs
 - Gemini kept as an experimental compatibility backend instead of a primary path
 
@@ -88,8 +91,9 @@ If you already live in Claude Code or Codex and want a practical mobile control 
 git clone https://github.com/AliceLJY/telegram-ai-bridge.git
 cd telegram-ai-bridge
 bun install
-cp config.example.json config.json
-bun run setup
+bun run bootstrap --backend claude
+bun run setup --backend claude
+bun run check --backend claude
 bun run start --backend claude
 ```
 
@@ -143,10 +147,11 @@ Each bot instance keeps its own:
 
 ### Recommended: `config.json`
 
-Create `config.json` in the repo root:
+Fastest path:
 
 ```bash
-bun run setup
+bun run bootstrap --backend claude
+bun run setup --backend claude
 ```
 
 The wizard asks for:
@@ -158,6 +163,8 @@ The wizard asks for:
 - Gemini OAuth client settings only if you explicitly enable the compatibility backend
 
 Use `config.example.json` as a starting point.
+
+`bootstrap` creates a starter `config.json` plus the local `files/` directory. If you prefer to manage the file manually, you can still copy `config.example.json`.
 
 ### Example Config
 
@@ -228,6 +235,7 @@ bun run start --backend gemini
 Helper scripts are thin wrappers around the same entrypoint:
 
 ```bash
+./start-claude.sh
 ./start-codex.sh
 ./start-gemini.sh
 ```
@@ -239,6 +247,24 @@ bun run config --backend claude
 ```
 
 Secrets are redacted in output.
+
+Run a local preflight before starting the bot:
+
+```bash
+bun run check --backend claude
+```
+
+This validates the selected backend config, required paths, and warns if local CLI login state is missing.
+
+## Development
+
+Run the test suite locally:
+
+```bash
+bun test
+```
+
+GitHub Actions runs the same suite on every push and pull request.
 
 ## Telegram Commands
 
@@ -303,7 +329,7 @@ Swap the mounted credential directory and `--backend` flag for `codex`. Use `gem
 
 ## Project Structure
 
-- `start.js` — CLI entry for `start`, `setup`, and `config`
+- `start.js` — CLI entry for `start`, `bootstrap`, `check`, `setup`, and `config`
 - `config.js` — config loader, setup wizard, legacy env compatibility
 - `bridge.js` — Telegram bot runtime
 - `sessions.js` — SQLite session persistence
