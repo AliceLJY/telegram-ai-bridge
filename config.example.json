@@ -1,0 +1,40 @@
+{
+  "shared": {
+    "ownerTelegramId": "123456789",
+    "cwd": "/Users/you",
+    "httpProxy": "",
+    "defaultVerboseLevel": 1,
+    "executor": "direct",
+    "tasksDb": "tasks.db",
+    "enableGroupSharedContext": true,
+    "groupContextMaxMessages": 30,
+    "groupContextMaxTokens": 3000,
+    "groupContextTtlMs": 1200000,
+    "triggerDedupTtlMs": 300000,
+    "sessionTimeoutMs": 900000
+  },
+  "backends": {
+    "claude": {
+      "enabled": true,
+      "telegramBotToken": "123456:replace-me",
+      "sessionsDb": "sessions.db",
+      "model": "claude-sonnet-4-6",
+      "permissionMode": "default"
+    },
+    "codex": {
+      "enabled": true,
+      "telegramBotToken": "123456:replace-me",
+      "sessionsDb": "sessions-codex.db",
+      "model": ""
+    },
+    "gemini": {
+      "enabled": false,
+      "telegramBotToken": "",
+      "sessionsDb": "sessions-gemini.db",
+      "model": "gemini-2.5-pro",
+      "oauthClientId": "",
+      "oauthClientSecret": "",
+      "googleCloudProject": ""
+    }
+  }
+}

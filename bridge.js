@@ -10,15 +10,26 @@ import {
   setSession,
   deleteSession,
   recentSessions,
-  getChatBackend,
-  setChatBackend,
   getChatModel,
   setChatModel,
   deleteChatModel,
   sessionBelongsToChat,
 } from "./sessions.js";
+import {
+  createTask,
+  markTaskStarted,
+  setTaskApprovalRequired,
+  markTaskApproved,
+  markTaskRejected,
+  completeTask,
+  failTask,
+  recentTasks,
+  getActiveTask,
+} from "./tasks.js";
 import { createProgressTracker } from "./progress.js";
 import { createBackend, AVAILABLE_BACKENDS } from "./adapters/interface.js";
+import { createExecutor } from "./executor/interface.js";
+import { getBackendProfile } from "./config.js";
 
 // 防止嵌套检测（从 CC 内部启动时需要）
 delete process.env.CLAUDECODE;
@@ -27,23 +38,28 @@ delete process.env.CLAUDECODE;
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const OWNER_ID = Number(process.env.OWNER_TELEGRAM_ID);
 if (!Number.isInteger(OWNER_ID)) {
-  console.error("FATAL: OWNER_TELEGRAM_ID is missing or invalid. Set it in .env");
+  console.error("FATAL: OWNER_TELEGRAM_ID is missing or invalid. Set it in config.json or environment variables.");
   process.exit(1);
 }
 const PROXY = process.env.HTTPS_PROXY;
 const CC_CWD = process.env.CC_CWD || process.env.HOME;
 const DEFAULT_VERBOSE = Number(process.env.DEFAULT_VERBOSE_LEVEL || 1);
 const DEFAULT_BACKEND = process.env.DEFAULT_BACKEND || "claude";
+const REQUESTED_BACKENDS = String(process.env.ENABLED_BACKENDS || AVAILABLE_BACKENDS.join(","))
+  .split(",")
+  .map((value) => value.trim().toLowerCase())
+  .filter((value, index, list) => value && AVAILABLE_BACKENDS.includes(value) && list.indexOf(value) === index);
 const ENABLE_GROUP_SHARED_CONTEXT = process.env.ENABLE_GROUP_SHARED_CONTEXT !== "false";
 const GROUP_CONTEXT_MAX_MESSAGES = Number(process.env.GROUP_CONTEXT_MAX_MESSAGES || 30);
 const GROUP_CONTEXT_MAX_TOKENS = Number(process.env.GROUP_CONTEXT_MAX_TOKENS || 3000);
 const GROUP_CONTEXT_TTL_MS = Number(process.env.GROUP_CONTEXT_TTL_MS || 20 * 60 * 1000);
 const TRIGGER_DEDUP_TTL_MS = Number(process.env.TRIGGER_DEDUP_TTL_MS || 5 * 60 * 1000);
 const SESSION_TIMEOUT_MS = Number(process.env.SESSION_TIMEOUT_MS || 15 * 60 * 1000);
+const EXECUTOR_MODE = String(process.env.BRIDGE_EXECUTOR || "direct").trim().toLowerCase();
 
 // ── 初始化后端适配器 ──
 const adapters = {};
-for (const name of AVAILABLE_BACKENDS) {
+for (const name of REQUESTED_BACKENDS) {
   try {
     adapters[name] = createBackend(name, { cwd: CC_CWD });
   } catch (e) {
@@ -51,18 +67,50 @@ for (const name of AVAILABLE_BACKENDS) {
   }
 }
 
+const ACTIVE_BACKENDS = AVAILABLE_BACKENDS.filter((name) => adapters[name]);
+
+function getFallbackBackend() {
+  return ACTIVE_BACKENDS[0] || DEFAULT_BACKEND || "claude";
+}
+
+if (!ACTIVE_BACKENDS.length) {
+  console.error("FATAL: no backend is available for this instance. Check config.json or environment variables.");
+  process.exit(1);
+}
+
+function resolveBackend(chatId, backendName = null) {
+  const effectiveBackend = backendName && adapters[backendName]
+    ? backendName
+    : getFallbackBackend();
+  return {
+    backendName: effectiveBackend,
+    adapter: adapters[effectiveBackend] || null,
+  };
+}
+
 function getAdapter(chatId) {
-  const pref = getChatBackend(chatId) || DEFAULT_BACKEND;
-  return adapters[pref] || adapters.claude;
+  return resolveBackend(chatId).adapter;
 }
 
 function getBackendName(chatId) {
-  const pref = getChatBackend(chatId) || DEFAULT_BACKEND;
-  return adapters[pref] ? pref : "claude";
+  return resolveBackend(chatId).backendName;
 }
 
+function getBackendStatusNote(backendName) {
+  const profile = getBackendProfile(backendName);
+  if (profile.maturity === "experimental") {
+    return `定位: 实验兼容后端（主推荐路径仍是 Claude / Codex）\n`;
+  }
+  if (profile.maturity === "recommended") {
+    return `定位: 主推荐后端\n`;
+  }
+  return "";
+}
+
+const executor = createExecutor(EXECUTOR_MODE, { resolveBackend });
+
 if (!TOKEN || TOKEN.includes("BotFather")) {
-  console.error("请在 .env 中填入 TELEGRAM_BOT_TOKEN");
+  console.error("请在 config.json 或环境变量中填入 TELEGRAM_BOT_TOKEN");
   process.exit(1);
 }
 
@@ -418,7 +466,21 @@ function formatToolInput(toolName, input) {
   return json.length > 300 ? json.slice(0, 300) + "..." : json;
 }
 
-function createPermissionHandler(ctx) {
+function summarizeText(text, maxLen = 120) {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  return normalized.length > maxLen ? `${normalized.slice(0, maxLen - 3)}...` : normalized;
+}
+
+function formatTaskStatus(task) {
+  const time = new Date(task.updated_at || task.created_at).toISOString().slice(5, 16).replace("T", " ");
+  const tool = task.approval_tool ? ` · ${task.approval_tool}` : "";
+  const summary = summarizeText(task.prompt_summary || task.result_summary || "", 36);
+  const suffix = summary ? ` · ${summary}` : "";
+  return `${task.task_id.slice(0, 10)} · ${task.status}${tool} · ${task.executor} · ${time}${suffix}`;
+}
+
+function createPermissionHandler(ctx, taskId) {
   const chatId = ctx.chat.id;
 
   return async (toolName, input, sdkOptions) => {
@@ -426,11 +488,13 @@ function createPermissionHandler(ctx) {
 
     // YOLO mode: auto-allow everything
     if (state.yolo) {
+      if (taskId) markTaskApproved(taskId, toolName);
       return { behavior: "allow", toolUseID: sdkOptions.toolUseID };
     }
 
     // Always-allowed tool: auto-allow
     if (state.alwaysAllowed.has(toolName)) {
+      if (taskId) markTaskApproved(taskId, toolName);
       return {
         behavior: "allow",
         updatedPermissions: sdkOptions.suggestions || [],
@@ -442,6 +506,7 @@ function createPermissionHandler(ctx) {
     const permId = ++permIdCounter;
     const display = formatToolInput(toolName, input);
     const reason = sdkOptions.decisionReason ? `\n${sdkOptions.decisionReason}` : "";
+    if (taskId) setTaskApprovalRequired(taskId, toolName);
 
     const text = `🔒 *Tool approval needed*\n\nTool: *${toolName}*${reason}\n\`\`\`\n${display}\n\`\`\`\n\nChoose an action:`;
     const kb = new InlineKeyboard()
@@ -461,6 +526,7 @@ function createPermissionHandler(ctx) {
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
         pendingPermissions.delete(permId);
+        if (taskId) markTaskRejected(taskId, toolName);
         resolve({ behavior: "deny", message: "审批超时（5分钟）", toolUseID: sdkOptions.toolUseID });
       }, 5 * 60 * 1000);
 
@@ -469,6 +535,7 @@ function createPermissionHandler(ctx) {
         cleanup: () => clearTimeout(timeout),
         toolName,
         chatId,
+        taskId,
         suggestions: sdkOptions.suggestions,
         toolUseID: sdkOptions.toolUseID,
       });
@@ -492,8 +559,30 @@ async function submitAndWait(ctx, prompt) {
   const backendName = getBackendName(chatId);
   const verboseLevel = verboseSettings.get(chatId) ?? DEFAULT_VERBOSE;
   const progress = createProgressTracker(ctx, chatId, verboseLevel, adapter.label);
+  const taskId = createTask({
+    chatId,
+    backend: backendName,
+    executor: executor.name,
+    capability: "ai_turn",
+    action: "stream_query",
+    promptSummary: summarizeText(prompt, 120),
+  });
+  let taskFinalized = false;
+
+  function finalizeSuccess(summary = "") {
+    if (taskFinalized) return;
+    completeTask(taskId, summary);
+    taskFinalized = true;
+  }
+
+  function finalizeFailure(summary = "", errorCode = "RESULT_ERROR") {
+    if (taskFinalized) return;
+    failTask(taskId, summary, errorCode);
+    taskFinalized = true;
+  }
 
   try {
+    markTaskStarted(taskId);
     await progress.start();
 
     const fullPrompt = buildPromptWithContext(ctx, prompt);
@@ -516,11 +605,16 @@ async function submitAndWait(ctx, prompt) {
 
     // Tool approval: only for Claude backend
     if (backendName === "claude") {
-      streamOverrides.requestPermission = createPermissionHandler(ctx);
+      streamOverrides.requestPermission = createPermissionHandler(ctx, taskId);
     }
 
     try {
-      for await (const event of adapter.streamQuery(fullPrompt, sessionId, abortController.signal, streamOverrides)) {
+      for await (const event of executor.streamTask({
+        chatId,
+        backendName,
+        prompt: fullPrompt,
+        sessionId,
+      }, abortController.signal, streamOverrides)) {
         if (event.type === "session_init") {
           capturedSessionId = event.sessionId;
         }
@@ -560,9 +654,11 @@ async function submitAndWait(ctx, prompt) {
       if (isAbort) {
         resultText = `超时（${Math.round(SESSION_TIMEOUT_MS / 60000)} 分钟未完成）`;
         resultSuccess = false;
+        finalizeFailure(summarizeText(resultText, 240), "TIMEOUT");
       } else {
         resultText = `SDK 错误: ${err.message}`;
         resultSuccess = false;
+        finalizeFailure(summarizeText(resultText, 240), "EXECUTOR_ERROR");
       }
     } finally {
       clearTimeout(timeoutHandle);
@@ -579,8 +675,10 @@ async function submitAndWait(ctx, prompt) {
 
     // 发最终结果
     if (!resultSuccess) {
+      finalizeFailure(summarizeText(resultText, 240), "RESULT_ERROR");
       await sendLong(ctx, `${adapter.label} 错误: ${resultText}`);
     } else if (resultText) {
+      finalizeSuccess(summarizeText(resultText, 240));
       const replies = detectQuickReplies(resultText);
       if (replies && resultText.length <= 4000) {
         const kb = new InlineKeyboard();
@@ -592,6 +690,7 @@ async function submitAndWait(ctx, prompt) {
         await sendLong(ctx, resultText);
       }
     } else {
+      finalizeSuccess("");
       await ctx.reply(`${adapter.label} 无输出。`);
     }
 
@@ -612,6 +711,7 @@ async function submitAndWait(ctx, prompt) {
       ).catch(() => {});
     }
   } catch (e) {
+    finalizeFailure(summarizeText(e.message, 240), "BRIDGE_ERROR");
     await progress.finish();
     await ctx.reply(`桥接错误: ${e.message}`);
   } finally {
@@ -771,31 +871,6 @@ bot.callbackQuery(/^peek:/, async (ctx) => {
   await sendSessionPeek(ctx, adapter, sessionId, 6);
 });
 
-// ── /backend 命令：切换后端 ──
-bot.command("backend", async (ctx) => {
-  const arg = ctx.match?.trim().toLowerCase();
-  if (!arg || !AVAILABLE_BACKENDS.includes(arg)) {
-    const current = getBackendName(ctx.chat.id);
-    const list = AVAILABLE_BACKENDS.map((b) => {
-      const a = adapters[b];
-      const mark = b === current ? " ← 当前" : "";
-      const status = a ? "✅" : "❌ 未安装";
-      return `  ${status} ${b}${mark}`;
-    }).join("\n");
-    await ctx.reply(`当前后端: ${current}\n用法: /backend ${AVAILABLE_BACKENDS.join("|")}\n\n可用后端:\n${list}`);
-    return;
-  }
-  if (!adapters[arg]) {
-    await ctx.reply(`后端 ${arg} 未安装或初始化失败。`);
-    return;
-  }
-  setChatBackend(ctx.chat.id, arg);
-  // 切后端时清掉旧 session，避免 resume 到错误后端
-  deleteSession(ctx.chat.id);
-  const adapter = adapters[arg];
-  await ctx.reply(`已切换到 ${adapter.icon} ${adapter.label}，下条消息将使用新后端。`);
-});
-
 // ── /status 命令：显示状态 ──
 bot.command("status", async (ctx) => {
   const adapter = getAdapter(ctx.chat.id);
@@ -804,6 +879,7 @@ bot.command("status", async (ctx) => {
   const verbose = verboseSettings.get(ctx.chat.id) ?? DEFAULT_VERBOSE;
   const modelOverride = getChatModel(ctx.chat.id);
   const info = adapter.statusInfo(modelOverride);
+  const activeTask = getActiveTask(ctx.chat.id);
 
   let sessionLine = "当前会话: 无（下条消息开新会话）";
   let resumeHint = "";
@@ -825,14 +901,32 @@ bot.command("status", async (ctx) => {
   }
 
   await ctx.reply(
-    `${adapter.icon} 后端: ${adapter.label} (${backendName})\n` +
+    `${adapter.icon} 实例后端: ${adapter.label} (${backendName})\n` +
+    `${getBackendStatusNote(backendName)}` +
+    `执行器: ${executor.label} (${executor.name})\n` +
     `模式: ${info.mode}\n` +
     `模型: ${info.model}\n` +
     `工作目录: ${info.cwd}\n` +
     `${sessionLine}${sessionMetaLine}${resumeHint}\n` +
-    `进度详细度: ${verbose}（0=关/1=工具名/2=详细）\n` +
-    `可用后端: ${AVAILABLE_BACKENDS.filter((b) => adapters[b]).join(", ")}`,
+    `进度详细度: ${verbose}（0=关/1=工具名/2=详细）` +
+    `${activeTask ? `\n活动任务: ${formatTaskStatus(activeTask)}` : ""}`,
     { parse_mode: "Markdown" }
+  );
+});
+
+bot.command("tasks", async (ctx) => {
+  const tasks = recentTasks(ctx.chat.id, 8);
+  if (!tasks.length) {
+    await ctx.reply("最近没有任务记录。");
+    return;
+  }
+
+  await sendLong(
+    ctx,
+    [
+      "最近任务：",
+      ...tasks.map((task) => `- ${formatTaskStatus(task)}`),
+    ].join("\n"),
   );
 });
 
@@ -855,7 +949,7 @@ bot.command("verbose", async (ctx) => {
   await ctx.reply(`进度详细度已设为 ${level}`);
 });
 
-// ── /model 命令：切换当前后端的模型 ──
+// ── /model 命令：切换当前实例的模型 ──
 bot.command("model", async (ctx) => {
   const adapter = getAdapter(ctx.chat.id);
   const models = adapter.availableModels ? adapter.availableModels() : [];
@@ -932,7 +1026,6 @@ bot.callbackQuery(/^resume:/, async (ctx) => {
     return;
   }
 
-  setChatBackend(ctx.chat.id, backend);
   const adapter = adapters[backend];
   const icon = adapter?.icon || "🟣";
   const adapterInfo = adapter ? adapter.statusInfo(getChatModel(ctx.chat.id)) : { cwd: CC_CWD };
@@ -1000,13 +1093,16 @@ bot.callbackQuery(/^perm:/, async (ctx) => {
   await ctx.editMessageReplyMarkup({ reply_markup: undefined }).catch(() => {});
 
   if (action === "allow") {
+    if (pending.taskId) markTaskApproved(pending.taskId, pending.toolName);
     await ctx.answerCallbackQuery({ text: "Allowed" });
     pending.resolve({ behavior: "allow", toolUseID: pending.toolUseID });
   } else if (action === "deny") {
+    if (pending.taskId) markTaskRejected(pending.taskId, pending.toolName);
     await ctx.answerCallbackQuery({ text: "Denied" });
     pending.resolve({ behavior: "deny", message: "用户拒绝", toolUseID: pending.toolUseID });
   } else if (action === "always") {
     state.alwaysAllowed.add(pending.toolName);
+    if (pending.taskId) markTaskApproved(pending.taskId, pending.toolName);
     await ctx.answerCallbackQuery({ text: `Always "${pending.toolName}"` });
     pending.resolve({
       behavior: "allow",
@@ -1015,6 +1111,7 @@ bot.callbackQuery(/^perm:/, async (ctx) => {
     });
   } else if (action === "yolo") {
     state.yolo = true;
+    if (pending.taskId) markTaskApproved(pending.taskId, pending.toolName);
     await ctx.answerCallbackQuery({ text: "YOLO mode ON" });
     pending.resolve({ behavior: "allow", toolUseID: pending.toolUseID });
   }
@@ -1092,10 +1189,8 @@ function cleanOldFiles() {
 setInterval(cleanOldFiles, 60 * 60 * 1000);
 
 // ── 启动 ──
-const activeBackends = AVAILABLE_BACKENDS.filter((b) => adapters[b]);
 console.log("Telegram-AI-Bridge 启动中...");
-console.log(`  可用后端: ${activeBackends.join(", ")}`);
-console.log(`  默认后端: ${DEFAULT_BACKEND}`);
+console.log(`  实例后端: ${getFallbackBackend()}`);
 console.log(`  工作目录: ${CC_CWD}`);
 console.log(`  进度详细度: ${DEFAULT_VERBOSE}`);
 bot.start({
