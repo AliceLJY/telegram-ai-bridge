@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Telegram → AI Bridge（多后端：Claude Agent SDK / Codex SDK）
 
-import { Bot, InlineKeyboard } from "grammy";
+import { Bot, InlineKeyboard, GrammyError } from "grammy";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync } from "fs";
 import { basename, join } from "path";
@@ -134,6 +134,8 @@ const verboseSettings = new Map(); // chatId -> verboseLevel
 const pendingPermissions = new Map(); // permId -> { resolve, cleanup, toolName, chatId, ... }
 const chatPermState = new Map(); // chatId -> { alwaysAllowed: Set, yolo: boolean }
 let permIdCounter = 0;
+const POLLING_CONFLICT_BASE_DELAY_MS = 5000;
+const POLLING_CONFLICT_MAX_DELAY_MS = 60000;
 
 // ── 工具函数（从旧 bridge 原样复制）──
 
@@ -1188,11 +1190,54 @@ function cleanOldFiles() {
 }
 setInterval(cleanOldFiles, 60 * 60 * 1000);
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isPollingConflictError(error) {
+  return error instanceof GrammyError
+    && error.method === "getUpdates"
+    && error.error_code === 409;
+}
+
+async function startBotPolling() {
+  let conflictCount = 0;
+
+  while (true) {
+    try {
+      await bot.start({
+        onStart: () => console.log(`已连接，仅接受用户 ${OWNER_ID} 的消息`),
+      });
+      return;
+    } catch (error) {
+      try {
+        bot.stop();
+      } catch {
+        // ignore stop failures during restart attempts
+      }
+
+      if (!isPollingConflictError(error)) {
+        throw error;
+      }
+
+      conflictCount += 1;
+      const delayMs = Math.min(
+        POLLING_CONFLICT_BASE_DELAY_MS * (2 ** Math.min(conflictCount - 1, 4)),
+        POLLING_CONFLICT_MAX_DELAY_MS,
+      );
+
+      console.error(
+        `[Telegram] getUpdates 冲突：同一个 bot token 正被其他实例轮询。attempt=${conflictCount} retry_in=${Math.ceil(delayMs / 1000)}s`,
+      );
+      console.error("[Telegram] 请排查重复实例；如果确认没有其他实例，去 @BotFather 重置 token。");
+      await sleep(delayMs);
+    }
+  }
+}
+
 // ── 启动 ──
 console.log("Telegram-AI-Bridge 启动中...");
 console.log(`  实例后端: ${getFallbackBackend()}`);
 console.log(`  工作目录: ${CC_CWD}`);
 console.log(`  进度详细度: ${DEFAULT_VERBOSE}`);
-bot.start({
-  onStart: () => console.log(`已连接，仅接受用户 ${OWNER_ID} 的消息`),
-});
+await startBotPolling();
