@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { dirname, join } from "path";
 
 import {
+  applyRuntimeEnv,
   bootstrapWorkspace,
   createDefaultConfig,
   loadRuntimeConfig,
@@ -111,6 +112,13 @@ describe("config productization", () => {
     expect(() => loadRuntimeConfig({ backend: "claude", configPath })).toThrow(/CC_CWD/);
   });
 
+  test("loadRuntimeConfig requires config.json and no longer falls back to .env files", () => {
+    const repoDir = makeTempDir();
+    const configPath = join(repoDir, "config.json");
+
+    expect(() => loadRuntimeConfig({ backend: "claude", configPath })).toThrow(/Missing config file/);
+  });
+
   test("resolveCliArgs parses bootstrap flags", () => {
     const cli = resolveCliArgs([
       "bun",
@@ -128,5 +136,32 @@ describe("config productization", () => {
     expect(cli.force).toBe(true);
     expect(cli.backendSpecified).toBe(true);
     expect(cli.configPath.endsWith("/tmp-config.json")).toBe(true);
+  });
+
+  test("applyRuntimeEnv overrides inherited backend selection", () => {
+    const originalDefaultBackend = process.env.DEFAULT_BACKEND;
+    const originalEnabledBackends = process.env.ENABLED_BACKENDS;
+    const originalTelegramToken = process.env.TELEGRAM_BOT_TOKEN;
+
+    process.env.DEFAULT_BACKEND = "codex";
+    process.env.ENABLED_BACKENDS = "codex,gemini";
+    process.env.TELEGRAM_BOT_TOKEN = "old-token";
+
+    applyRuntimeEnv({
+      DEFAULT_BACKEND: "claude",
+      ENABLED_BACKENDS: "claude",
+      TELEGRAM_BOT_TOKEN: "new-token",
+    });
+
+    expect(process.env.DEFAULT_BACKEND).toBe("claude");
+    expect(process.env.ENABLED_BACKENDS).toBe("claude");
+    expect(process.env.TELEGRAM_BOT_TOKEN).toBe("new-token");
+
+    if (originalDefaultBackend == null) delete process.env.DEFAULT_BACKEND;
+    else process.env.DEFAULT_BACKEND = originalDefaultBackend;
+    if (originalEnabledBackends == null) delete process.env.ENABLED_BACKENDS;
+    else process.env.ENABLED_BACKENDS = originalEnabledBackends;
+    if (originalTelegramToken == null) delete process.env.TELEGRAM_BOT_TOKEN;
+    else process.env.TELEGRAM_BOT_TOKEN = originalTelegramToken;
   });
 });
