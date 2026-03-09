@@ -206,6 +206,8 @@ bun run setup --backend claude
 
 `config.json` 已加入 `.gitignore`，本地 secret 不会被误提交。
 
+`shared.sessionTimeoutMs` 现在只控制单次请求的执行超时，不再用于“聊天闲置多久后自动丢会话”。
+
 ## 运行
 
 启动单个 bot 实例：
@@ -279,6 +281,8 @@ tail -f bridge.log
 ```
 
 ## Telegram 命令
+
+会话默认是粘住的：只要你不主动切，哪怕中间闲置很久，后续消息也会继续当前会话。只有 `/new` 才会强制开新会话，或用 `/resume <id>` 显式改绑到别的已拥有会话。
 
 | 命令 | 说明 |
 | --- | --- |

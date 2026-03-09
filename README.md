@@ -206,6 +206,8 @@ Use `config.example.json` as a starting point.
 
 `config.json` is gitignored so local secrets stay local.
 
+`shared.sessionTimeoutMs` now controls the timeout for one running request only. It does not expire an idle chat session anymore.
+
 ## Run
 
 Start one bot instance:
@@ -289,6 +291,8 @@ bun test
 GitHub Actions runs the same suite on every push and pull request.
 
 ## Telegram Commands
+
+Sessions are sticky by default: if you do nothing, later messages continue the current session even after long idle gaps. Use `/new` to force a fresh session, or `/resume <id>` to bind a different owned one.
 
 | Command | Description |
 | --- | --- |
