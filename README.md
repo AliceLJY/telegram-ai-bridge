@@ -82,7 +82,6 @@ If you already live in Claude Code or Codex and want a practical mobile control 
 - executor abstraction with `direct` and `local-agent` modes
 - Docker entrypoint that follows the same runtime model
 - Bun test coverage for config/bootstrap flows, wired into GitHub Actions CI
-- legacy `.env*` fallback for older installs
 - Gemini kept as an experimental compatibility backend instead of a primary path
 
 ## Quick Start
@@ -206,16 +205,6 @@ Use `config.example.json` as a starting point.
 ```
 
 `config.json` is gitignored so local secrets stay local.
-
-### Legacy `.env` Fallback
-
-If `config.json` does not exist, the CLI still supports:
-
-- `claude` → `.env` or `.env.claude`
-- `codex` → `.env.codex` + optional `.env`
-- `gemini` → `.env.gemini` + optional `.env`
-
-This is only for backward compatibility. New installs should use `config.json`.
 
 ## Run
 
@@ -365,7 +354,7 @@ There is also a compose starter at `docker-compose.example.yml`. For persistent 
 ## Project Structure
 
 - `start.js` — CLI entry for `start`, `bootstrap`, `check`, `setup`, and `config`
-- `config.js` — config loader, setup wizard, legacy env compatibility
+- `config.js` — config loader and setup wizard
 - `launchd/` — LaunchAgent template for macOS background deployment
 - `scripts/` — launchd install wrapper and runtime launcher
 - `docker-compose.example.yml` — starter Compose service for self-hosted deployment

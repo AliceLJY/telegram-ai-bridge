@@ -82,7 +82,6 @@
 - 已抽象执行器层，支持 `direct` 和 `local-agent` 两种模式
 - Docker 也走同一套运行方式
 - 已补 Bun 测试，并接入 GitHub Actions CI
-- 兼容旧 `.env*` 配置，便于平滑迁移
 - 保留 Gemini 兼容入口，但产品主路径明确收敛到 Claude / Codex
 
 ## 快速开始
@@ -206,16 +205,6 @@ bun run setup --backend claude
 ```
 
 `config.json` 已加入 `.gitignore`，本地 secret 不会被误提交。
-
-### 兼容旧 `.env`
-
-如果没有 `config.json`，CLI 仍兼容：
-
-- `claude` → `.env` 或 `.env.claude`
-- `codex` → `.env.codex`，并可叠加 `.env`
-- `gemini` → `.env.gemini`，并可叠加 `.env`
-
-这只是为了兼容旧部署。新安装方式建议直接使用 `config.json`。
 
 ## 运行
 
@@ -355,7 +344,7 @@ docker run -d \
 ## 项目结构
 
 - `start.js` — `start` / `bootstrap` / `check` / `setup` / `config` CLI 入口
-- `config.js` — 配置加载、setup wizard、旧 `.env` 兼容层
+- `config.js` — 配置加载与 setup wizard
 - `launchd/` — macOS LaunchAgent 模板
 - `scripts/` — launchd 安装脚本与运行包装器
 - `docker-compose.example.yml` — 自托管部署的 Compose 起步模板

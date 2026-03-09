@@ -233,58 +233,6 @@ function parseJsonConfig(configPath) {
   return mergeConfig(createDefaultConfig(), parsed);
 }
 
-function parseEnvFile(envPath) {
-  const values = {};
-  const raw = readFileSync(envPath, "utf8");
-  for (const line of raw.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eqIndex = trimmed.indexOf("=");
-    if (eqIndex <= 0) continue;
-    const key = trimmed.slice(0, eqIndex).trim();
-    let value = trimmed.slice(eqIndex + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    values[key] = value;
-  }
-  return values;
-}
-
-function pickLegacyEnvFiles(repoDir, backend) {
-  if (backend === "claude") {
-    return [join(repoDir, ".env.claude"), join(repoDir, ".env")];
-  }
-  return [join(repoDir, `.env.${backend}`), join(repoDir, ".env")];
-}
-
-function loadLegacyEnv(repoDir, backend) {
-  const files = pickLegacyEnvFiles(repoDir, backend);
-  const found = files.filter((file) => existsSync(file));
-  if (!found.length) {
-    throw new Error(
-      `No config source found. Create config.json with \`bun run setup\` or add ${files.map((file) => file.split("/").pop()).join(" / ")}.`,
-    );
-  }
-
-  const merged = {};
-  for (const file of [...found].reverse()) {
-    Object.assign(merged, parseEnvFile(file));
-  }
-
-  return {
-    source: found.map((file) => file.split("/").pop()).join(" + "),
-    env: {
-      ...merged,
-      DEFAULT_BACKEND: backend,
-      ENABLED_BACKENDS: backend,
-    },
-  };
-}
-
 function buildEnvFromConfig(config, backend, configPath) {
   const selectedBackend = normalizeBackendName(backend);
   if (!AVAILABLE_BACKENDS.includes(selectedBackend)) {
@@ -549,13 +497,6 @@ export function inspectRuntime(runtime) {
     ? runtime.env.TASKS_DB
     : join(REPO_DIR, "tasks.db");
 
-  if (!runtime.config) {
-    warnings.push({
-      path: "source",
-      message: "Using legacy .env fallback. New installs should migrate to config.json.",
-    });
-  }
-
   const credentialCheck = getBackendCredentialWarning(runtime.backend);
   if (!existsSync(credentialCheck.path)) {
     warnings.push({
@@ -670,45 +611,33 @@ export function loadRuntimeConfig(options = {}) {
   const backend = normalizeBackendName(options.backend);
   const configPath = options.configPath ? resolve(options.configPath) : DEFAULT_CONFIG_PATH;
 
-  if (existsSync(configPath)) {
-    const config = parseJsonConfig(configPath);
-    const configIssues = validateConfig(config, { backend, configPath });
-    if (configIssues.length) {
-      throw new Error(formatValidationIssues(configIssues, `Invalid config file: ${configPath}`));
-    }
-
-    const runtime = {
-      backend,
-      configPath,
-      source: configPath.split("/").pop(),
-      env: buildEnvFromConfig(config, backend, configPath),
-      config,
-    };
-    const runtimeIssues = validateResolvedEnv(runtime.env, { backend });
-    if (runtimeIssues.length) {
-      throw new Error(formatValidationIssues(runtimeIssues, `Invalid runtime configuration for backend "${backend}"`));
-    }
-    return runtime;
+  if (!existsSync(configPath)) {
+    throw new Error(`Missing config file: ${configPath}. Run \`bun run bootstrap --backend ${backend}\` or \`bun run setup --backend ${backend}\`.`);
   }
 
-  const legacy = loadLegacyEnv(REPO_DIR, backend);
+  const config = parseJsonConfig(configPath);
+  const configIssues = validateConfig(config, { backend, configPath });
+  if (configIssues.length) {
+    throw new Error(formatValidationIssues(configIssues, `Invalid config file: ${configPath}`));
+  }
+
   const runtime = {
     backend,
     configPath,
-    source: legacy.source,
-    env: legacy.env,
-    config: null,
+    source: configPath.split("/").pop(),
+    env: buildEnvFromConfig(config, backend, configPath),
+    config,
   };
   const runtimeIssues = validateResolvedEnv(runtime.env, { backend });
   if (runtimeIssues.length) {
-    throw new Error(formatValidationIssues(runtimeIssues, `Invalid runtime environment for backend "${backend}"`));
+    throw new Error(formatValidationIssues(runtimeIssues, `Invalid runtime configuration for backend "${backend}"`));
   }
   return runtime;
 }
 
 export function applyRuntimeEnv(env) {
   for (const [key, value] of Object.entries(env)) {
-    if (process.env[key] == null && value != null) {
+    if (value != null) {
       process.env[key] = String(value);
     }
   }
