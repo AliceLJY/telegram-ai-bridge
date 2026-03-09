@@ -6,7 +6,6 @@ import { join, isAbsolute } from "path";
 const DB_PATH = process.env.SESSIONS_DB
   ? (isAbsolute(process.env.SESSIONS_DB) ? process.env.SESSIONS_DB : join(import.meta.dir, process.env.SESSIONS_DB))
   : join(import.meta.dir, "sessions.db");
-const SESSION_TIMEOUT = Number(process.env.SESSION_TIMEOUT_MS || 15 * 60 * 1000);
 
 const db = new Database(DB_PATH);
 db.exec("PRAGMA journal_mode = WAL");
@@ -154,10 +153,6 @@ const stmtDeleteModelPref = db.prepare("DELETE FROM chat_model WHERE chat_id = ?
 export function getSession(chatId) {
   const row = stmtGet.get(chatId);
   if (!row) return null;
-  if (Date.now() - row.last_active > SESSION_TIMEOUT) {
-    stmtDelete.run(chatId);
-    return null;
-  }
   // Touch last_active
   stmtTouch.run(Date.now(), chatId);
   return {
@@ -207,11 +202,10 @@ export function recentSessions(limit = 8, options = {}) {
 }
 
 export function cleanupExpired() {
-  const cutoff = Date.now() - SESSION_TIMEOUT;
-  const result = stmtCleanup.run(cutoff);
-  // 历史表保留更久（7 天）
+  // 当前会话默认长期保留，直到用户显式 /new 或 /resume 切换。
+  // 历史表仍然定期清理，避免只读预览列表无限增长。
   const historyCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  stmtCleanupHistory.run(historyCutoff);
+  const result = stmtCleanupHistory.run(historyCutoff);
   return result.changes;
 }
 
