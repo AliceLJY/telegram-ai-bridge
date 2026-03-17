@@ -30,6 +30,7 @@ import { createProgressTracker } from "./progress.js";
 import { createBackend, AVAILABLE_BACKENDS } from "./adapters/interface.js";
 import { createExecutor } from "./executor/interface.js";
 import { getBackendProfile } from "./config.js";
+import { initSharedContext, writeSharedMessage, readSharedMessages } from "./shared-context.js";
 
 // 防止嵌套检测（从 CC 内部启动时需要）
 delete process.env.CLAUDECODE;
@@ -56,6 +57,10 @@ const GROUP_CONTEXT_TTL_MS = Number(process.env.GROUP_CONTEXT_TTL_MS || 20 * 60 
 const TRIGGER_DEDUP_TTL_MS = Number(process.env.TRIGGER_DEDUP_TTL_MS || 5 * 60 * 1000);
 const SESSION_TIMEOUT_MS = Number(process.env.SESSION_TIMEOUT_MS || 15 * 60 * 1000);
 const EXECUTOR_MODE = String(process.env.BRIDGE_EXECUTOR || "direct").trim().toLowerCase();
+const SHARED_CONTEXT_DB = process.env.SHARED_CONTEXT_DB || "shared-context.db";
+
+// ── 初始化共享上下文（跨 bot 进程可见）──
+initSharedContext(SHARED_CONTEXT_DB);
 
 // ── 初始化后端适配器 ──
 const adapters = {};
@@ -211,15 +216,45 @@ function buildPromptWithContext(ctx, userPrompt) {
   if (!ENABLE_GROUP_SHARED_CONTEXT || !chat || (chat.type !== "group" && chat.type !== "supergroup")) {
     return userPrompt;
   }
-  const entries = cleanupContextEntries(groupContext.get(chat.id) || []);
-  if (!entries.length) return userPrompt;
 
+  // 内存上下文（人类消息，Telegram 正常推送）
+  const memEntries = cleanupContextEntries(groupContext.get(chat.id) || []);
   const currentMsgId = ctx.message?.message_id;
-  const filtered = entries.filter((e) => e.messageId !== currentMsgId);
-  const recent = filtered.slice(-GROUP_CONTEXT_MAX_MESSAGES);
-  if (!recent.length) return userPrompt;
+  const memFiltered = memEntries
+    .filter((e) => e.messageId !== currentMsgId)
+    .map((e) => ({ role: e.role, source: e.source, text: e.text, ts: e.ts }));
 
-  const lines = recent.map((e) =>
+  // 共享上下文（其他 bot 的回复，来自 SQLite）
+  const sharedEntries = readSharedMessages(chat.id, {
+    maxMessages: GROUP_CONTEXT_MAX_MESSAGES,
+    maxTokens: GROUP_CONTEXT_MAX_TOKENS,
+    ttlMs: GROUP_CONTEXT_TTL_MS,
+  });
+
+  // 合并 + 按时间排序 + 去重（相同 ts + source 视为重复）
+  const seen = new Set();
+  const merged = [...memFiltered, ...sharedEntries]
+    .sort((a, b) => a.ts - b.ts)
+    .filter((e) => {
+      const key = `${e.ts}:${e.source}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(-GROUP_CONTEXT_MAX_MESSAGES);
+
+  if (!merged.length) return userPrompt;
+
+  // token 裁剪
+  let totalTokens = merged.reduce((sum, e) => sum + (e.tokens || estimateTokens(e.text)), 0);
+  while (merged.length > 0 && totalTokens > GROUP_CONTEXT_MAX_TOKENS) {
+    const removed = merged.shift();
+    totalTokens -= (removed.tokens || estimateTokens(removed.text));
+  }
+
+  if (!merged.length) return userPrompt;
+
+  const lines = merged.map((e) =>
     `- { role: ${JSON.stringify(e.role)}, source: ${JSON.stringify(e.source)}, ts: ${e.ts}, text: ${JSON.stringify(e.text)} }`
   );
   return [
@@ -694,6 +729,16 @@ async function submitAndWait(ctx, prompt) {
     } else {
       finalizeSuccess("");
       await ctx.reply(`${adapter.label} 无输出。`);
+    }
+
+    // 写入共享上下文（让其他 bot 进程可见）
+    if (resultText && resultSuccess) {
+      writeSharedMessage(chatId, {
+        source: `bot:@${bot.botInfo?.username || backendName}`,
+        backend: backendName,
+        role: "assistant",
+        text: resultText,
+      });
     }
 
     // 新会话首条：显示 session ID（只在新建时发一次）

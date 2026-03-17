@@ -76,6 +76,7 @@ Run separate bots for separate agents:
 | **Dual executor** | `direct` (in-process) or `local-agent` (JSONL stdio subprocess) |
 | **Docker support** | Same runtime model, credential volumes mounted in |
 | **macOS LaunchAgent** | Auto-generated plist for background deployment |
+| **Group shared context** | Multiple bots in one group see each other's replies via shared SQLite |
 | **CI** | Bun tests wired into GitHub Actions |
 
 ---
@@ -94,6 +95,26 @@ Sessions are sticky: messages continue the current session until you explicitly 
 | `/status` | Show backend, model, cwd, and session |
 | `/tasks` | Show recent task history |
 | `/verbose 0\|1\|2` | Change progress verbosity |
+
+---
+
+## Multi-Bot Group Collaboration
+
+Telegram bots cannot see each other's messages — this is a platform-level limitation. When you put Claude and Codex in the same group, neither can read the other's replies.
+
+This project works around it with a **shared SQLite context store**. Each bot writes its reply to a shared database after responding. When another bot is @mentioned, it reads the shared context and includes the other bot's replies in its prompt.
+
+```text
+You: @claude Review this code
+CC:  [reviews code, writes reply to shared DB]
+
+You: @codex Do you agree with CC's review?
+Codex: [reads CC's reply from shared DB, gives opinion]
+```
+
+No copy-pasting needed. Built-in limits (30 messages / 3000 tokens / 20-minute TTL) prevent context bloat.
+
+> **Note:** Bots only respond when explicitly @mentioned or replied to. They don't auto-reply to each other.
 
 ---
 
@@ -126,7 +147,8 @@ Each bot instance keeps its own Telegram token, SQLite DBs, credential directory
     "httpProxy": "",
     "defaultVerboseLevel": 1,
     "executor": "direct",
-    "tasksDb": "tasks.db"
+    "tasksDb": "tasks.db",
+    "sharedContextDb": "shared-context.db"
   },
   "backends": {
     "claude": {
@@ -228,6 +250,7 @@ Swap credential mount and `--backend` for other backends. See `docker-compose.ex
 - `config.js` — Config loader and setup wizard
 - `bridge.js` — Telegram bot runtime
 - `sessions.js` — SQLite session persistence
+- `shared-context.js` — Cross-bot shared context (multi-bot group collaboration)
 - `adapters/` — Backend integrations
 - `launchd/` — LaunchAgent template for macOS
 - `scripts/` — Install wrapper and runtime launcher
