@@ -1,88 +1,45 @@
+<div align="center">
+
 # telegram-ai-bridge
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Bun](https://img.shields.io/badge/runtime-Bun-black.svg)](https://bun.sh)
-[![Telegram](https://img.shields.io/badge/interface-Telegram-26A5E4.svg)](https://telegram.org/)
+**Remote Control Your Local AI Agent via Telegram**
 
-Turn Telegram into the remote control for your local AI coding agent.
+*Leave Claude Code running on your desktop. Continue the conversation from your phone.*
 
-`telegram-ai-bridge` lets you run one local AI CLI behind one Telegram bot, so you can continue coding conversations from your phone while the real agent stays on your machine.
+A self-hosted Telegram bridge that connects one bot to one local AI CLI — with session persistence, resumable workflows, and owner-only access.
 
-![telegram-ai-bridge hero](assets/hero-bridge.svg)
+[![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)
+[![Telegram](https://img.shields.io/badge/Interface-Telegram-26A5E4?logo=telegram)](https://telegram.org/)
 
-Supported backends:
+**English** | [简体中文](README_CN.md)
 
-- `claude` → Claude Agent SDK, recommended
-- `codex` → Codex SDK, recommended
-- `gemini` → Gemini Code Assist API, experimental compatibility backend
+</div>
 
-Core product rule:
-
-> One bot = one backend = one mental model.
-
-This project is intentionally optimized for separate bots, not in-chat backend switching.
-
-## Positioning
-
-This project is deliberately not trying to become a multi-channel AI operations platform.
-
-If you have seen products that combine Telegram, Feishu, web UI, multiple agents, dashboards, and team workflows, that is a different category.
-
-`telegram-ai-bridge` is intentionally narrower:
-
-| Dimension | `telegram-ai-bridge` | Multi-channel AI workspace tools |
-| --- | --- | --- |
-| Primary user | solo operator | team or org |
-| Core goal | remotely continue a local coding session | coordinate many agents and channels |
-| Interface | Telegram-first | Telegram + Feishu + Web UI + more |
-| Runtime model | self-hosted, local CLI-first | platform / control-plane style |
-| Complexity | thin bridge | broader product surface |
-| Best for | personal remote control | team collaboration and operations |
-
-That difference is a strength, not a limitation. This repo is optimized for people who want the shortest path from phone → Telegram → local AI CLI.
+---
 
 ## Why This Exists
 
-Most “Telegram + AI” projects are chat wrappers.
+Most "Telegram + AI" projects are chat wrappers. This one is a **remote control** for your local coding agent.
 
-This one is different:
+- Targets local coding agents (Claude Code, Codex), not generic chatbots
+- Sessions and credentials stay on your machine
+- Supports real resumable agent workflows
+- Owner-only access by default
 
-- it targets local coding agents instead of generic chatbots
-- it keeps sessions on your machine instead of pretending to be a hosted SaaS
-- it supports real resumable agent workflows
-- it is designed for personal, owner-only remote control
+> **Core product rule:** One bot = one backend = one mental model.
 
-If you already live in Claude Code or Codex and want a practical mobile control surface, this is the use case. Gemini is still supported, but no longer treated as a primary deployment path.
+Supported backends:
 
-## Who It Is For
+| Backend | SDK | Status |
+|---------|-----|--------|
+| `claude` | Claude Agent SDK | Recommended |
+| `codex` | Codex SDK | Recommended |
+| `gemini` | Gemini Code Assist API | Experimental compatibility |
 
-- solo builders who leave long-running coding sessions on a desktop or server
-- AI power users who want to check progress and continue work from a phone
-- people running separate Telegram bots for separate agents
-- tinkerers who want a simple self-hosted bridge instead of a platform
+This project is intentionally narrower than multi-channel AI workspace tools. It optimizes for the shortest path from phone → Telegram → local AI CLI.
 
-## Choose This If
-
-- you want to keep your real AI sessions on your own machine
-- you prefer one bot per agent instead of one dashboard for everything
-- you care more about speed and clarity than a large admin UI
-- you want a personal tool, not a team collaboration suite
-
-## What You Get
-
-- one-command startup: `bun run start --backend <name>`
-- starter workspace bootstrap: `bun run bootstrap --backend <name>`
-- interactive setup wizard: `bun run setup`
-- built-in config and prerequisite checks: `bun run check --backend <name>`
-- `config.json` for portable configuration instead of scattered hardcoded paths
-- SQLite-backed session persistence
-- persistent task tracking for approvals and recent runs
-- owner-only access model
-- session listing, preview, resume, and model selection
-- executor abstraction with `direct` and `local-agent` modes
-- Docker entrypoint that follows the same runtime model
-- Bun test coverage for config/bootstrap flows, wired into GitHub Actions CI
-- Gemini kept as an experimental compatibility backend instead of a primary path
+---
 
 ## Quick Start
 
@@ -96,76 +53,70 @@ bun run check --backend claude
 bun run start --backend claude
 ```
 
-If you prefer npm as a wrapper and already have Bun installed:
+### Recommended Deployment
 
-```bash
-npm start -- --backend claude
-```
-
-## Recommended Deployment Model
-
-Run separate bots for separate agents.
-
-Examples:
+Run separate bots for separate agents:
 
 - `@your-claude-bot` → Claude only
 - `@your-codex-bot` → Codex only
+- `@your-gemini-bot` → Gemini only (if you explicitly need it)
 
-Optional compatibility bot:
+---
 
-- `@your-gemini-bot` → Gemini only, if you explicitly need the compatibility backend
+## What You Get
 
-Why this model is better:
+| Feature | Description |
+|---------|-------------|
+| **One-command startup** | `bun run start --backend <name>` |
+| **Setup wizard** | `bun run setup` — interactive config generation |
+| **Preflight check** | `bun run check --backend <name>` — validates config and CLI state |
+| **Session persistence** | SQLite-backed, sticky sessions with resume/preview |
+| **Task tracking** | Persistent approval and execution history |
+| **Owner-only access** | Only your Telegram ID can use the bot |
+| **Dual executor** | `direct` (in-process) or `local-agent` (JSONL stdio subprocess) |
+| **Docker support** | Same runtime model, credential volumes mounted in |
+| **macOS LaunchAgent** | Auto-generated plist for background deployment |
+| **CI** | Bun tests wired into GitHub Actions |
 
-- users always know which agent they are talking to
-- bot names, prompts, and expectations stay clean
-- permissions and credentials are easier to reason about
-- the README, setup, and support story stay simple
+---
 
-## 30-Second Mental Model
+## Telegram Commands
+
+Sessions are sticky: messages continue the current session until you explicitly change it.
+
+| Command | Description |
+|---------|-------------|
+| `/new` | Start a new session |
+| `/sessions` | List recent sessions |
+| `/peek <id>` | Read-only preview a session |
+| `/resume <id>` | Rebind current chat to an owned session |
+| `/model` | Pick a model for the current bot |
+| `/status` | Show backend, model, cwd, and session |
+| `/tasks` | Show recent task history |
+| `/verbose 0\|1\|2` | Change progress verbosity |
+
+---
+
+## Architecture
 
 ```text
 Telegram bot
-  -> start.js
-  -> config.json
-  -> bridge.js
-  -> executor
-  -> one backend adapter
-  -> your local credentials and session files
+  → start.js
+  → config.json
+  → bridge.js
+  → executor (direct | local-agent)
+  → backend adapter (claude | codex | gemini)
+  → local credentials and session files
 ```
 
-Each bot instance keeps its own:
+Each bot instance keeps its own Telegram token, SQLite DBs, credential directory, and model settings.
 
-- Telegram bot token
-- SQLite DB file
-- task DB file
-- local credential directory
-- model/auth settings
+---
 
-## Setup
+<details>
+<summary><strong>Configuration</strong></summary>
 
-### Recommended: `config.json`
-
-Fastest path:
-
-```bash
-bun run bootstrap --backend claude
-bun run setup --backend claude
-```
-
-The wizard asks for:
-
-- `OWNER_TELEGRAM_ID`
-- shared working directory and optional proxy
-- one Telegram bot token for each separately deployed bot
-- backend-specific model / DB settings
-- Gemini OAuth client settings only if you explicitly enable the compatibility backend
-
-Use `config.example.json` as a starting point.
-
-`bootstrap` creates a starter `config.json` plus the local `files/` directory. If you prefer to manage the file manually, you can still copy `config.example.json`.
-
-### Example Config
+`bun run bootstrap --backend claude` generates a starter `config.json`. Or copy `config.example.json`.
 
 ```json
 {
@@ -204,75 +155,44 @@ Use `config.example.json` as a starting point.
 }
 ```
 
-`config.json` is gitignored so local secrets stay local.
+`config.json` is gitignored. `shared.sessionTimeoutMs` controls per-request timeout only, not idle session expiry.
 
-`shared.sessionTimeoutMs` now controls the timeout for one running request only. It does not expire an idle chat session anymore.
+Inspect resolved config: `bun run config --backend claude` (secrets redacted).
 
-## Run
+</details>
 
-Start one bot instance:
+<details>
+<summary><strong>Backend Notes</strong></summary>
 
-```bash
-bun run start --backend claude
-bun run start --backend codex
-```
+**Claude:**
+- Requires local login state under `~/.claude/`
+- Supports `permissionMode`: `default` or `bypassPermissions`
 
-Optional compatibility mode:
+**Codex:**
+- Requires local login state under `~/.codex/`
+- Optional `model` override; empty string uses Codex defaults
 
-```bash
-bun run start --backend gemini
-```
+**Gemini:**
+- Experimental compatibility backend, not primary
+- Requires `~/.gemini/oauth_creds.json`, `oauthClientId`, `oauthClientSecret`
+- Uses Gemini Code Assist API mode, not full CLI terminal control
+- Recommended only when you intentionally need Gemini support
 
-Helper scripts are thin wrappers around the same entrypoint:
+</details>
 
-```bash
-./start-claude.sh
-./start-codex.sh
-./start-gemini.sh
-```
+<details>
+<summary><strong>macOS LaunchAgent</strong></summary>
 
-Inspect resolved runtime config:
-
-```bash
-bun run config --backend claude
-```
-
-Secrets are redacted in output.
-
-Run a local preflight before starting the bot:
-
-```bash
-bun run check --backend claude
-```
-
-This validates the selected backend config, required paths, and warns if local CLI login state is missing.
-
-## launchd on macOS
-
-Generate a LaunchAgent plist:
-
-```bash
-./scripts/install-launch-agent.sh --backend claude
-```
-
-Install and load it immediately:
+Generate and install:
 
 ```bash
 ./scripts/install-launch-agent.sh --backend claude --install
 ./scripts/install-launch-agent.sh --backend codex --install
 ```
 
-The launchd wrapper runs `bun run check --backend <name>` before `bun run start`, so bad config fails fast instead of silently looping.
+The wrapper runs `bun run check` before `bun run start`, so bad config fails fast.
 
-If you see `409 Conflict: terminated by other getUpdates request`, another process is already polling the same Telegram bot token. Stop the duplicate instance first.
-
-Default labels:
-
-- `claude` → `com.telegram-ai-bridge`
-- `codex` → `com.telegram-ai-bridge-codex`
-- `gemini` → `com.telegram-ai-bridge-gemini`
-
-Inspect or restart a loaded agent:
+Default labels: `com.telegram-ai-bridge`, `com.telegram-ai-bridge-codex`, `com.telegram-ai-bridge-gemini`.
 
 ```bash
 launchctl print gui/$(id -u)/com.telegram-ai-bridge
@@ -280,70 +200,16 @@ launchctl kickstart -k gui/$(id -u)/com.telegram-ai-bridge
 tail -f bridge.log
 ```
 
-## Development
+If you see `409 Conflict`, another process is polling the same bot token.
 
-Run the test suite locally:
+</details>
 
-```bash
-bun test
-```
-
-GitHub Actions runs the same suite on every push and pull request.
-
-## Telegram Commands
-
-Sessions are sticky by default: if you do nothing, later messages continue the current session even after long idle gaps. Use `/new` to force a fresh session, or `/resume <id>` to bind a different owned one.
-
-| Command | Description |
-| --- | --- |
-| `/new` | Start a new session |
-| `/sessions` | List recent sessions |
-| `/peek <id>` | Read-only preview a session |
-| `/resume <id>` | Rebind the current chat to an owned session |
-| `/model` | Pick a model for the current bot instance |
-| `/status` | Show instance backend, model, cwd, and session |
-| `/tasks` | Show recent task history for this chat |
-| `/verbose 0|1|2` | Change progress verbosity |
-
-## Execution Modes
-
-- `direct` runs the backend adapter in-process and keeps today’s behavior
-- `local-agent` talks to a local agent subprocess over JSONL stdio for a cleaner execution boundary
-
-Set the mode in `config.json` with `shared.executor`, or override it with `BRIDGE_EXECUTOR`.
-
-## Backend Notes
-
-### Claude
-
-- requires local Claude login/state under `~/.claude/`
-- supports `permissionMode`: `default` or `bypassPermissions`
-
-### Codex
-
-- requires local Codex login/state under `~/.codex/`
-- optional `model` override; empty string uses Codex defaults
-
-### Gemini
-
-- experimental compatibility backend, not a primary deployment target
-- requires `~/.gemini/oauth_creds.json`
-- requires `oauthClientId` and `oauthClientSecret`
-- optional `googleCloudProject`
-- uses Gemini Code Assist API mode, not full Gemini CLI terminal control
-- recommended only when you intentionally need Gemini support; default product path is Claude/Codex
-
-## Docker
-
-Build:
+<details>
+<summary><strong>Docker</strong></summary>
 
 ```bash
 docker build -t telegram-ai-bridge .
-```
 
-Run a Claude bot:
-
-```bash
 docker run -d \
   --name tg-ai-bridge-claude \
   -v $(pwd)/config.json:/app/config.json:ro \
@@ -351,30 +217,43 @@ docker run -d \
   telegram-ai-bridge --backend claude
 ```
 
-Swap the mounted credential directory and `--backend` flag for `codex`. Use `gemini` only if you intentionally want the compatibility backend.
+Swap credential mount and `--backend` for other backends. See `docker-compose.example.yml` for a Compose starter.
 
-There is also a compose starter at `docker-compose.example.yml`. For persistent SQLite files, point `sessionsDb` and `tasksDb` at paths under `./data`.
+</details>
 
-## Project Structure
+<details>
+<summary><strong>Project Structure</strong></summary>
 
-- `start.js` — CLI entry for `start`, `bootstrap`, `check`, `setup`, and `config`
-- `config.js` — config loader and setup wizard
-- `launchd/` — LaunchAgent template for macOS background deployment
-- `scripts/` — launchd install wrapper and runtime launcher
-- `docker-compose.example.yml` — starter Compose service for self-hosted deployment
+- `start.js` — CLI entry for `start`, `bootstrap`, `check`, `setup`, `config`
+- `config.js` — Config loader and setup wizard
 - `bridge.js` — Telegram bot runtime
 - `sessions.js` — SQLite session persistence
-- `adapters/` — backend integrations
+- `adapters/` — Backend integrations
+- `launchd/` — LaunchAgent template for macOS
+- `scripts/` — Install wrapper and runtime launcher
+- `docker-compose.example.yml` — Compose starter
 
-## Roadmap
+</details>
 
-- [x] config-driven startup
-- [x] one-command backend launch
-- [x] interactive setup wizard
-- [x] clearer user-facing README
-- [x] polished LaunchAgent examples
-- [ ] deployment recipes for VPS / Docker / macOS
-- [ ] better onboarding screenshots or demo GIF
+<details>
+<summary><strong>Execution Modes</strong></summary>
+
+- `direct` — runs the backend adapter in-process (default)
+- `local-agent` — communicates with a local agent subprocess over JSONL stdio
+
+Set in `config.json` at `shared.executor`, or override with `BRIDGE_EXECUTOR`.
+
+</details>
+
+---
+
+## Development
+
+```bash
+bun test
+```
+
+GitHub Actions runs the same suite on every push and pull request.
 
 ## License
 
