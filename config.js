@@ -144,6 +144,7 @@ export function createDefaultConfig() {
       groupContextMaxMessages: 30,
       groupContextMaxTokens: 3000,
       groupContextTtlMs: 1200000,
+      sharedContextDb: "shared-context.db",
       triggerDedupTtlMs: 300000,
       sessionTimeoutMs: 900000,
     },
@@ -266,6 +267,7 @@ function buildEnvFromConfig(config, backend, configPath) {
     SESSION_TIMEOUT_MS: String(shared.sessionTimeoutMs ?? 900000),
     SESSIONS_DB: resolvePathMaybe(baseDir, backendConfig.sessionsDb || `${selectedBackend}.db`),
     TASKS_DB: resolvePathMaybe(baseDir, shared.tasksDb || `tasks-${selectedBackend}.db`),
+    SHARED_CONTEXT_DB: resolvePathMaybe(baseDir, shared.sharedContextDb || "shared-context.db"),
   };
 
   if (selectedBackend === "claude") {
