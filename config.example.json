@@ -10,6 +10,7 @@
     "groupContextMaxMessages": 30,
     "groupContextMaxTokens": 3000,
     "groupContextTtlMs": 1200000,
+    "sharedContextDb": "shared-context.db",
     "triggerDedupTtlMs": 300000,
     "sessionTimeoutMs": 900000
   },
