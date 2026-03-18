@@ -9,6 +9,9 @@ export function createAdapter(config = {}) {
   const cwd = config.cwd || process.env.CC_CWD || process.env.HOME;
   const permMode = process.env.CC_PERMISSION_MODE || "default";
 
+  // Claude SDK 不支持并发 query()（两个子进程会冲突），用锁串行化
+  let queryQueue = Promise.resolve();
+
   function listSessionFiles(limit = 10) {
     const projectsDir = join(process.env.HOME, ".claude", "projects");
     const allFiles = [];
@@ -119,17 +122,37 @@ export function createAdapter(config = {}) {
     },
 
     async *streamQuery(prompt, sessionId, abortSignal, overrides = {}) {
-      const { requestPermission, ...restOverrides } = overrides;
+      // 排队等前一个 query 完成（Claude SDK 不支持并发子进程）
+      let releaseLock;
+      const myLock = new Promise((r) => { releaseLock = r; });
+      const waitForTurn = queryQueue;
+      queryQueue = myLock;
+      await waitForTurn;
+
+      const {
+        requestPermission,
+        allowedTools: overrideAllowedTools,
+        permissionMode: overridePermMode,
+        persistSession: overridePersistSession,
+        maxTurns: overrideMaxTurns,
+        ...restOverrides
+      } = overrides;
       const model = (restOverrides.model && restOverrides.model !== "__default__") ? restOverrides.model : defaultModel;
+      const effectivePermMode = overridePermMode || permMode;
       const options = {
         model,
-        permissionMode: permMode,
-        ...(permMode === "bypassPermissions" && { allowDangerouslySkipPermissions: true }),
+        permissionMode: effectivePermMode,
+        ...(effectivePermMode === "bypassPermissions" && { allowDangerouslySkipPermissions: true }),
         cwd,
       };
 
+      // A2A overrides: allowedTools, persistSession, maxTurns
+      if (overrideAllowedTools) options.allowedTools = overrideAllowedTools;
+      if (overridePersistSession !== undefined) options.persistSession = overridePersistSession;
+      if (overrideMaxTurns !== undefined) options.maxTurns = overrideMaxTurns;
+
       // Tool approval: forward permission requests to Telegram
-      if (requestPermission && permMode !== "bypassPermissions") {
+      if (requestPermission && effectivePermMode !== "bypassPermissions") {
         options.canUseTool = async (toolName, input, sdkOptions) => {
           return await requestPermission(toolName, input, sdkOptions);
         };
@@ -147,20 +170,51 @@ export function createAdapter(config = {}) {
         abortSignal.addEventListener("abort", () => abortController.abort(), { once: true });
       }
 
+      // 捕获 SDK 子进程 stderr，用于排查 exit code 1
+      options.stderr = (data) => console.error(`[Claude SDK stderr] ${data}`);
+
+      console.log(`[Claude SDK] query() options: ${JSON.stringify({
+        model: options.model,
+        permissionMode: options.permissionMode,
+        cwd: options.cwd,
+        resume: options.resume || null,
+        settingSources: options.settingSources || null,
+        allowedTools: options.allowedTools || null,
+        persistSession: options.persistSession,
+        maxTurns: options.maxTurns,
+        hasCanUseTool: !!options.canUseTool,
+      })}`);
+
+      try {
+        yield* this._runQuery(prompt, options, abortController);
+      } catch (err) {
+        // resume session 失败（thinking signature 过期等）→ 回退到新 session
+        if (options.resume && /invalid.*signature|invalid_request_error/i.test(err.message)) {
+          console.log(`[Claude SDK] resume failed (${err.message.slice(0, 80)}), retrying as new session`);
+          const freshOptions = { ...options };
+          delete freshOptions.resume;
+          freshOptions.settingSources = ["user", "project"];
+          yield* this._runQuery(prompt, freshOptions, abortController);
+        } else {
+          throw err;
+        }
+      } finally {
+        releaseLock();
+      }
+    },
+
+    async *_runQuery(prompt, options, abortController) {
       for await (const msg of query({
         prompt,
         options: { ...options, abortController },
       })) {
-        // 捕获 session ID
         if (msg.type === "system" && msg.subtype === "init") {
           yield { type: "session_init", sessionId: msg.session_id };
         }
 
-        // 助手消息 → 进度事件（工具调用 + 文本）
         if (msg.type === "assistant" && msg.message?.content) {
           for (const block of msg.message.content) {
             if (block.type === "tool_use") {
-              // AskUserQuestion: 提取完整问题+选项
               if (block.name === "AskUserQuestion" && block.input?.questions) {
                 for (const q of block.input.questions) {
                   yield {
@@ -186,15 +240,23 @@ export function createAdapter(config = {}) {
           }
         }
 
-        // 最终结果
         if (msg.type === "result") {
+          const resultText = msg.subtype === "success" ? (msg.result || "") : (msg.errors || []).join("\n");
+          console.log(`[Claude SDK] result: subtype=${msg.subtype} cost=${msg.total_cost_usd} text=${resultText.slice(0, 200)}`);
+
+          // SDK 把 API 400 错误当 "success" 返回，需要检测并抛出让上层重试
+          if (resultText.startsWith("API Error:") && /invalid.*signature|invalid_request_error/i.test(resultText)) {
+            throw new Error(resultText);
+          }
+
           yield {
             type: "result",
             success: msg.subtype === "success",
-            text: msg.subtype === "success" ? (msg.result || "") : (msg.errors || []).join("\n"),
+            text: resultText,
             cost: msg.total_cost_usd,
             duration: msg.duration_ms,
           };
+          break;
         }
       }
     },
