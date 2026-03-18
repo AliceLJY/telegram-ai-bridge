@@ -12,7 +12,16 @@
     "groupContextTtlMs": 1200000,
     "sharedContextDb": "shared-context.db",
     "triggerDedupTtlMs": 300000,
-    "sessionTimeoutMs": 900000
+    "sessionTimeoutMs": 900000,
+    // A2A 配置（让多个 bot 互相感知并主动接话）
+    "a2aEnabled": false,
+    "a2aPorts": { "claude": 18810, "codex": 18811, "gemini": 18812 },
+    "a2aMaxGeneration": 2,
+    "a2aCooldownMs": 60000,
+    "a2aMaxResponsesPerWindow": 3,
+    "a2aWindowMs": 300000,
+    "a2aCircuitBreakerThreshold": 3,
+    "a2aCircuitBreakerResetMs": 30000
   },
   "backends": {
     "claude": {
