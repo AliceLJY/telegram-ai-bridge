@@ -31,6 +31,7 @@ import { createBackend, AVAILABLE_BACKENDS } from "./adapters/interface.js";
 import { createExecutor } from "./executor/interface.js";
 import { getBackendProfile } from "./config.js";
 import { initSharedContext, writeSharedMessage, readSharedMessages } from "./shared-context.js";
+import { createA2ABus } from "./a2a/bus.js";
 
 // 防止嵌套检测（从 CC 内部启动时需要）
 delete process.env.CLAUDECODE;
@@ -59,8 +60,128 @@ const SESSION_TIMEOUT_MS = Number(process.env.SESSION_TIMEOUT_MS || 15 * 60 * 10
 const EXECUTOR_MODE = String(process.env.BRIDGE_EXECUTOR || "direct").trim().toLowerCase();
 const SHARED_CONTEXT_DB = process.env.SHARED_CONTEXT_DB || "shared-context.db";
 
+// A2A 配置
+const A2A_ENABLED = process.env.A2A_ENABLED === "true";
+const A2A_PORT = Number(process.env.A2A_PORT) || 0;
+const A2A_MAX_GENERATION = Number(process.env.A2A_MAX_GENERATION) || 2;
+const A2A_COOLDOWN_MS = Number(process.env.A2A_COOLDOWN_MS) || 60000;
+const A2A_MAX_RESPONSES_PER_WINDOW = Number(process.env.A2A_MAX_RESPONSES_PER_WINDOW) || 3;
+const A2A_WINDOW_MS = Number(process.env.A2A_WINDOW_MS) || 300000;
+
+// 解析 A2A peers
+const A2A_PEERS = {};
+if (process.env.A2A_PEERS) {
+  for (const peer of process.env.A2A_PEERS.split(",")) {
+    const idx = peer.indexOf(":");
+    if (idx > 0) {
+      const name = peer.slice(0, idx);
+      const url = peer.slice(idx + 1);
+      if (name && url) A2A_PEERS[name] = url;
+    }
+  }
+}
+
 // ── 初始化共享上下文（跨 bot 进程可见）──
 initSharedContext(SHARED_CONTEXT_DB);
+
+// ── 初始化 A2A 总线 ──
+let a2aBus = null;
+if (A2A_ENABLED && A2A_PORT > 0 && Object.keys(A2A_PEERS).length > 0) {
+  a2aBus = createA2ABus({
+    selfName: DEFAULT_BACKEND,
+    selfUsername: "",
+    port: A2A_PORT,
+    peers: A2A_PEERS,
+    loopGuard: {
+      cooldownMs: A2A_COOLDOWN_MS,
+      maxResponsesPerWindow: A2A_MAX_RESPONSES_PER_WINDOW,
+      windowMs: A2A_WINDOW_MS,
+    },
+  });
+  a2aBus.start();
+
+  // 注册 A2A 消息处理 handler
+  a2aBus.onMessage(async (envelope, meta) => {
+    console.log(`[A2A] Received from ${meta.sender}: gen=${meta.generation}`);
+
+    try {
+      const adapter = adapters[DEFAULT_BACKEND];
+      if (!adapter) {
+        console.log(`[A2A] No adapter for ${DEFAULT_BACKEND}`);
+        return;
+      }
+
+      // 构建 prompt：让 AI 决定是否要接话
+      const prompt = `你是 ${DEFAULT_BACKEND.toUpperCase()}。
+群聊中有另一个 bot（${meta.sender}）刚回复了用户：
+${meta.content.slice(0, 1500)}
+${meta.originalPrompt ? `\n用户的原始问题：${meta.originalPrompt}` : ""}
+
+作为 ${DEFAULT_BACKEND.toUpperCase()}，直接回复你想说的话（可以同意、补充、纠正或提问）。如果实在没话说再回 [NO_RESPONSE]。
+如果有有价值的内容要补充，直接回复你的观点。
+如果没有，只回复 [NO_RESPONSE]，不要发送任何其他内容。`;
+
+      // Claude SDK 需要显式权限配置，否则子进程会卡在 TTY 权限确认
+      const a2aOverrides = DEFAULT_BACKEND === "claude" ? {
+        permissionMode: "dontAsk",
+        allowedTools: ["Read", "Grep", "Glob", "Bash", "WebFetch", "WebSearch"],
+        persistSession: false,
+        maxTurns: 1,
+      } : {};
+
+      let responseText = "";
+      try {
+        console.log(`[A2A] Calling ${DEFAULT_BACKEND} adapter with prompt length: ${prompt.length}`);
+        for await (const event of adapter.streamQuery(prompt, null, undefined, a2aOverrides)) {
+          if (event.type === "text") {
+            responseText += event.text;
+          }
+          // Codex adapter 的回复在 result.text 里，不在 text 事件
+          if (event.type === "result" && event.text) {
+            responseText += event.text;
+          }
+        }
+        console.log(`[A2A] Got response, length: ${responseText.length}`);
+      } catch (err) {
+        console.error(`[A2A] streamQuery error: ${err.message}`);
+        console.error(`[A2A] stack: ${err.stack}`);
+        return;
+      }
+
+      // 检查是否是 [NO_RESPONSE]
+      if (responseText.includes("[NO_RESPONSE]")) {
+        console.log(`[A2A] ${DEFAULT_BACKEND} declined to respond`);
+        return;
+      }
+
+      if (responseText.trim()) {
+        // 发送到 TG
+        const sent = await bot.api.sendMessage(meta.chatId, responseText);
+
+        // 写入共享上下文
+        writeSharedMessage(meta.chatId, {
+          source: `bot:@${bot.botInfo?.username || DEFAULT_BACKEND}`,
+          backend: DEFAULT_BACKEND,
+          role: "assistant",
+          text: responseText,
+        });
+
+        // 广播给其他 bot
+        await a2aBus.broadcast({
+          chatId: meta.chatId,
+          generation: meta.generation + 1,
+          content: responseText,
+          originalPrompt: meta.originalPrompt || meta.content.slice(0, 500),
+          telegramMessageId: sent.message_id,
+        });
+
+        console.log(`[A2A] ${DEFAULT_BACKEND} responded to ${meta.sender}`);
+      }
+    } catch (err) {
+      console.error(`[A2A] Handler error: ${err.message}`);
+    }
+  });
+}
 
 // ── 初始化后端适配器 ──
 const adapters = {};
@@ -139,6 +260,21 @@ const verboseSettings = new Map(); // chatId -> verboseLevel
 const pendingPermissions = new Map(); // permId -> { resolve, cleanup, toolName, chatId, ... }
 const chatPermState = new Map(); // chatId -> { alwaysAllowed: Set, yolo: boolean }
 let permIdCounter = 0;
+
+// A2A 追踪：当前是否在处理 A2A 消息，以及相关元数据
+let currentA2AMetadata = null; // { chatId, sender, senderUsername, generation, originalPrompt, telegramMessageId } | null
+
+function setA2AMetadata(metadata) {
+  currentA2AMetadata = metadata;
+}
+
+function clearA2AMetadata() {
+  currentA2AMetadata = null;
+}
+
+function getA2AMetadata() {
+  return currentA2AMetadata;
+}
 const POLLING_CONFLICT_BASE_DELAY_MS = 5000;
 const POLLING_CONFLICT_MAX_DELAY_MS = 60000;
 
@@ -695,6 +831,7 @@ async function submitAndWait(ctx, prompt) {
       } else {
         resultText = `SDK 错误: ${err.message}`;
         resultSuccess = false;
+        console.error(`[${adapter.label}] SDK 异常: ${err.message}\n${err.stack}`);
         finalizeFailure(summarizeText(resultText, 240), "EXECUTOR_ERROR");
       }
     } finally {
@@ -739,6 +876,21 @@ async function submitAndWait(ctx, prompt) {
         role: "assistant",
         text: resultText,
       });
+
+      // A2A 广播
+      if (a2aBus) {
+        const a2aMeta = getA2AMetadata();
+        const generation = a2aMeta ? a2aMeta.generation + 1 : 0;
+        const originalPrompt = a2aMeta?.originalPrompt || (prompt ? prompt.slice(0, 500) : "");
+
+        a2aBus.broadcast({
+          chatId,
+          generation,
+          content: resultText,
+          originalPrompt,
+          telegramMessageId: ctx.message?.message_id,
+        }).catch((err) => console.error("[A2A] broadcast error:", err.message));
+      }
     }
 
     // 新会话首条：显示 session ID（只在新建时发一次）
@@ -959,6 +1111,57 @@ bot.command("status", async (ctx) => {
     `${activeTask ? `\n活动任务: ${formatTaskStatus(activeTask)}` : ""}`,
     { parse_mode: "Markdown" }
   );
+});
+
+// A2A 命令
+bot.command("a2a", async (ctx) => {
+  const args = ctx.message?.text?.split(" ").slice(1) || [];
+  const subcmd = args[0] || "status";
+
+  if (subcmd === "status") {
+    if (!a2aBus) {
+      await ctx.reply("A2A 未启用。请在 config.json 中设置 shared.a2aEnabled = true 并重启。");
+      return;
+    }
+    const stats = a2aBus.getStats();
+    const lg = stats.loopGuard;
+    const ph = stats.peerHealth;
+
+    await ctx.reply(
+      `🤖 A2A 状态\n` +
+      `━━━━━━━━━━━━\n` +
+      `本体: ${stats.self}\n` +
+      `端口: ${stats.port}\n` +
+      `Peers: ${stats.peers.join(", ") || "无"}\n` +
+      `━━━━━━━━━━━━\n` +
+      `Loop Guard:\n` +
+      `  收到: ${lg.received}\n` +
+      `  放行: ${lg.allowed}\n` +
+      `  拦截(Generation): ${lg.blockedGeneration}\n` +
+      `  拦截(Cooldown): ${lg.blockedCooldown}\n` +
+      `  拦截(Rate): ${lg.blockedRate}\n` +
+      `  拦截(Dup): ${lg.blockedDuplicate}\n` +
+      `━━━━━━━━━━━━\n` +
+      `Peer 熔断:\n` +
+      Object.entries(ph).map(([name, s]) => `  ${name}: ${s.circuit} (${s.consecutiveFailures} 次失败)`).join("\n") || "  无",
+      { parse_mode: "Markdown" }
+    );
+  } else if (subcmd === "test") {
+    if (!a2aBus) {
+      await ctx.reply("A2A 未启用");
+      return;
+    }
+    await ctx.reply("正在发送测试消息...");
+    const results = await a2aBus.broadcast({
+      chatId: ctx.chat.id,
+      generation: 0,
+      content: "A2A 测试消息",
+      originalPrompt: "测试",
+    });
+    await ctx.reply(`测试结果: 发送 ${results.sent}, 失败 ${results.failed}, 跳过 ${results.skipped}`);
+  } else {
+    await ctx.reply(`可用子命令: /a2a status, /a2a test`);
+  }
 });
 
 bot.command("tasks", async (ctx) => {
