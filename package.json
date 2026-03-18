@@ -1,6 +1,6 @@
 {
   "name": "telegram-ai-bridge",
-  "version": "2.0.0",
+  "version": "2.2.0",
   "description": "Run one local AI coding agent behind one Telegram bot.",
   "type": "module",
   "main": "bridge.js",
@@ -41,6 +41,7 @@
     "@openai/codex-sdk": "^0.107.0",
     "google-auth-library": "^9.0.0",
     "grammy": "^1.40.0",
-    "https-proxy-agent": "^7.0.6"
+    "https-proxy-agent": "^7.0.6",
+    "ioredis": "^5.10.0"
   }
 }

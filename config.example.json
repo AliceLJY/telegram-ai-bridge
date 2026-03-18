@@ -10,7 +10,10 @@
     "groupContextMaxMessages": 30,
     "groupContextMaxTokens": 3000,
     "groupContextTtlMs": 1200000,
+    "sharedContextBackend": "sqlite",
     "sharedContextDb": "shared-context.db",
+    "sharedContextJsonPath": "shared-context.json",
+    "redisUrl": "redis://localhost:6379",
     "triggerDedupTtlMs": 300000,
     "sessionTimeoutMs": 900000,
     // A2A 配置（让多个 bot 互相感知并主动接话）
