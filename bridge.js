@@ -58,7 +58,16 @@ const GROUP_CONTEXT_TTL_MS = Number(process.env.GROUP_CONTEXT_TTL_MS || 20 * 60 
 const TRIGGER_DEDUP_TTL_MS = Number(process.env.TRIGGER_DEDUP_TTL_MS || 5 * 60 * 1000);
 const SESSION_TIMEOUT_MS = Number(process.env.SESSION_TIMEOUT_MS || 15 * 60 * 1000);
 const EXECUTOR_MODE = String(process.env.BRIDGE_EXECUTOR || "direct").trim().toLowerCase();
-const SHARED_CONTEXT_DB = process.env.SHARED_CONTEXT_DB || "shared-context.db";
+// 共享上下文配置（可插拔后端）
+const sharedContextConfig = {
+  sharedContextBackend: process.env.SHARED_CONTEXT_BACKEND || "sqlite",
+  sharedContextDb: process.env.SHARED_CONTEXT_DB || "shared-context.db",
+  sharedContextJsonPath: process.env.SHARED_CONTEXT_JSON_PATH || "shared-context.json",
+  redisUrl: process.env.SHARED_CONTEXT_REDIS_URL || "redis://localhost:6379",
+  groupContextMaxMessages: GROUP_CONTEXT_MAX_MESSAGES,
+  groupContextTtlMs: GROUP_CONTEXT_TTL_MS,
+  _baseDir: import.meta.dir,
+};
 
 // A2A 配置
 const A2A_ENABLED = process.env.A2A_ENABLED === "true";
@@ -82,7 +91,7 @@ if (process.env.A2A_PEERS) {
 }
 
 // ── 初始化共享上下文（跨 bot 进程可见）──
-initSharedContext(SHARED_CONTEXT_DB);
+await initSharedContext(sharedContextConfig);
 
 // ── 初始化 A2A 总线 ──
 let a2aBus = null;
@@ -111,11 +120,29 @@ if (A2A_ENABLED && A2A_PORT > 0 && Object.keys(A2A_PEERS).length > 0) {
         return;
       }
 
+      // 读取共享上下文，让 A2A 接话时能看到之前的讨论历史
+      let contextBlock = "";
+      try {
+        const sharedEntries = await readSharedMessages(meta.chatId, {
+          maxMessages: GROUP_CONTEXT_MAX_MESSAGES,
+          maxTokens: GROUP_CONTEXT_MAX_TOKENS,
+          ttlMs: GROUP_CONTEXT_TTL_MS,
+        });
+        if (sharedEntries.length > 0) {
+          const lines = sharedEntries.map((e) =>
+            `- [${e.source}] ${e.text.slice(0, 300)}`
+          );
+          contextBlock = `\n\n之前的讨论历史：\n${lines.join("\n")}`;
+        }
+      } catch (err) {
+        console.error(`[A2A] Failed to read shared context: ${err.message}`);
+      }
+
       // 构建 prompt：让 AI 决定是否要接话
       const prompt = `你是 ${DEFAULT_BACKEND.toUpperCase()}。
 群聊中有另一个 bot（${meta.sender}）刚回复了用户：
 ${meta.content.slice(0, 1500)}
-${meta.originalPrompt ? `\n用户的原始问题：${meta.originalPrompt}` : ""}
+${meta.originalPrompt ? `\n用户的原始问题：${meta.originalPrompt}` : ""}${contextBlock}
 
 作为 ${DEFAULT_BACKEND.toUpperCase()}，直接回复你想说的话（可以同意、补充、纠正或提问）。如果实在没话说再回 [NO_RESPONSE]。
 如果有有价值的内容要补充，直接回复你的观点。
@@ -159,7 +186,7 @@ ${meta.originalPrompt ? `\n用户的原始问题：${meta.originalPrompt}` : ""}
         const sent = await bot.api.sendMessage(meta.chatId, responseText);
 
         // 写入共享上下文
-        writeSharedMessage(meta.chatId, {
+        await writeSharedMessage(meta.chatId, {
           source: `bot:@${bot.botInfo?.username || DEFAULT_BACKEND}`,
           backend: DEFAULT_BACKEND,
           role: "assistant",
@@ -347,7 +374,7 @@ function pushGroupContext(ctx) {
   groupContext.set(chatId, cleanupContextEntries(entries));
 }
 
-function buildPromptWithContext(ctx, userPrompt) {
+async function buildPromptWithContext(ctx, userPrompt) {
   const chat = ctx.chat;
   if (!ENABLE_GROUP_SHARED_CONTEXT || !chat || (chat.type !== "group" && chat.type !== "supergroup")) {
     return userPrompt;
@@ -360,8 +387,8 @@ function buildPromptWithContext(ctx, userPrompt) {
     .filter((e) => e.messageId !== currentMsgId)
     .map((e) => ({ role: e.role, source: e.source, text: e.text, ts: e.ts }));
 
-  // 共享上下文（其他 bot 的回复，来自 SQLite）
-  const sharedEntries = readSharedMessages(chat.id, {
+  // 共享上下文（其他 bot 的回复）
+  const sharedEntries = await readSharedMessages(chat.id, {
     maxMessages: GROUP_CONTEXT_MAX_MESSAGES,
     maxTokens: GROUP_CONTEXT_MAX_TOKENS,
     ttlMs: GROUP_CONTEXT_TTL_MS,
@@ -758,7 +785,7 @@ async function submitAndWait(ctx, prompt) {
     markTaskStarted(taskId);
     await progress.start();
 
-    const fullPrompt = buildPromptWithContext(ctx, prompt);
+    const fullPrompt = await buildPromptWithContext(ctx, prompt);
     const session = getSession(chatId);
     // 只复用同后端的 session
     const sessionId = (session && session.backend === backendName) ? session.session_id : null;
@@ -870,7 +897,7 @@ async function submitAndWait(ctx, prompt) {
 
     // 写入共享上下文（让其他 bot 进程可见）
     if (resultText && resultSuccess) {
-      writeSharedMessage(chatId, {
+      await writeSharedMessage(chatId, {
         source: `bot:@${bot.botInfo?.username || backendName}`,
         backend: backendName,
         role: "assistant",
