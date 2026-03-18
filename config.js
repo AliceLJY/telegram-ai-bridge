@@ -144,7 +144,10 @@ export function createDefaultConfig() {
       groupContextMaxMessages: 30,
       groupContextMaxTokens: 3000,
       groupContextTtlMs: 1200000,
+      sharedContextBackend: "sqlite",
       sharedContextDb: "shared-context.db",
+      sharedContextJsonPath: "shared-context.json",
+      redisUrl: "",
       triggerDedupTtlMs: 300000,
       sessionTimeoutMs: 900000,
       // A2A 配置
@@ -276,7 +279,10 @@ function buildEnvFromConfig(config, backend, configPath) {
     SESSION_TIMEOUT_MS: String(shared.sessionTimeoutMs ?? 900000),
     SESSIONS_DB: resolvePathMaybe(baseDir, backendConfig.sessionsDb || `${selectedBackend}.db`),
     TASKS_DB: resolvePathMaybe(baseDir, shared.tasksDb || `tasks-${selectedBackend}.db`),
+    SHARED_CONTEXT_BACKEND: shared.sharedContextBackend || "sqlite",
     SHARED_CONTEXT_DB: resolvePathMaybe(baseDir, shared.sharedContextDb || "shared-context.db"),
+    SHARED_CONTEXT_JSON_PATH: resolvePathMaybe(baseDir, shared.sharedContextJsonPath || "shared-context.json"),
+    SHARED_CONTEXT_REDIS_URL: shared.redisUrl || "",
 
     // A2A 配置
     A2A_ENABLED: String(shared.a2aEnabled ?? false),
@@ -347,6 +353,13 @@ export function validateConfig(config, options = {}) {
   validatePositiveIntegerField(issues, "shared.groupContextTtlMs", shared.groupContextTtlMs);
   validatePositiveIntegerField(issues, "shared.triggerDedupTtlMs", shared.triggerDedupTtlMs);
   validatePositiveIntegerField(issues, "shared.sessionTimeoutMs", shared.sessionTimeoutMs);
+  const validContextBackends = ["sqlite", "json", "redis"];
+  if (shared.sharedContextBackend && !validContextBackends.includes(shared.sharedContextBackend)) {
+    pushIssue(issues, "shared.sharedContextBackend", `must be one of: ${validContextBackends.join(", ")}.`);
+  }
+  if (shared.sharedContextBackend === "redis" && !isNonEmptyString(shared.redisUrl)) {
+    pushIssue(issues, "shared.redisUrl", "must be set when sharedContextBackend is redis.");
+  }
 
   const backends = config?.backends;
   if (!backends || typeof backends !== "object") {

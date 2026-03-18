@@ -12,6 +12,15 @@ services:
       - ./data:/app/data
       - ${HOME}/.claude:/root/.claude
 
+  # Optional: Redis for shared context backend (set sharedContextBackend: "redis" in config.json)
+  # redis:
+  #   image: redis:7-alpine
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6379:6379"
+
 # Notes:
 # - Set sessionsDb/tasksDb in config.json to paths under ./data for persistence.
 # - Run one service per backend, with a separate Telegram bot token for each backend.
+# - To use Redis shared context: uncomment the redis service above and set
+#   "sharedContextBackend": "redis" and "redisUrl": "redis://redis:6379" in config.json.

@@ -76,7 +76,7 @@ bun run start --backend claude
 | **双执行模式** | `direct`（进程内）或 `local-agent`（JSONL stdio 子进程） |
 | **Docker 支持** | 同一套运行方式，凭证目录挂载进去 |
 | **macOS LaunchAgent** | 自动生成 plist，后台常驻 |
-| **群聊共享上下文** | 多个 bot 在同一群里通过共享 SQLite 互相看到对方的回复 |
+| **群聊共享上下文** | 多个 bot 在同一群里互相看到对方的回复（SQLite / JSON / Redis） |
 | **CI** | Bun 测试接入 GitHub Actions |
 
 ---
@@ -102,17 +102,36 @@ bun run start --backend claude
 
 Telegram 的平台限制：bot 之间互相收不到消息。把 Claude 和 Codex 放在同一个群里，它们看不到对方说了什么。
 
-本项目通过**共享 SQLite 上下文存储**绕过这个限制。每个 bot 回复后把内容写入共享数据库，其他 bot 被 @ 时读取共享上下文，把对方的回复带入 prompt。
+本项目通过**可插拔的共享上下文存储**绕过这个限制。每个 bot 回复后把内容写入共享存储，其他 bot 被 @ 时读取共享上下文，把对方的回复带入 prompt。
 
 ```text
 你:     @claude 帮我 review 这段代码
-CC:     [review 完毕，回复写入共享 DB]
+CC:     [review 完毕，回复写入共享存储]
 
 你:     @codex 你同意 CC 的 review 吗？
-Codex:  [从共享 DB 读到 CC 的回复，给出自己的意见]
+Codex:  [从共享存储读到 CC 的回复，给出自己的意见]
 ```
 
 不用再复制粘贴。内置三重保护（30 条 / 3000 token / 20 分钟过期）防止上下文膨胀。
+
+### 存储后端对比
+
+| 后端 | 依赖 | 并发 | 适用场景 |
+|------|------|------|----------|
+| `sqlite`（默认）| 无（内置）| WAL 模式，单写 | 单 bot、低并发 |
+| `json` | 无（内置）| 原子写（tmp+rename）| 零依赖部署 |
+| `redis` | `ioredis` | 原生并发 + TTL | 多 bot、Docker 环境 |
+
+在 `config.json` 中设置 `sharedContextBackend`：
+
+```json
+{
+  "shared": {
+    "sharedContextBackend": "redis",
+    "redisUrl": "redis://localhost:6379"
+  }
+}
+```
 
 > **注意：** bot 只在被 @ 或被回复时才响应，不会自动互相接话。
 
@@ -148,7 +167,9 @@ Telegram bot
     "defaultVerboseLevel": 1,
     "executor": "direct",
     "tasksDb": "tasks.db",
-    "sharedContextDb": "shared-context.db"
+    "sharedContextBackend": "sqlite",
+    "sharedContextDb": "shared-context.db",
+    "redisUrl": ""
   },
   "backends": {
     "claude": {
@@ -250,7 +271,8 @@ docker run -d \
 - `config.js` — 配置加载与 setup wizard
 - `bridge.js` — Telegram bot 运行时
 - `sessions.js` — SQLite 会话持久化
-- `shared-context.js` — 跨 bot 共享上下文（多 bot 群聊协作）
+- `shared-context.js` — 跨 bot 共享上下文入口
+- `shared-context/` — 可插拔后端（SQLite / JSON / Redis）
 - `adapters/` — 后端接入层
 - `launchd/` — macOS LaunchAgent 模板
 - `scripts/` — 安装脚本与运行包装器
