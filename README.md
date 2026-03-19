@@ -95,6 +95,8 @@ Sessions are sticky: messages continue the current session until you explicitly 
 | `/status` | Show backend, model, cwd, and session |
 | `/tasks` | Show recent task history |
 | `/verbose 0\|1\|2` | Change progress verbosity |
+| `/relay <target> <msg>` | Forward a message to another bot and return its reply |
+| `/a2a status` | Show A2A bus status, peer health, and loop guard stats |
 
 ---
 
@@ -166,6 +168,26 @@ Enable in `config.json`:
 ```
 
 Each bot instance listens on its assigned port. Peers are auto-discovered from `a2aPorts` (excluding self).
+
+### `/relay` — Cross-Bot Point-to-Point Messaging
+
+While A2A broadcast is group-only, `/relay` works **everywhere** — including DMs. It sends a message to another bot's AI backend and returns the response directly.
+
+```text
+/relay codex What do you think of this approach?
+```
+
+**Aliases** for less typing: `cc`=claude, `cx`=codex, `gm`=gemini.
+
+**Reply-to forwarding**: Long-press a bot's reply and respond with `/relay <target> [instruction]` — the replied-to message is automatically included in the relay prompt. No copy-pasting needed.
+
+```text
+Claude:  [reviews your code]
+You:     (reply to Claude's message) /relay cx Do you agree with this review?
+Codex:   [sees Claude's full review + your instruction, gives opinion]
+```
+
+This is ideal for fact-checking and cross-review workflows.
 
 ---
 
