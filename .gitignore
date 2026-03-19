@@ -19,3 +19,10 @@ tasks*.db
 tasks*.db-wal
 tasks*.db-shm
 *.log
+shared-context.db
+shared-context.db-wal
+shared-context.db-shm
+shared-context.json
+plan.md
+plan-*.md
+research.md

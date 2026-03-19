@@ -135,6 +135,38 @@ Set `sharedContextBackend` in `config.json`:
 
 > **Note:** Bots only respond when explicitly @mentioned or replied to. They don't auto-reply to each other.
 
+### A2A: Agent-to-Agent Communication
+
+Beyond passive shared context, A2A lets bots **actively respond** to each other in group chats. When one bot replies to a user, the A2A bus broadcasts the response to sibling bots. Each sibling independently decides whether to chime in.
+
+```text
+You:    @claude What's the best way to handle retries?
+Claude: [responds with retry pattern advice]
+         ↓ A2A broadcast
+Codex:  [reads Claude's reply, adds: "I'd also suggest exponential backoff..."]
+```
+
+Built-in safety:
+- **Loop guard**: Max 2 generations of bot-to-bot replies per conversation turn
+- **Cooldown**: 60s minimum between A2A responses per bot
+- **Circuit breaker**: Auto-disables unreachable peers after 3 failures
+- **Rate limit**: Max 3 A2A responses per 5-minute window
+
+> **Important:** A2A only works in group chats. Private/DM conversations are never broadcast — this prevents cross-bot message leaking between separate DM windows.
+
+Enable in `config.json`:
+
+```json
+{
+  "shared": {
+    "a2aEnabled": true,
+    "a2aPorts": { "claude": 18810, "codex": 18811 }
+  }
+}
+```
+
+Each bot instance listens on its assigned port. Peers are auto-discovered from `a2aPorts` (excluding self).
+
 ---
 
 ## Architecture
@@ -273,6 +305,7 @@ Swap credential mount and `--backend` for other backends. See `docker-compose.ex
 - `sessions.js` — SQLite session persistence
 - `shared-context.js` — Cross-bot shared context entry point
 - `shared-context/` — Pluggable backends (SQLite / JSON / Redis)
+- `a2a/` — Agent-to-agent communication bus, loop guard, peer health
 - `adapters/` — Backend integrations
 - `launchd/` — LaunchAgent template for macOS
 - `scripts/` — Install wrapper and runtime launcher
