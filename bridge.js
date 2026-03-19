@@ -75,6 +75,7 @@ const A2A_PORT = Number(process.env.A2A_PORT) || 0;
 const A2A_MAX_GENERATION = Number(process.env.A2A_MAX_GENERATION) || 2;
 const A2A_COOLDOWN_MS = Number(process.env.A2A_COOLDOWN_MS) || 60000;
 const A2A_MAX_RESPONSES_PER_WINDOW = Number(process.env.A2A_MAX_RESPONSES_PER_WINDOW) || 3;
+const RELAY_TIMEOUT_MS = Number(process.env.RELAY_TIMEOUT_MS) || 120000;
 const A2A_WINDOW_MS = Number(process.env.A2A_WINDOW_MS) || 300000;
 
 // 解析 A2A peers
@@ -213,6 +214,30 @@ ${meta.originalPrompt ? `\n用户的原始问题：${meta.originalPrompt}` : ""}
     } catch (err) {
       console.error(`[A2A] Handler error: ${err.message}`);
     }
+  });
+
+  // 注册 relay handler：收到 relay 请求时调用本地 AI 后端处理并返回结果
+  a2aBus.onRelay(async ({ sender, prompt }) => {
+    console.log(`[A2A] Relay from ${sender}: "${prompt.slice(0, 80)}..."`);
+
+    const adapter = adapters[DEFAULT_BACKEND];
+    if (!adapter) throw new Error(`No adapter for ${DEFAULT_BACKEND}`);
+
+    const relayOverrides = DEFAULT_BACKEND === "claude" ? {
+      permissionMode: "dontAsk",
+      allowedTools: ["Read", "Grep", "Glob", "Bash", "WebFetch", "WebSearch"],
+      persistSession: false,
+      maxTurns: 1,
+    } : {};
+
+    let responseText = "";
+    for await (const event of adapter.streamQuery(prompt, null, undefined, relayOverrides)) {
+      if (event.type === "text") responseText += event.text;
+      if (event.type === "result" && event.text) responseText += event.text;
+    }
+
+    console.log(`[A2A] Relay response ready, length: ${responseText.length}`);
+    return responseText;
   });
 }
 
@@ -1195,6 +1220,65 @@ bot.command("a2a", async (ctx) => {
     await ctx.reply(`测试结果: 发送 ${results.sent}, 失败 ${results.failed}, 跳过 ${results.skipped}`);
   } else {
     await ctx.reply(`可用子命令: /a2a status, /a2a test`);
+  }
+});
+
+// /relay <target> <message> — 主动转发消息给指定 bot（DM 和群聊均可）
+bot.command("relay", async (ctx) => {
+  if (!a2aBus) {
+    await ctx.reply("A2A 未启用。请在 config.json 中设置 shared.a2aEnabled = true 并重启。");
+    return;
+  }
+
+  const raw = ctx.match?.trim() || "";
+  const spaceIdx = raw.indexOf(" ");
+  const targetName = spaceIdx > 0 ? raw.slice(0, spaceIdx).toLowerCase() : raw.toLowerCase();
+  const message = spaceIdx > 0 ? raw.slice(spaceIdx + 1).trim() : "";
+  const peers = a2aBus.getPeerNames();
+
+  if (!targetName || !message) {
+    await ctx.reply(
+      `用法: /relay <target> <message>\n\n` +
+      `可用目标: ${peers.join(", ") || "无"}\n` +
+      `示例: /relay ${peers[0] || "codex"} 你好，介绍一下自己`
+    );
+    return;
+  }
+
+  if (targetName === DEFAULT_BACKEND) {
+    await ctx.reply("不能转发给自己，直接发消息即可。");
+    return;
+  }
+
+  if (!peers.includes(targetName)) {
+    await ctx.reply(`未知目标: ${targetName}\n可用: ${peers.join(", ")}`);
+    return;
+  }
+
+  const thinkingMsg = await ctx.reply(`正在转发给 ${targetName.toUpperCase()}，等待回复...`);
+
+  try {
+    const result = await a2aBus.relay(targetName, {
+      prompt: message,
+      sender: DEFAULT_BACKEND,
+    }, RELAY_TIMEOUT_MS);
+
+    // 删除 thinking 消息
+    await ctx.api.deleteMessage(ctx.chat.id, thinkingMsg.message_id).catch(() => {});
+
+    if (result.success) {
+      const response = result.response?.trim();
+      if (response) {
+        await sendLong(ctx, `[${targetName.toUpperCase()}] ${response}`);
+      } else {
+        await ctx.reply(`[${targetName.toUpperCase()}] (无输出)`);
+      }
+    } else {
+      await ctx.reply(`转发失败: ${result.error}`);
+    }
+  } catch (err) {
+    await ctx.api.deleteMessage(ctx.chat.id, thinkingMsg.message_id).catch(() => {});
+    await ctx.reply(`转发异常: ${err.message}`);
   }
 });
 

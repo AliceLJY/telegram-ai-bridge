@@ -35,6 +35,7 @@ export function createA2ABus(config) {
 
   let server = null;
   let messageHandler = null;
+  let relayHandler = null;
 
   // HTTP server
   function start() {
@@ -49,6 +50,9 @@ export function createA2ABus(config) {
         const url = new URL(req.url);
         if (req.method === "POST" && url.pathname === "/a2a/message") {
           return handleInbound(req);
+        }
+        if (req.method === "POST" && url.pathname === "/a2a/relay") {
+          return handleRelayInbound(req);
         }
         return new Response("Not Found", { status: 404 });
       },
@@ -107,6 +111,83 @@ export function createA2ABus(config) {
       console.error(`[A2A] Parse error: ${err.message}`);
       return Response.json({ status: "error", message: err.message }, { status: 400 });
     }
+  }
+
+  // 处理入站 relay 请求（同步请求-响应，不走 loop guard）
+  async function handleRelayInbound(req) {
+    try {
+      const body = await req.json();
+      const { sender, prompt } = body;
+
+      if (!prompt || !sender) {
+        return Response.json({ status: "error", message: "missing sender or prompt" }, { status: 400 });
+      }
+
+      if (!relayHandler) {
+        return Response.json({ status: "error", message: "relay not supported on this instance" }, { status: 501 });
+      }
+
+      console.log(`[A2A] Relay request from ${sender}: "${prompt.slice(0, 80)}..."`);
+
+      const response = await relayHandler({ sender, prompt });
+      return Response.json({ status: "ok", response: response || "" });
+    } catch (err) {
+      console.error(`[A2A] Relay handler error: ${err.message}`);
+      return Response.json({ status: "error", message: err.message }, { status: 500 });
+    }
+  }
+
+  /**
+   * 发送 relay 请求给指定 peer（点对点，同步等响应）
+   * @param {string} targetName - 目标 bot 名称
+   * @param {object} opts - { prompt, sender, chatId }
+   * @param {number} [timeoutMs=120000] - 超时毫秒
+   * @returns {Promise<{ success: boolean, response?: string, error?: string }>}
+   */
+  async function relay(targetName, opts, timeoutMs = 120000) {
+    const peer = peerUrls.find((p) => p.name === targetName);
+    if (!peer) {
+      return { success: false, error: `unknown peer: ${targetName}` };
+    }
+
+    if (!peerHealth.isAvailable(targetName)) {
+      return { success: false, error: `${targetName} circuit open (unreachable)` };
+    }
+
+    try {
+      const res = await fetch(`${peer.url}/a2a/relay`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sender: opts.sender || selfName, prompt: opts.prompt }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.status === "ok") {
+        peerHealth.recordSuccess(targetName);
+        return { success: true, response: data.response || "" };
+      } else {
+        peerHealth.recordFailure(targetName);
+        return { success: false, error: data.message || `HTTP ${res.status}` };
+      }
+    } catch (err) {
+      peerHealth.recordFailure(targetName);
+      const isTimeout = err.name === "TimeoutError" || err.name === "AbortError";
+      return { success: false, error: isTimeout ? `timeout (${Math.round(timeoutMs / 1000)}s)` : err.message };
+    }
+  }
+
+  /**
+   * 注册 relay 处理回调
+   * @param {function} handler - async function({ sender, prompt }) => string
+   */
+  function onRelay(handler) {
+    relayHandler = handler;
+  }
+
+  /** 返回所有 peer 名称（不含自己） */
+  function getPeerNames() {
+    return peerUrls.map((p) => p.name);
   }
 
   /**
@@ -184,6 +265,9 @@ export function createA2ABus(config) {
     stop,
     broadcast,
     onMessage,
+    onRelay,
+    relay,
+    getPeerNames,
     getStats,
   };
 }
