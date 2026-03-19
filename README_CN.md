@@ -95,6 +95,8 @@ bun run start --backend claude
 | `/status` | 查看后端、模型、工作目录和会话 |
 | `/tasks` | 查看最近任务记录 |
 | `/verbose 0\|1\|2` | 调整进度输出详细度 |
+| `/relay <target> <msg>` | 把消息转发给另一个 bot，返回对方回复 |
+| `/a2a status` | 查看 A2A 总线状态、节点健康和防循环统计 |
 
 ---
 
@@ -166,6 +168,26 @@ Codex:  [读到 Claude 的回复，补充："我建议再加个指数退避..."]
 ```
 
 每个 bot 实例监听自己的端口。Peer 列表从 `a2aPorts` 自动发现（排除自身）。
+
+### `/relay` — 跨 Bot 点对点转发
+
+A2A 广播仅限群聊，`/relay` 则**私聊群聊都能用**。把消息发给另一个 bot 的 AI 后端，同步返回回复。
+
+```text
+/relay codex 你觉得这个方案怎么样？
+```
+
+**简写**少打字：`cc`=claude, `cx`=codex, `gm`=gemini。
+
+**回复转发**：长按 bot 的某条回复，回复它 `/relay <target> [追加指令]`，被回复的消息内容会自动带入 prompt，不用复制粘贴。
+
+```text
+Claude:  [帮你 review 了代码]
+你:      (回复 Claude 那条消息) /relay cx 你觉得他说得对吗？
+Codex:   [看到 Claude 的完整 review + 你的追加指令，给出意见]
+```
+
+特别适合 fact-check 和交叉 code review 场景。
 
 ---
 
