@@ -1234,19 +1234,29 @@ bot.command("relay", async (ctx) => {
   const raw = ctx.match?.trim() || "";
   const spaceIdx = raw.indexOf(" ");
   const rawTarget = spaceIdx > 0 ? raw.slice(0, spaceIdx).toLowerCase() : raw.toLowerCase();
-  const message = spaceIdx > 0 ? raw.slice(spaceIdx + 1).trim() : "";
+  let message = spaceIdx > 0 ? raw.slice(spaceIdx + 1).trim() : "";
   const peers = a2aBus.getPeerNames();
 
   // 简写映射：cc→claude, cx→codex, gm→gemini
   const ALIASES = { cc: "claude", cx: "codex", gm: "gemini" };
   const targetName = ALIASES[rawTarget] || rawTarget;
 
+  // 回复转发：长按某条消息回复 /relay cx [可选追加指令]
+  // 自动把被回复的消息内容拼进 prompt
+  const replyText = ctx.message?.reply_to_message?.text || ctx.message?.reply_to_message?.caption || "";
+  if (replyText) {
+    const instruction = message || "请审阅以上内容";
+    message = `以下是另一个 AI (${DEFAULT_BACKEND}) 的回复：\n\n${replyText}\n\n${instruction}`;
+  }
+
   if (!targetName || !message) {
     await ctx.reply(
-      `用法: /relay <target> <message>\n\n` +
+      `用法: /relay <target> <message>\n` +
+      `回复转发: 长按消息回复 /relay <target> [追加指令]\n\n` +
       `可用目标: ${peers.join(", ") || "无"}\n` +
       `简写: cc=claude, cx=codex, gm=gemini\n` +
-      `示例: /relay cx 你好，介绍一下自己`
+      `示例: /relay cx 你好，介绍一下自己\n` +
+      `示例: (回复CC的消息) /relay cx 你觉得他说得对吗`
     );
     return;
   }
