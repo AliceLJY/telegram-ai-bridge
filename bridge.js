@@ -111,7 +111,13 @@ if (A2A_ENABLED && A2A_PORT > 0 && Object.keys(A2A_PEERS).length > 0) {
 
   // 注册 A2A 消息处理 handler
   a2aBus.onMessage(async (envelope, meta) => {
-    console.log(`[A2A] Received from ${meta.sender}: gen=${meta.generation}`);
+    console.log(`[A2A] Received from ${meta.sender}: gen=${meta.generation}, chatId=${meta.chatId}`);
+
+    // 安全检查：只处理群聊的 A2A 消息，拒绝私聊 chatId（正数 = 私聊用户 ID）
+    if (meta.chatId > 0) {
+      console.log(`[A2A] Ignoring DM chatId=${meta.chatId} — A2A only works in group chats`);
+      return;
+    }
 
     try {
       const adapter = adapters[DEFAULT_BACKEND];
@@ -895,8 +901,9 @@ async function submitAndWait(ctx, prompt) {
       await ctx.reply(`${adapter.label} 无输出。`);
     }
 
-    // 写入共享上下文（让其他 bot 进程可见）
-    if (resultText && resultSuccess) {
+    // 写入共享上下文 + A2A 广播（仅群聊——私聊不需要跨 bot 共享，避免 DM 串台）
+    const isGroupChat = ctx.chat?.type === "group" || ctx.chat?.type === "supergroup";
+    if (resultText && resultSuccess && isGroupChat) {
       await writeSharedMessage(chatId, {
         source: `bot:@${bot.botInfo?.username || backendName}`,
         backend: backendName,
@@ -905,7 +912,7 @@ async function submitAndWait(ctx, prompt) {
       });
 
       // A2A 广播
-      if (a2aBus) {
+      if (a2aBus && isGroupChat) {
         const a2aMeta = getA2AMetadata();
         const generation = a2aMeta ? a2aMeta.generation + 1 : 0;
         const originalPrompt = a2aMeta?.originalPrompt || (prompt ? prompt.slice(0, 500) : "");
