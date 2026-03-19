@@ -347,6 +347,10 @@ docker run -d \
 
 ---
 
+## 相关项目
+
+- **[openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway)** — OpenClaw 的 Google A2A v0.3.0 协议插件，服务端 agent 跨服务器通信。如果 telegram-ai-bridge 是手机遥控器，这个就是服务端骨干网。
+
 ## 开发
 
 ```bash

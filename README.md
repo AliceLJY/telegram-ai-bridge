@@ -347,6 +347,10 @@ Set in `config.json` at `shared.executor`, or override with `BRIDGE_EXECUTOR`.
 
 ---
 
+## Related Projects
+
+- **[openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway)** — Google A2A v0.3.0 protocol plugin for OpenClaw. Server-side agent-to-agent communication across servers. If telegram-ai-bridge is the phone remote control, this is the server backbone.
+
 ## Development
 
 ```bash
