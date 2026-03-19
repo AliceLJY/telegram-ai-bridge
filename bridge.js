@@ -1232,15 +1232,20 @@ bot.command("relay", async (ctx) => {
 
   const raw = ctx.match?.trim() || "";
   const spaceIdx = raw.indexOf(" ");
-  const targetName = spaceIdx > 0 ? raw.slice(0, spaceIdx).toLowerCase() : raw.toLowerCase();
+  const rawTarget = spaceIdx > 0 ? raw.slice(0, spaceIdx).toLowerCase() : raw.toLowerCase();
   const message = spaceIdx > 0 ? raw.slice(spaceIdx + 1).trim() : "";
   const peers = a2aBus.getPeerNames();
+
+  // 简写映射：cc→claude, cx→codex, gm→gemini
+  const ALIASES = { cc: "claude", cx: "codex", gm: "gemini" };
+  const targetName = ALIASES[rawTarget] || rawTarget;
 
   if (!targetName || !message) {
     await ctx.reply(
       `用法: /relay <target> <message>\n\n` +
       `可用目标: ${peers.join(", ") || "无"}\n` +
-      `示例: /relay ${peers[0] || "codex"} 你好，介绍一下自己`
+      `简写: cc=claude, cx=codex, gm=gemini\n` +
+      `示例: /relay cx 你好，介绍一下自己`
     );
     return;
   }
