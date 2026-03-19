@@ -16,7 +16,6 @@
     "redisUrl": "redis://localhost:6379",
     "triggerDedupTtlMs": 300000,
     "sessionTimeoutMs": 900000,
-    // A2A 配置（让多个 bot 互相感知并主动接话）
     "a2aEnabled": false,
     "a2aPorts": { "claude": 18810, "codex": 18811, "gemini": 18812 },
     "a2aMaxGeneration": 2,
