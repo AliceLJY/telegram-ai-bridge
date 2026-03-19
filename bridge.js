@@ -170,9 +170,9 @@ ${meta.originalPrompt ? `\n用户的原始问题：${meta.originalPrompt}` : ""}
           if (event.type === "text") {
             responseText += event.text;
           }
-          // Codex adapter 的回复在 result.text 里，不在 text 事件
-          if (event.type === "result" && event.text) {
-            responseText += event.text;
+          // Codex adapter 的回复在 result.text 里，Claude 的在 text 事件——只在没收到 text 事件时用 result
+          if (event.type === "result" && event.text && !responseText) {
+            responseText = event.text;
           }
         }
         console.log(`[A2A] Got response, length: ${responseText.length}`);
@@ -233,7 +233,8 @@ ${meta.originalPrompt ? `\n用户的原始问题：${meta.originalPrompt}` : ""}
     let responseText = "";
     for await (const event of adapter.streamQuery(prompt, null, undefined, relayOverrides)) {
       if (event.type === "text") responseText += event.text;
-      if (event.type === "result" && event.text) responseText += event.text;
+      // Codex adapter 的回复在 result.text 里，Claude 的在 text 事件里——只在没收到 text 事件时用 result
+      if (event.type === "result" && event.text && !responseText) responseText = event.text;
     }
 
     console.log(`[A2A] Relay response ready, length: ${responseText.length}`);
