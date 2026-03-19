@@ -347,9 +347,41 @@ Set in `config.json` at `shared.executor`, or override with `BRIDGE_EXECUTOR`.
 
 ---
 
-## Related Projects
+## How It Fits Together
 
-- **[openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway)** — Google A2A v0.3.0 protocol plugin for OpenClaw. Server-side agent-to-agent communication across servers. If telegram-ai-bridge is the phone remote control, this is the server backbone.
+Three ways to make AI agents talk to each other — different protocols, different scenarios:
+
+| Layer | Protocol | How | Scenario |
+|-------|----------|-----|----------|
+| **Terminal** | MCP | Built-in `codex mcp-server` + `claude mcp serve`, zero code | CC ↔ Codex direct calls in your terminal |
+| **Telegram Group** | Custom A2A | This project's A2A bus, auto-broadcast | Multiple bots in one group, chiming in |
+| **Telegram DM** | Custom A2A | This project's `/relay` command | Explicit cross-bot forwarding from phone |
+| **Server** | Google A2A v0.3.0 | [openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway) | OpenClaw agents across servers |
+
+> **MCP vs A2A**: MCP is a tool-calling protocol (I invoke your capability). A2A is a peer communication protocol (I talk to you as an equal). CC calling Codex via MCP is using Codex as a tool — not two agents chatting.
+
+### Terminal: CLI-to-CLI via MCP (No Telegram Needed)
+
+Claude Code and Codex each have a built-in MCP server mode. Register them with each other and they can call each other directly — no bridge, no Telegram, no custom code:
+
+```bash
+# In Claude Code: register Codex as MCP server
+claude mcp add codex -- codex mcp-server
+
+# In Codex: register Claude Code as MCP server (in ~/.codex/config.toml)
+[mcp_servers.claude-code]
+type = "stdio"
+command = "claude"
+args = ["mcp", "serve"]
+```
+
+### Telegram: This Project
+
+Groups use A2A auto-broadcast. DMs use `/relay`. See sections above.
+
+### Server: openclaw-a2a-gateway
+
+For OpenClaw agents communicating across servers via the Google A2A v0.3.0 standard protocol. A different system entirely — see [openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway).
 
 ## Development
 

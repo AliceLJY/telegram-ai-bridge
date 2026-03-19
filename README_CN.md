@@ -347,9 +347,41 @@ docker run -d \
 
 ---
 
-## 相关项目
+## 通信全景图
 
-- **[openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway)** — OpenClaw 的 Google A2A v0.3.0 协议插件，服务端 agent 跨服务器通信。如果 telegram-ai-bridge 是手机遥控器，这个就是服务端骨干网。
+三种让 AI agent 互相对话的方式——协议不同，场景不同：
+
+| 层 | 协议 | 方式 | 场景 |
+|---|------|------|------|
+| **终端** | MCP | 内置 `codex mcp-server` + `claude mcp serve`，零代码 | CC ↔ Codex 在终端互调 |
+| **TG 群聊** | 自定义 A2A | 本项目的 A2A 总线，自动广播 | 多 bot 同群接话 |
+| **TG 私聊** | 自定义 A2A | 本项目的 `/relay` 命令 | 手机上显式跨 bot 转发 |
+| **服务端** | Google A2A v0.3.0 | [openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway) | OpenClaw agent 跨服务器通信 |
+
+> **MCP vs A2A**：MCP 是工具调用协议（我调你的能力），A2A 是对等通信协议（我跟你对话）。CC 通过 MCP 调 Codex，本质是把 Codex 当工具用，不是两个 agent 在聊天。
+
+### 终端：CLI 直连（不经过 Telegram）
+
+Claude Code 和 Codex 各自内置了 MCP server 模式，互相注册就通了——不需要桥接、不需要 Telegram、不需要写代码：
+
+```bash
+# Claude Code 里注册 Codex
+claude mcp add codex -- codex mcp-server
+
+# Codex 里注册 Claude Code（在 ~/.codex/config.toml）
+[mcp_servers.claude-code]
+type = "stdio"
+command = "claude"
+args = ["mcp", "serve"]
+```
+
+### Telegram：本项目
+
+群聊走 A2A 自动广播，私聊走 `/relay`。详见上面的章节。
+
+### 服务端：openclaw-a2a-gateway
+
+OpenClaw agent 通过 Google A2A v0.3.0 标准协议跨服务器通信。完全不同的系统——见 [openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway)。
 
 ## 开发
 
