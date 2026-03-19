@@ -135,6 +135,38 @@ Codex:  [从共享存储读到 CC 的回复，给出自己的意见]
 
 > **注意：** bot 只在被 @ 或被回复时才响应，不会自动互相接话。
 
+### A2A：Bot 间主动对话
+
+共享上下文是被动的（被 @ 时才读取）。A2A 让 bot **主动接话**——群聊中一个 bot 回复用户后，A2A 总线把回复广播给兄弟 bot，每个兄弟独立判断要不要补充。
+
+```text
+你:     @claude 重试策略怎么写比较好？
+Claude: [给出重试建议]
+         ↓ A2A 广播
+Codex:  [读到 Claude 的回复，补充："我建议再加个指数退避..."]
+```
+
+内置安全机制：
+- **防死循环**：每轮对话最多 2 代 bot-to-bot 回复
+- **冷却期**：每个 bot 的 A2A 响应间隔至少 60 秒
+- **熔断器**：连续 3 次失败自动屏蔽不可达的 peer
+- **限流**：每 5 分钟窗口最多 3 次 A2A 响应
+
+> **重要：A2A 仅在群聊中生效。** 私聊/DM 消息不会被广播——防止不同 DM 窗口之间的消息泄漏。
+
+在 `config.json` 中启用：
+
+```json
+{
+  "shared": {
+    "a2aEnabled": true,
+    "a2aPorts": { "claude": 18810, "codex": 18811 }
+  }
+}
+```
+
+每个 bot 实例监听自己的端口。Peer 列表从 `a2aPorts` 自动发现（排除自身）。
+
 ---
 
 ## 架构
@@ -273,6 +305,7 @@ docker run -d \
 - `sessions.js` — SQLite 会话持久化
 - `shared-context.js` — 跨 bot 共享上下文入口
 - `shared-context/` — 可插拔后端（SQLite / JSON / Redis）
+- `a2a/` — Bot 间通信总线、防死循环、节点健康检测
 - `adapters/` — 后端接入层
 - `launchd/` — macOS LaunchAgent 模板
 - `scripts/` — 安装脚本与运行包装器
