@@ -46,6 +46,7 @@ export function createA2ABus(config) {
 
     server = Bun.serve({
       port,
+      hostname: "127.0.0.1",
       fetch(req, env) {
         const url = new URL(req.url);
         if (req.method === "POST" && url.pathname === "/a2a/message") {
