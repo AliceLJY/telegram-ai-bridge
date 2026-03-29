@@ -2,11 +2,11 @@
 
 # telegram-ai-bridge
 
-**用 Telegram 远程操控你的本地 AI Agent**
+**你的 AI Agent，在 Telegram 里全权管理**
 
-*Claude Code 在桌面上跑着，你在手机上接着聊。*
+*建会话、翻历史、切模型、多 Agent 协作——全在手机上搞定。*
 
-一个自托管的 Telegram 桥接工具，把一个 bot 连到一个本地 AI CLI——支持会话持久化、可恢复的 agent 工作流和 owner-only 权限模型。
+一个自托管的 Telegram 桥接工具，让你在手机上完整控制本地 AI coding agent——Claude Code、Codex、Gemini。
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)
@@ -18,16 +18,25 @@
 
 ---
 
-## 这个项目解决什么问题
+## 为什么不直接用 Claude 官方的远程功能？
 
-很多"Telegram + AI"项目本质上只是聊天壳。这个是本地 coding agent 的**遥控器**。
+Claude Code 先后上线了 [Remote Control](https://code.claude.com/docs/en/remote-control)（2026.2）和 [Telegram 频道插件](https://code.claude.com/docs/en/channels)（2026.3）。都能从手机跟 Claude 聊天，但都做不到会话管理、多后端、多 Agent 协作。
 
-- 面向的是本地 coding agent（Claude Code、Codex），而不是泛聊天机器人
-- 会话和凭证留在你自己的机器上
-- 能承接真实的 resumable agent workflow
-- 默认就是 owner-only 的个人远程控制
+| 你在手机上想做的 | [Remote Control](https://code.claude.com/docs/en/remote-control) | [Channels](https://code.claude.com/docs/en/channels)（TG 插件） | 本项目 |
+|-----------------|:-:|:-:|:-:|
+| 从手机新建会话 | &mdash; | &mdash; | `/new` |
+| 浏览并恢复历史会话 | &mdash; | &mdash; | `/sessions` `/resume` |
+| 只读预览某个会话 | &mdash; | &mdash; | `/peek` |
+| Claude + Codex + Gemini 多后端 | 仅 Claude | 仅 Claude | 全部支持 |
+| 多 Agent 群聊协作 | &mdash; | &mdash; | A2A 总线 + 共享上下文 |
+| 跨 Agent 转发与交叉审查 | &mdash; | &mdash; | `/relay` |
+| 后台常驻运行 | 终端关了就断 | 会话关了就断 | LaunchAgent / Docker |
+| 断网恢复 | 10 分钟超时断开 | 跟随会话生命周期 | SQLite 持久化 |
+| 稳定版本 | 是 | research preview | 是（v2.2） |
 
-> **核心产品规则：** 一个 bot = 一个 backend = 一套清晰心智模型
+**官方工具的长处：** Remote Control 能实时看到完整终端输出和权限审批弹窗。Channels 能把工具授权请求转发到手机。Claude Code Web 提供云端算力，不需要本地环境。本项目专注另一件事：**在 Telegram 里做持久化的多 Agent 会话管理。**
+
+> **三者的区别：** Remote Control = 手机*看着*终端。Channels = 终端*收着*手机消息。本项目 = 手机**就是**终端。
 
 支持的后端：
 
@@ -37,7 +46,7 @@
 | `codex` | Codex SDK | 主推荐 |
 | `gemini` | Gemini Code Assist API | 实验兼容 |
 
-这个项目刻意收窄，不做多通道 AI 工作台。它只为"手机 → Telegram → 本地 AI CLI"这条最短路径优化。
+> **核心规则：** 一个 bot = 一个 backend = 一套清晰心智模型。
 
 ---
 
@@ -63,21 +72,19 @@ bun run start --backend claude
 
 ---
 
-## 你能得到什么
+## 能解锁什么
 
-| 功能 | 说明 |
-|------|------|
-| **统一启动** | `bun run start --backend <name>` |
-| **初始化向导** | `bun run setup` — 交互式配置生成 |
-| **预飞检查** | `bun run check --backend <name>` — 校验配置和 CLI 状态 |
-| **会话持久化** | SQLite 支撑，粘性会话，支持恢复和预览 |
-| **任务跟踪** | 持久化审批和执行记录 |
-| **Owner-only** | 只有你的 Telegram ID 能操作 |
-| **双执行模式** | `direct`（进程内）或 `local-agent`（JSONL stdio 子进程） |
-| **Docker 支持** | 同一套运行方式，凭证目录挂载进去 |
-| **macOS LaunchAgent** | 自动生成 plist，后台常驻 |
-| **群聊共享上下文** | 多个 bot 在同一群里互相看到对方的回复（SQLite / JSON / Redis） |
-| **CI** | Bun 测试接入 GitHub Actions |
+### 手机优先的 Agent 控制
+
+离开工位，打开 Telegram。`/new` 建新会话，`/resume 3` 恢复之前的进度，`/peek 5` 只读浏览某个会话，`/model` 随时切模型。完整的会话生命周期管理——不需要终端。
+
+### 多 Agent 协作
+
+把 `@claude-bot` 和 `@codex-bot` 拉进同一个 Telegram 群。让 Claude review 代码——Codex 通过共享上下文读到 Claude 的回复，给出自己的意见。用 `/relay codex 你同意吗？` 做显式的交叉审查。内置防死循环和熔断机制，防止 bot 之间无限接话。
+
+### 常驻运行，自托管
+
+macOS LaunchAgent 或 Docker 让 bridge 在后台持续运行。会话持久化在 SQLite 里，重启、断网、重开机都不丢。代码和凭证不出本机。默认 owner-only 访问。
 
 ---
 

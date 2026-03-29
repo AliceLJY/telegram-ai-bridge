@@ -2,11 +2,11 @@
 
 # telegram-ai-bridge
 
-**Remote Control Your Local AI Agent via Telegram**
+**Your AI Agents, Fully Managed from Telegram**
 
-*Leave Claude Code running on your desktop. Continue the conversation from your phone.*
+*Create sessions, browse history, switch models, orchestrate multi-agent workflows — all from your phone.*
 
-A self-hosted Telegram bridge that connects one bot to one local AI CLI — with session persistence, resumable workflows, and owner-only access.
+A self-hosted Telegram bridge that gives you full session control over local AI coding agents — Claude Code, Codex, and Gemini.
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)
@@ -18,16 +18,25 @@ A self-hosted Telegram bridge that connects one bot to one local AI CLI — with
 
 ---
 
-## Why This Exists
+## Why Not Just Use Claude's Built-in Remote Features?
 
-Most "Telegram + AI" projects are chat wrappers. This one is a **remote control** for your local coding agent.
+Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-control) (Feb 2026) and a [Telegram channel plugin](https://code.claude.com/docs/en/channels) (Mar 2026). Both let you talk to Claude from your phone. Neither gives you session management, multi-backend support, or agent-to-agent collaboration.
 
-- Targets local coding agents (Claude Code, Codex), not generic chatbots
-- Sessions and credentials stay on your machine
-- Supports real resumable agent workflows
-- Owner-only access by default
+| What you'd expect from phone control | [Remote Control](https://code.claude.com/docs/en/remote-control) | [Channels](https://code.claude.com/docs/en/channels) (TG plugin) | This project |
+|---------------------------------------|:-:|:-:|:-:|
+| Create new sessions from phone        | &mdash; | &mdash; | `/new` |
+| Browse & resume past sessions         | &mdash; | &mdash; | `/sessions` `/resume` |
+| Read-only session preview             | &mdash; | &mdash; | `/peek` |
+| Claude + Codex + Gemini backends      | Claude only | Claude only | All three |
+| Multi-agent group collaboration       | &mdash; | &mdash; | A2A bus + shared context |
+| Cross-agent relay & fact-checking     | &mdash; | &mdash; | `/relay` |
+| Runs as background daemon             | Terminal must stay open | Session must be open | LaunchAgent / Docker |
+| Survives network interruptions        | 10-min timeout kills session | Tied to session lifecycle | SQLite-persisted sessions |
+| Stable release                        | Yes | Research preview | Yes (v2.2) |
 
-> **Core product rule:** One bot = one backend = one mental model.
+**What official tools do better:** Remote Control streams full terminal output with live permission prompts. Channels can relay tool-approval dialogs to your phone. Claude Code on the web provides cloud compute without local setup. This project optimizes for a different job: **persistent, multi-agent session management entirely from Telegram.**
+
+> **How they differ:** Remote Control = your phone *watches* the terminal. Channels = the terminal *receives* phone messages. This project = your phone **IS** the terminal.
 
 Supported backends:
 
@@ -35,9 +44,9 @@ Supported backends:
 |---------|-----|--------|
 | `claude` | Claude Agent SDK | Recommended |
 | `codex` | Codex SDK | Recommended |
-| `gemini` | Gemini Code Assist API | Experimental compatibility |
+| `gemini` | Gemini Code Assist API | Experimental |
 
-This project is intentionally narrower than multi-channel AI workspace tools. It optimizes for the shortest path from phone → Telegram → local AI CLI.
+> **Core rule:** One bot = one backend = one mental model.
 
 ---
 
@@ -63,21 +72,19 @@ Run separate bots for separate agents:
 
 ---
 
-## What You Get
+## What This Unlocks
 
-| Feature | Description |
-|---------|-------------|
-| **One-command startup** | `bun run start --backend <name>` |
-| **Setup wizard** | `bun run setup` — interactive config generation |
-| **Preflight check** | `bun run check --backend <name>` — validates config and CLI state |
-| **Session persistence** | SQLite-backed, sticky sessions with resume/preview |
-| **Task tracking** | Persistent approval and execution history |
-| **Owner-only access** | Only your Telegram ID can use the bot |
-| **Dual executor** | `direct` (in-process) or `local-agent` (JSONL stdio subprocess) |
-| **Docker support** | Same runtime model, credential volumes mounted in |
-| **macOS LaunchAgent** | Auto-generated plist for background deployment |
-| **Group shared context** | Multiple bots in one group see each other's replies (SQLite / JSON / Redis) |
-| **CI** | Bun tests wired into GitHub Actions |
+### Phone-First Agent Control
+
+Walk away from your desk. Open Telegram. `/new` starts a fresh session. `/resume 3` picks up where you left off. `/peek 5` reads a session without touching it. `/model` switches models on the fly. Full session lifecycle from your phone — no terminal required.
+
+### Multi-Agent Collaboration
+
+Put `@claude-bot` and `@codex-bot` in the same Telegram group. Ask Claude to review code — Codex reads the reply via shared context and offers its own take. Use `/relay codex Do you agree?` for explicit cross-checking. Built-in loop guards and circuit breakers prevent runaway bot-to-bot conversations.
+
+### Always-On, Self-Hosted
+
+macOS LaunchAgent or Docker keeps the bridge running in the background. Sessions persist in SQLite across restarts and reboots. Code and credentials never leave your machine. Owner-only access by default.
 
 ---
 
