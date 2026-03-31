@@ -25,16 +25,25 @@ Claude Code 先后上线了 [Remote Control](https://code.claude.com/docs/en/rem
 | 你在手机上想做的 | [Remote Control](https://code.claude.com/docs/en/remote-control) | [Channels](https://code.claude.com/docs/en/channels)（TG 插件） | 本项目 |
 |-----------------|:-:|:-:|:-:|
 | 从手机新建会话 | &mdash; | &mdash; | `/new` |
-| 浏览并恢复历史会话 | &mdash; | &mdash; | `/sessions` `/resume` |
-| 只读预览某个会话 | &mdash; | &mdash; | `/peek` |
-| Claude + Codex + Gemini 多后端 | 仅 Claude | 仅 Claude | 全部支持 |
+| 浏览并恢复历史会话 | &mdash; | &mdash; | `/sessions` `/resume` `/peek` |
+| 随时切换模型 | &mdash; | &mdash; | `/model` 按钮选择 |
+| Claude + Codex + Gemini 多后端 | 仅 Claude | 仅 Claude | 全部支持，按 chat 切换 |
+| 手机审批工具调用 | 部分（UI 有限） | 支持 | 按钮：允许 / 拒绝 / 始终允许 / YOLO |
 | 多 Agent 群聊协作 | &mdash; | &mdash; | A2A 总线 + 共享上下文 |
-| 跨 Agent 转发与交叉审查 | &mdash; | &mdash; | `/relay` |
+| 跨 Agent 转发与交叉审查 | &mdash; | &mdash; | `/relay`（私聊群聊均可） |
+| 实时进度流式展示 | 终端输出 | &mdash; | 工具图标 + 3 级详细度 + 完成摘要 |
+| 连续消息合并发送 | N/A | &mdash; | FlushGate：800ms 窗口自动合并 |
+| 图片 / 文件 / 语音输入 | &mdash; | 仅文字 | 自动下载 + 注入 prompt |
+| 智能快捷回复按钮 | &mdash; | &mdash; | 是否类 + 数字选项（支持 1. 1、 1) 格式） |
 | 后台常驻运行 | 终端关了就断 | 会话关了就断 | LaunchAgent / Docker |
-| 断网恢复 | 10 分钟超时断开 | 跟随会话生命周期 | SQLite 持久化 |
+| 断网恢复 | 10 分钟超时断开 | 跟随会话生命周期 | SQLite + Redis 持久化 |
+| 群聊上下文压缩 | N/A | N/A | 三级：近期原文 / 中期截断 / 远期关键词 |
+| 共享上下文后端 | N/A | N/A | SQLite / JSON / Redis（可插拔） |
+| 任务审计追踪 | &mdash; | &mdash; | SQLite：状态、费用、耗时、审批记录 |
+| bot 间对话防环 | N/A | N/A | 五层：代数 + 冷却 + 限速 + 去重 + AI 判断 |
 | 稳定版本 | 是 | research preview | 是（v2.2） |
 
-**官方工具的长处：** Remote Control 能实时看到完整终端输出和权限审批弹窗。Channels 能把工具授权请求转发到手机。Claude Code Web 提供云端算力，不需要本地环境。本项目专注另一件事：**在 Telegram 里做持久化的多 Agent 会话管理。**
+**官方工具的长处：** Remote Control 能实时看完整终端输出。Channels 能原生转发工具授权请求。Claude Code Web 提供云端算力，不需要本地环境。本项目专注另一件事：**在 Telegram 里做持久化的多 Agent 会话管理。**
 
 > **三者的区别：** Remote Control = 手机*看着*终端。Channels = 终端*收着*手机消息。本项目 = 手机**就是**终端。
 
