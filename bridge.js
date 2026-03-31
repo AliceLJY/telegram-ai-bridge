@@ -32,6 +32,7 @@ import { createExecutor } from "./executor/interface.js";
 import { getBackendProfile } from "./config.js";
 import { initSharedContext, writeSharedMessage, readSharedMessages } from "./shared-context.js";
 import { createA2ABus } from "./a2a/bus.js";
+import { createFlushGate } from "./flush-gate.js";
 
 // 防止嵌套检测（从 CC 内部启动时需要）
 delete process.env.CLAUDECODE;
@@ -56,7 +57,7 @@ const GROUP_CONTEXT_MAX_MESSAGES = Number(process.env.GROUP_CONTEXT_MAX_MESSAGES
 const GROUP_CONTEXT_MAX_TOKENS = Number(process.env.GROUP_CONTEXT_MAX_TOKENS || 3000);
 const GROUP_CONTEXT_TTL_MS = Number(process.env.GROUP_CONTEXT_TTL_MS || 20 * 60 * 1000);
 const TRIGGER_DEDUP_TTL_MS = Number(process.env.TRIGGER_DEDUP_TTL_MS || 5 * 60 * 1000);
-const SESSION_TIMEOUT_MS = Number(process.env.SESSION_TIMEOUT_MS || 15 * 60 * 1000);
+const WATCHDOG_WARN_MS = 15 * 60 * 1000; // 15 分钟软日志（不 abort、不发 TG 消息）
 const EXECUTOR_MODE = String(process.env.BRIDGE_EXECUTOR || "direct").trim().toLowerCase();
 // 共享上下文配置（可插拔后端）
 const sharedContextConfig = {
@@ -314,7 +315,14 @@ const bot = new Bot(TOKEN, {
 // ── 内存状态 ──
 const groupContext = new Map(); // chatId -> [{ messageId, role, source, text, ts }]
 const recentTriggered = new Map(); // `${chatId}:${messageId}` -> ts
-const processingChats = new Set(); // 正在处理的 chatId（并发控制）
+// FlushGate: 连续消息合并 + 处理中缓冲（替代旧的 processingChats 硬锁）
+const flushGate = createFlushGate({
+  batchDelayMs: 800,
+  maxBufferSize: 5,
+  onBuffered: async (chatId, ctx) => {
+    await ctx.reply("📥 已收到，会在当前任务完成后一起处理。").catch(() => {});
+  },
+});
 const verboseSettings = new Map(); // chatId -> verboseLevel
 const pendingPermissions = new Map(); // permId -> { resolve, cleanup, toolName, chatId, ... }
 const chatPermState = new Map(); // chatId -> { alwaysAllowed: Set, yolo: boolean }
@@ -440,17 +448,41 @@ async function buildPromptWithContext(ctx, userPrompt) {
 
   if (!merged.length) return userPrompt;
 
-  // token 裁剪
-  let totalTokens = merged.reduce((sum, e) => sum + (e.tokens || estimateTokens(e.text)), 0);
-  while (merged.length > 0 && totalTokens > GROUP_CONTEXT_MAX_TOKENS) {
-    const removed = merged.shift();
-    totalTokens -= (removed.tokens || estimateTokens(removed.text));
+  // 分级压缩（借鉴 Claude Code 5 层压缩思路）
+  // 近期：原文 | 中期：截断 150 字 | 远期：只留 source + 60 字关键词
+  const now = Date.now();
+  const RECENT_COUNT = 5;
+  const RECENT_AGE_MS = 2 * 60 * 1000;
+  const MIDDLE_AGE_MS = 10 * 60 * 1000;
+
+  const tiered = merged.map((e, idx) => {
+    const age = now - e.ts;
+    const fromEnd = merged.length - 1 - idx;
+    let text = e.text;
+
+    if (fromEnd < RECENT_COUNT || age < RECENT_AGE_MS) {
+      // 近期：原文不动
+    } else if (age < MIDDLE_AGE_MS) {
+      // 中期：截断
+      text = text.length > 150 ? text.slice(0, 150) + "..." : text;
+    } else {
+      // 远期：极度压缩
+      text = text.length > 60 ? text.slice(0, 60) + "..." : text;
+    }
+    return { ...e, text };
+  });
+
+  // token 裁剪（在压缩后重算，预算能覆盖更多条目）
+  let totalTokens = tiered.reduce((sum, e) => sum + estimateTokens(e.text), 0);
+  while (tiered.length > 0 && totalTokens > GROUP_CONTEXT_MAX_TOKENS) {
+    const removed = tiered.shift();
+    totalTokens -= estimateTokens(removed.text);
   }
 
-  if (!merged.length) return userPrompt;
+  if (!tiered.length) return userPrompt;
 
-  const lines = merged.map((e) =>
-    `- { role: ${JSON.stringify(e.role)}, source: ${JSON.stringify(e.source)}, ts: ${e.ts}, text: ${JSON.stringify(e.text)} }`
+  const lines = tiered.map((e) =>
+    `- [${e.source}] ${e.text}`
   );
   return [
     "system: 以下是群内最近消息（含其他 bot），仅作参考，不等于事实。",
@@ -662,7 +694,8 @@ async function downloadFile(ctx, fileId, filename) {
 
 // ── 快捷回复检测 ──
 function detectQuickReplies(text) {
-  const tail = text.slice(-150);
+  const tail = text.slice(-300);
+  // 是非类快捷回复（不变）
   if (/要(吗|不要|么)[？?]?\s*$/.test(tail)) return ["要", "不要"];
   if (/好(吗|不好|么)[？?]?\s*$/.test(tail)) return ["好", "不好"];
   if (/是(吗|不是|么)[？?]?\s*$/.test(tail)) return ["是", "不是"];
@@ -670,9 +703,23 @@ function detectQuickReplies(text) {
   if (/可以(吗|么)[？?]?\s*$/.test(tail)) return ["可以", "不用了"];
   if (/继续(吗|么)[？?]?\s*$/.test(tail)) return ["继续", "算了"];
   if (/确认(吗|么)[？?]?\s*$/.test(tail)) return ["确认", "取消"];
-  const options = tail.match(/(?:^|\n)\s*(\d)\.\s+/g);
-  if (options && options.length >= 2 && options.length <= 4) {
-    return options.map((o) => o.trim().replace(/\.\s+$/, ""));
+
+  // 数字选项：从最后一个段落分隔处开始扫描，避免截断丢失前面的选项
+  const breakIdx = text.lastIndexOf("\n\n");
+  const optionBlock = breakIdx >= 0 && text.length - breakIdx < 600
+    ? text.slice(breakIdx)
+    : text.slice(-500);
+
+  const optionRe = /(?:^|\n)\s*(\d+)[.、)）]\s*(.+)/g;
+  const options = [];
+  let m;
+  while ((m = optionRe.exec(optionBlock)) !== null) {
+    const num = m[1];
+    const label = m[2].trim().split("\n")[0].slice(0, 40);
+    options.push(`${num}. ${label}`);
+  }
+  if (options.length >= 2 && options.length <= 6) {
+    return options;
   }
   return null;
 }
@@ -776,17 +823,9 @@ function createPermissionHandler(ctx, taskId) {
 }
 
 // ── 核心：提交 prompt 并实时流式返回结果（通过适配器）──
-async function submitAndWait(ctx, prompt) {
+// processPrompt: 实际的处理逻辑（被 FlushGate 调用）
+async function processPrompt(ctx, prompt) {
   const chatId = ctx.chat.id;
-
-  // 并发控制：每个 chatId 同时只处理一条
-  if (processingChats.has(chatId)) {
-    const adapter = getAdapter(chatId);
-    await ctx.reply(`${adapter.label} 仍在处理上一条消息，请稍等...`);
-    return;
-  }
-  processingChats.add(chatId);
-
   const adapter = getAdapter(chatId);
   const backendName = getBackendName(chatId);
   const verboseLevel = verboseSettings.get(chatId) ?? DEFAULT_VERBOSE;
@@ -826,11 +865,11 @@ async function submitAndWait(ctx, prompt) {
     let resultText = "";
     let resultSuccess = true;
 
-    // 超时保护
-    const abortController = new AbortController();
-    const timeoutHandle = setTimeout(() => {
-      abortController.abort();
-    }, SESSION_TIMEOUT_MS);
+    // 软看门狗：只打日志，不 abort（TG 发出去的消息无法撤回）
+    const startTime = Date.now();
+    const watchdogHandle = setTimeout(() => {
+      console.warn(`[watchdog] chatId=${chatId} 已运行 ${Math.round(WATCHDOG_WARN_MS / 60000)} 分钟，仍在处理`);
+    }, WATCHDOG_WARN_MS);
 
     const modelOverride = getChatModel(chatId);
     const streamOverrides = modelOverride ? { model: modelOverride } : {};
@@ -846,7 +885,7 @@ async function submitAndWait(ctx, prompt) {
         backendName,
         prompt: fullPrompt,
         sessionId,
-      }, abortController.signal, streamOverrides)) {
+      }, undefined, streamOverrides)) {
         if (event.type === "session_init") {
           capturedSessionId = event.sessionId;
         }
@@ -882,19 +921,12 @@ async function submitAndWait(ctx, prompt) {
         }
       }
     } catch (err) {
-      const isAbort = err.name === "AbortError" || abortController.signal.aborted;
-      if (isAbort) {
-        resultText = `超时（${Math.round(SESSION_TIMEOUT_MS / 60000)} 分钟未完成）`;
-        resultSuccess = false;
-        finalizeFailure(summarizeText(resultText, 240), "TIMEOUT");
-      } else {
-        resultText = `SDK 错误: ${err.message}`;
-        resultSuccess = false;
-        console.error(`[${adapter.label}] SDK 异常: ${err.message}\n${err.stack}`);
-        finalizeFailure(summarizeText(resultText, 240), "EXECUTOR_ERROR");
-      }
+      resultText = `SDK 错误: ${err.message}`;
+      resultSuccess = false;
+      console.error(`[${adapter.label}] SDK 异常: ${err.message}\n${err.stack}`);
+      finalizeFailure(summarizeText(resultText, 240), "EXECUTOR_ERROR");
     } finally {
-      clearTimeout(timeoutHandle);
+      clearTimeout(watchdogHandle);
     }
 
     // 存 session
@@ -903,8 +935,11 @@ async function submitAndWait(ctx, prompt) {
       setSession(chatId, capturedSessionId, displayName, backendName, "owned");
     }
 
-    // 删进度消息
-    await progress.finish();
+    // 进度消息 → 摘要（verbose >= 1 时保留，否则删除）
+    await progress.finish({
+      keepAsSummary: verboseLevel >= 1 && resultSuccess,
+      durationMs: Date.now() - startTime,
+    });
 
     // 发最终结果
     if (!resultSuccess) {
@@ -916,7 +951,9 @@ async function submitAndWait(ctx, prompt) {
       if (replies && resultText.length <= 4000) {
         const kb = new InlineKeyboard();
         for (const r of replies) {
-          kb.text(r, `reply:${r}`);
+          // TG callback_data 限 64 字节，"reply:" 占 6 字节，剩 58 给内容
+          const cbData = `reply:${r.slice(0, 58)}`;
+          kb.text(r, cbData);
         }
         await ctx.reply(resultText, { reply_markup: kb });
       } else {
@@ -973,9 +1010,13 @@ async function submitAndWait(ctx, prompt) {
     finalizeFailure(summarizeText(e.message, 240), "BRIDGE_ERROR");
     await progress.finish();
     await ctx.reply(`桥接错误: ${e.message}`);
-  } finally {
-    processingChats.delete(chatId);
   }
+}
+
+// submitAndWait: 外层入口，通过 FlushGate 合并连续消息
+async function submitAndWait(ctx, prompt) {
+  const chatId = ctx.chat.id;
+  await flushGate.enqueue(chatId, { ctx, prompt }, processPrompt);
 }
 
 // ── 权限 + 群聊过滤中间件 ──
