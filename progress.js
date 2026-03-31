@@ -114,7 +114,7 @@ export function createProgressTracker(ctx, chatId, verboseLevel = 1, backendLabe
     ctx.api.editMessageText(chatId, progressMsgId, text).catch(() => {});
   }
 
-  async function finish() {
+  async function finish({ keepAsSummary = false, durationMs = 0 } = {}) {
     finished = true;
 
     if (editTimer) {
@@ -125,10 +125,29 @@ export function createProgressTracker(ctx, chatId, verboseLevel = 1, backendLabe
       clearInterval(typingInterval);
       typingInterval = null;
     }
-    if (progressMsgId) {
+
+    if (!progressMsgId) return;
+
+    if (keepAsSummary && entries.length > 0) {
+      // 统计各工具调用次数
+      const toolCounts = {};
+      for (const entry of entries) {
+        const match = entry.match(/^\S+\s+(\w+)/);
+        if (match && match[1]) toolCounts[match[1]] = (toolCounts[match[1]] || 0) + 1;
+      }
+      const toolSummary = Object.entries(toolCounts)
+        .map(([name, count]) => `${name}${count > 1 ? ` x${count}` : ""}`)
+        .join(", ");
+      const durLabel = durationMs > 0 ? ` ${Math.round(durationMs / 1000)}s` : "";
+      const text = `✅ Done${durLabel} — ${toolSummary || "no tools"}`;
+      await ctx.api.editMessageText(chatId, progressMsgId, text).catch(async () => {
+        // edit 失败 fallback 到删除
+        await ctx.api.deleteMessage(chatId, progressMsgId).catch(() => {});
+      });
+    } else {
       await ctx.api.deleteMessage(chatId, progressMsgId).catch(() => {});
-      progressMsgId = null;
     }
+    progressMsgId = null;
   }
 
   return { start, processEvent, finish };
