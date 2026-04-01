@@ -15,7 +15,15 @@
     "sharedContextJsonPath": "shared-context.json",
     "redisUrl": "redis://localhost:6379",
     "triggerDedupTtlMs": 300000,
-    "sessionTimeoutMs": 900000
+    "sessionTimeoutMs": 900000,
+    "a2aEnabled": false,
+    "a2aPorts": { "claude": 18810, "codex": 18811, "gemini": 18812 },
+    "a2aMaxGeneration": 2,
+    "a2aCooldownMs": 60000,
+    "a2aMaxResponsesPerWindow": 3,
+    "a2aWindowMs": 300000,
+    "a2aCircuitBreakerThreshold": 3,
+    "a2aCircuitBreakerResetMs": 30000
   },
   "backends": {
     "claude": {
