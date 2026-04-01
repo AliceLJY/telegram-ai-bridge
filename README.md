@@ -18,6 +18,35 @@ A self-hosted Telegram bridge that gives you full session control over local AI 
 
 ---
 
+## Why Not Just Use Claude's Built-in Remote Features?
+
+Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-control) (Feb 2026) and a [Telegram channel plugin](https://code.claude.com/docs/en/channels) (Mar 2026). Both let you talk to Claude from your phone. Neither gives you session management, multi-backend support, or agent-to-agent collaboration.
+
+| What you'd expect from phone control | [Remote Control](https://code.claude.com/docs/en/remote-control) | [Channels](https://code.claude.com/docs/en/channels) (TG plugin) | This project |
+|---------------------------------------|:-:|:-:|:-:|
+| Create new sessions from phone        | &mdash; | &mdash; | `/new` |
+| Browse & resume past sessions         | &mdash; | &mdash; | `/sessions` `/resume` `/peek` |
+| Switch models on the fly              | &mdash; | &mdash; | `/model` with inline buttons |
+| Claude + Codex + Gemini backends      | Claude only | Claude only | All three, per-chat switchable |
+| Tool approval from phone              | Partial (limited UI) | Yes | Inline buttons: Allow / Deny / Always / YOLO |
+| Multi-agent group collaboration       | &mdash; | &mdash; | A2A bus + shared context |
+| Cross-agent relay & fact-checking     | &mdash; | &mdash; | `/relay` (works in DM + groups) |
+| Real-time progress streaming          | Terminal output only | &mdash; | Tool icons + 3 verbosity levels + summary |
+| Rapid message batching                | N/A | &mdash; | FlushGate: 800ms window, auto-merge |
+| Photo / document / voice input        | &mdash; | Text only | Auto-download + reference in prompt |
+| Smart quick-reply buttons             | &mdash; | &mdash; | Yes/No + numbered options (1. 1、 1) formats) |
+| Runs as background daemon             | Terminal must stay open | Session must be open | LaunchAgent / Docker |
+| Survives network interruptions        | 10-min timeout kills session | Tied to session lifecycle | SQLite + Redis persistence |
+| Group context compression             | N/A | N/A | 3-tier: recent full / middle truncated / old keywords |
+| Shared context backend                | N/A | N/A | SQLite / JSON / Redis (pluggable) |
+| Task audit trail                      | &mdash; | &mdash; | SQLite: status, cost, duration, approval log |
+| Loop guard for bot-to-bot             | N/A | N/A | 5-layer: generation + cooldown + rate + dedup + AI |
+| Stable release                        | Yes | Research preview | Yes (v2.2) |
+
+**What official tools do better:** Remote Control streams full terminal output. Channels relay tool-approval dialogs natively. Claude Code on the web provides cloud compute without local setup. This project optimizes for a different job: **persistent, multi-agent session management entirely from Telegram.**
+
+> **How they differ:** Remote Control = your phone *watches* the terminal. Channels = the terminal *receives* phone messages. This project = your phone **IS** the terminal.
+
 Supported backends:
 
 | Backend | SDK | Status |
