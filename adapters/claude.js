@@ -146,7 +146,7 @@ export function createAdapter(config = {}) {
         cwd,
       };
 
-      // A2A overrides: allowedTools, persistSession, maxTurns
+      // overrides: allowedTools, persistSession, maxTurns
       if (overrideAllowedTools) options.allowedTools = overrideAllowedTools;
       if (overridePersistSession !== undefined) options.persistSession = overridePersistSession;
       if (overrideMaxTurns !== undefined) options.maxTurns = overrideMaxTurns;
