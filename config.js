@@ -150,6 +150,15 @@ export function createDefaultConfig() {
       redisUrl: "",
       triggerDedupTtlMs: 300000,
       sessionTimeoutMs: 900000,
+      // A2A 配置
+      a2aEnabled: false,
+      a2aPorts: { claude: 18810, codex: 18811, gemini: 18812 },
+      a2aMaxGeneration: 2,
+      a2aCooldownMs: 60000,
+      a2aMaxResponsesPerWindow: 3,
+      a2aWindowMs: 300000,
+      a2aCircuitBreakerThreshold: 3,
+      a2aCircuitBreakerResetMs: 30000,
     },
     backends: {
       claude: {
@@ -274,6 +283,18 @@ function buildEnvFromConfig(config, backend, configPath) {
     SHARED_CONTEXT_DB: resolvePathMaybe(baseDir, shared.sharedContextDb || "shared-context.db"),
     SHARED_CONTEXT_JSON_PATH: resolvePathMaybe(baseDir, shared.sharedContextJsonPath || "shared-context.json"),
     SHARED_CONTEXT_REDIS_URL: shared.redisUrl || "",
+
+    // A2A 配置
+    A2A_ENABLED: String(shared.a2aEnabled ?? false),
+    A2A_PORT: String(shared.a2aPorts?.[selectedBackend] ?? 0),
+    A2A_PEERS: Object.entries(shared.a2aPorts || {})
+      .filter(([name]) => name !== selectedBackend)
+      .map(([name, port]) => `${name}:http://localhost:${port}`)
+      .join(","),
+    A2A_MAX_GENERATION: String(shared.a2aMaxGeneration ?? 2),
+    A2A_COOLDOWN_MS: String(shared.a2aCooldownMs ?? 60000),
+    A2A_MAX_RESPONSES_PER_WINDOW: String(shared.a2aMaxResponsesPerWindow ?? 3),
+    A2A_WINDOW_MS: String(shared.a2aWindowMs ?? 300000),
   };
 
   if (selectedBackend === "claude") {
