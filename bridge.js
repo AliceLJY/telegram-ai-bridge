@@ -76,7 +76,6 @@ const A2A_PORT = Number(process.env.A2A_PORT) || 0;
 const A2A_MAX_GENERATION = Number(process.env.A2A_MAX_GENERATION) || 2;
 const A2A_COOLDOWN_MS = Number(process.env.A2A_COOLDOWN_MS) || 60000;
 const A2A_MAX_RESPONSES_PER_WINDOW = Number(process.env.A2A_MAX_RESPONSES_PER_WINDOW) || 3;
-const RELAY_TIMEOUT_MS = Number(process.env.RELAY_TIMEOUT_MS) || 120000;
 const A2A_WINDOW_MS = Number(process.env.A2A_WINDOW_MS) || 300000;
 
 // 解析 A2A peers
@@ -217,30 +216,6 @@ ${meta.originalPrompt ? `\n用户的原始问题：${meta.originalPrompt}` : ""}
     }
   });
 
-  // 注册 relay handler：收到 relay 请求时调用本地 AI 后端处理并返回结果
-  a2aBus.onRelay(async ({ sender, prompt }) => {
-    console.log(`[A2A] Relay from ${sender}: "${prompt.slice(0, 80)}..."`);
-
-    const adapter = adapters[DEFAULT_BACKEND];
-    if (!adapter) throw new Error(`No adapter for ${DEFAULT_BACKEND}`);
-
-    const relayOverrides = DEFAULT_BACKEND === "claude" ? {
-      permissionMode: "dontAsk",
-      allowedTools: ["Read", "Grep", "Glob", "Bash", "WebFetch", "WebSearch"],
-      persistSession: false,
-      maxTurns: 1,
-    } : {};
-
-    let responseText = "";
-    for await (const event of adapter.streamQuery(prompt, null, undefined, relayOverrides)) {
-      if (event.type === "text") responseText += event.text;
-      // Codex adapter 的回复在 result.text 里，Claude 的在 text 事件里——只在没收到 text 事件时用 result
-      if (event.type === "result" && event.text && !responseText) responseText = event.text;
-    }
-
-    console.log(`[A2A] Relay response ready, length: ${responseText.length}`);
-    return responseText;
-  });
 }
 
 // ── 初始化后端适配器 ──
@@ -1262,80 +1237,6 @@ bot.command("a2a", async (ctx) => {
     await ctx.reply(`测试结果: 发送 ${results.sent}, 失败 ${results.failed}, 跳过 ${results.skipped}`);
   } else {
     await ctx.reply(`可用子命令: /a2a status, /a2a test`);
-  }
-});
-
-// /relay <target> <message> — 主动转发消息给指定 bot（DM 和群聊均可）
-bot.command("relay", async (ctx) => {
-  if (!a2aBus) {
-    await ctx.reply("A2A 未启用。请在 config.json 中设置 shared.a2aEnabled = true 并重启。");
-    return;
-  }
-
-  const raw = ctx.match?.trim() || "";
-  const spaceIdx = raw.indexOf(" ");
-  const rawTarget = spaceIdx > 0 ? raw.slice(0, spaceIdx).toLowerCase() : raw.toLowerCase();
-  let message = spaceIdx > 0 ? raw.slice(spaceIdx + 1).trim() : "";
-  const peers = a2aBus.getPeerNames();
-
-  // 简写映射：cc→claude, cx→codex, gm→gemini
-  const ALIASES = { cc: "claude", cx: "codex", gm: "gemini" };
-  const targetName = ALIASES[rawTarget] || rawTarget;
-
-  // 回复转发：长按某条消息回复 /relay cx [可选追加指令]
-  // 自动把被回复的消息内容拼进 prompt
-  const replyText = ctx.message?.reply_to_message?.text || ctx.message?.reply_to_message?.caption || "";
-  if (replyText) {
-    const instruction = message || "请审阅以上内容";
-    message = `以下是另一个 AI (${DEFAULT_BACKEND}) 的回复：\n\n${replyText}\n\n${instruction}`;
-  }
-
-  if (!targetName || !message) {
-    await ctx.reply(
-      `用法: /relay <target> <message>\n` +
-      `回复转发: 长按消息回复 /relay <target> [追加指令]\n\n` +
-      `可用目标: ${peers.join(", ") || "无"}\n` +
-      `简写: cc=claude, cx=codex, gm=gemini\n` +
-      `示例: /relay cx 你好，介绍一下自己\n` +
-      `示例: (回复CC的消息) /relay cx 你觉得他说得对吗`
-    );
-    return;
-  }
-
-  if (targetName === DEFAULT_BACKEND) {
-    await ctx.reply("不能转发给自己，直接发消息即可。");
-    return;
-  }
-
-  if (!peers.includes(targetName)) {
-    await ctx.reply(`未知目标: ${targetName}\n可用: ${peers.join(", ")}`);
-    return;
-  }
-
-  const thinkingMsg = await ctx.reply(`正在转发给 ${targetName.toUpperCase()}，等待回复...`);
-
-  try {
-    const result = await a2aBus.relay(targetName, {
-      prompt: message,
-      sender: DEFAULT_BACKEND,
-    }, RELAY_TIMEOUT_MS);
-
-    // 删除 thinking 消息
-    await ctx.api.deleteMessage(ctx.chat.id, thinkingMsg.message_id).catch(() => {});
-
-    if (result.success) {
-      const response = result.response?.trim();
-      if (response) {
-        await sendLong(ctx, `[${targetName.toUpperCase()}] ${response}`);
-      } else {
-        await ctx.reply(`[${targetName.toUpperCase()}] (无输出)`);
-      }
-    } else {
-      await ctx.reply(`转发失败: ${result.error}`);
-    }
-  } catch (err) {
-    await ctx.api.deleteMessage(ctx.chat.id, thinkingMsg.message_id).catch(() => {});
-    await ctx.reply(`转发异常: ${err.message}`);
   }
 });
 

@@ -30,7 +30,7 @@ Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-co
 | Claude + Codex + Gemini backends      | Claude only | Claude only | All three, per-chat switchable |
 | Tool approval from phone              | Partial (limited UI) | Yes | Inline buttons: Allow / Deny / Always / YOLO |
 | Multi-agent group collaboration       | &mdash; | &mdash; | A2A bus + shared context |
-| Cross-agent relay & fact-checking     | &mdash; | &mdash; | `/relay` (works in DM + groups) |
+| Cross-agent collaboration             | &mdash; | &mdash; | A2A broadcast (groups) + MCP/CLI (DMs) |
 | Real-time progress streaming          | Terminal output only | &mdash; | Tool icons + 3 verbosity levels + summary |
 | Rapid message batching                | N/A | &mdash; | FlushGate: 800ms window, auto-merge |
 | Photo / document / voice input        | &mdash; | Text only | Auto-download + reference in prompt |
@@ -89,7 +89,7 @@ Walk away from your desk. Open Telegram. `/new` starts a fresh session. `/resume
 
 ### Multi-Agent Collaboration
 
-Put `@claude-bot` and `@codex-bot` in the same Telegram group. Ask Claude to review code — Codex reads the reply via shared context and offers its own take. Use `/relay codex Do you agree?` for explicit cross-checking. Built-in loop guards and circuit breakers prevent runaway bot-to-bot conversations.
+Put `@claude-bot` and `@codex-bot` in the same Telegram group. Ask Claude to review code — Codex reads the reply via shared context and offers its own take automatically. Built-in loop guards and circuit breakers prevent runaway bot-to-bot conversations. For DM cross-checking, bots communicate directly via MCP/CLI — no relay needed.
 
 ### Always-On, Self-Hosted
 
@@ -111,7 +111,6 @@ Sessions are sticky: messages continue the current session until you explicitly 
 | `/status` | Show backend, model, cwd, and session |
 | `/tasks` | Show recent task history |
 | `/verbose 0\|1\|2` | Change progress verbosity |
-| `/relay <target> <msg>` | Forward a message to another bot and return its reply |
 | `/a2a status` | Show A2A bus status, peer health, and loop guard stats |
 
 ---
@@ -184,26 +183,6 @@ Enable in `config.json`:
 ```
 
 Each bot instance listens on its assigned port. Peers are auto-discovered from `a2aPorts` (excluding self).
-
-### `/relay` — Cross-Bot Point-to-Point Messaging
-
-While A2A broadcast is group-only, `/relay` works **everywhere** — including DMs. It sends a message to another bot's AI backend and returns the response directly.
-
-```text
-/relay codex What do you think of this approach?
-```
-
-**Aliases** for less typing: `cc`=claude, `cx`=codex, `gm`=gemini.
-
-**Reply-to forwarding**: Long-press a bot's reply and respond with `/relay <target> [instruction]` — the replied-to message is automatically included in the relay prompt. No copy-pasting needed.
-
-```text
-Claude:  [reviews your code]
-You:     (reply to Claude's message) /relay cx Do you agree with this review?
-Codex:   [sees Claude's full review + your instruction, gives opinion]
-```
-
-This is ideal for fact-checking and cross-review workflows.
 
 ---
 
@@ -371,7 +350,7 @@ Three ways to make AI agents talk to each other — different protocols, differe
 |-------|----------|-----|----------|
 | **Terminal** | MCP | Built-in `codex mcp-server` + `claude mcp serve`, zero code | CC ↔ Codex direct calls in your terminal |
 | **Telegram Group** | Custom A2A | This project's A2A bus, auto-broadcast | Multiple bots in one group, chiming in |
-| **Telegram DM** | Custom A2A | This project's `/relay` command | Explicit cross-bot forwarding from phone |
+| **Telegram DM** | MCP / CLI | Bots call each other directly via terminal config | Direct cross-bot communication, no bridge needed |
 | **Server** | Google A2A v0.3.0 | [openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway) | OpenClaw agents across servers |
 
 > **MCP vs A2A**: MCP is a tool-calling protocol (I invoke your capability). A2A is a peer communication protocol (I talk to you as an equal). CC calling Codex via MCP is using Codex as a tool — not two agents chatting.
@@ -393,7 +372,7 @@ args = ["mcp", "serve"]
 
 ### Telegram: This Project
 
-Groups use A2A auto-broadcast. DMs use `/relay`. See sections above.
+Groups use A2A auto-broadcast. DMs go through MCP/CLI direct communication. See sections above.
 
 ### Server: openclaw-a2a-gateway
 
