@@ -20,7 +20,7 @@ A self-hosted Telegram bridge that gives you full session control over local AI 
 
 ## Why Not Just Use Claude's Built-in Remote Features?
 
-Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-control) (Feb 2026) and a [Telegram channel plugin](https://code.claude.com/docs/en/channels) (Mar 2026). Both let you talk to Claude from your phone. Neither gives you session management, multi-backend support, or agent-to-agent collaboration.
+Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-control) (Feb 2026) and a [Telegram channel plugin](https://code.claude.com/docs/en/channels) (Mar 2026). Both let you talk to Claude from your phone. Neither gives you session management, multi-backend support, or multi-agent collaboration.
 
 | What you'd expect from phone control | [Remote Control](https://code.claude.com/docs/en/remote-control) | [Channels](https://code.claude.com/docs/en/channels) (TG plugin) | This project |
 |---------------------------------------|:-:|:-:|:-:|
@@ -29,8 +29,7 @@ Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-co
 | Switch models on the fly              | &mdash; | &mdash; | `/model` with inline buttons |
 | Claude + Codex + Gemini backends      | Claude only | Claude only | All three, per-chat switchable |
 | Tool approval from phone              | Partial (limited UI) | Yes | Inline buttons: Allow / Deny / Always / YOLO |
-| Multi-agent group collaboration       | &mdash; | &mdash; | A2A bus + shared context |
-| Cross-agent relay & fact-checking     | &mdash; | &mdash; | `/relay` (works in DM + groups) |
+| Multi-agent group collaboration       | &mdash; | &mdash; | Shared context |
 | Real-time progress streaming          | Terminal output only | &mdash; | Tool icons + 3 verbosity levels + summary |
 | Rapid message batching                | N/A | &mdash; | FlushGate: 800ms window, auto-merge |
 | Photo / document / voice input        | &mdash; | Text only | Auto-download + reference in prompt |
@@ -40,7 +39,6 @@ Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-co
 | Group context compression             | N/A | N/A | 3-tier: recent full / middle truncated / old keywords |
 | Shared context backend                | N/A | N/A | SQLite / JSON / Redis (pluggable) |
 | Task audit trail                      | &mdash; | &mdash; | SQLite: status, cost, duration, approval log |
-| Loop guard for bot-to-bot             | N/A | N/A | 5-layer: generation + cooldown + rate + dedup + AI |
 | Stable release                        | Yes | Research preview | Yes (v2.2) |
 
 **What official tools do better:** Remote Control streams full terminal output. Channels relay tool-approval dialogs natively. Claude Code on the web provides cloud compute without local setup. This project optimizes for a different job: **persistent, multi-agent session management entirely from Telegram.**
@@ -89,7 +87,7 @@ Walk away from your desk. Open Telegram. `/new` starts a fresh session. `/resume
 
 ### Multi-Agent Collaboration
 
-Put `@claude-bot` and `@codex-bot` in the same Telegram group. Ask Claude to review code — Codex reads the reply via shared context and offers its own take. Use `/relay codex Do you agree?` for explicit cross-checking. Built-in loop guards and circuit breakers prevent runaway bot-to-bot conversations.
+Put `@claude-bot` and `@codex-bot` in the same Telegram group. Ask Claude to review code — Codex reads the reply via shared context and offers its own take. No copy-pasting needed.
 
 ### Always-On, Self-Hosted
 
@@ -111,8 +109,6 @@ Sessions are sticky: messages continue the current session until you explicitly 
 | `/status` | Show backend, model, cwd, and session |
 | `/tasks` | Show recent task history |
 | `/verbose 0\|1\|2` | Change progress verbosity |
-| `/relay <target> <msg>` | Forward a message to another bot and return its reply |
-| `/a2a status` | Show A2A bus status, peer health, and loop guard stats |
 
 ---
 
@@ -152,58 +148,6 @@ Set `sharedContextBackend` in `config.json`:
 ```
 
 > **Note:** Bots only respond when explicitly @mentioned or replied to. They don't auto-reply to each other.
-
-### A2A: Agent-to-Agent Communication
-
-Beyond passive shared context, A2A lets bots **actively respond** to each other in group chats. When one bot replies to a user, the A2A bus broadcasts the response to sibling bots. Each sibling independently decides whether to chime in.
-
-```text
-You:    @claude What's the best way to handle retries?
-Claude: [responds with retry pattern advice]
-         ↓ A2A broadcast
-Codex:  [reads Claude's reply, adds: "I'd also suggest exponential backoff..."]
-```
-
-Built-in safety:
-- **Loop guard**: Max 2 generations of bot-to-bot replies per conversation turn
-- **Cooldown**: 60s minimum between A2A responses per bot
-- **Circuit breaker**: Auto-disables unreachable peers after 3 failures
-- **Rate limit**: Max 3 A2A responses per 5-minute window
-
-> **Important:** A2A only works in group chats. Private/DM conversations are never broadcast — this prevents cross-bot message leaking between separate DM windows.
-
-Enable in `config.json`:
-
-```json
-{
-  "shared": {
-    "a2aEnabled": true,
-    "a2aPorts": { "claude": 18810, "codex": 18811 }
-  }
-}
-```
-
-Each bot instance listens on its assigned port. Peers are auto-discovered from `a2aPorts` (excluding self).
-
-### `/relay` — Cross-Bot Point-to-Point Messaging
-
-While A2A broadcast is group-only, `/relay` works **everywhere** — including DMs. It sends a message to another bot's AI backend and returns the response directly.
-
-```text
-/relay codex What do you think of this approach?
-```
-
-**Aliases** for less typing: `cc`=claude, `cx`=codex, `gm`=gemini.
-
-**Reply-to forwarding**: Long-press a bot's reply and respond with `/relay <target> [instruction]` — the replied-to message is automatically included in the relay prompt. No copy-pasting needed.
-
-```text
-Claude:  [reviews your code]
-You:     (reply to Claude's message) /relay cx Do you agree with this review?
-Codex:   [sees Claude's full review + your instruction, gives opinion]
-```
-
-This is ideal for fact-checking and cross-review workflows.
 
 ---
 
@@ -343,7 +287,6 @@ Swap credential mount and `--backend` for other backends. See `docker-compose.ex
 - `sessions.js` — SQLite session persistence
 - `shared-context.js` — Cross-bot shared context entry point
 - `shared-context/` — Pluggable backends (SQLite / JSON / Redis)
-- `a2a/` — Agent-to-agent communication bus, loop guard, peer health
 - `adapters/` — Backend integrations
 - `launchd/` — LaunchAgent template for macOS
 - `scripts/` — Install wrapper and runtime launcher
@@ -365,16 +308,12 @@ Set in `config.json` at `shared.executor`, or override with `BRIDGE_EXECUTOR`.
 
 ## How It Fits Together
 
-Three ways to make AI agents talk to each other — different protocols, different scenarios:
+Two ways to make AI agents talk to each other — different protocols, different scenarios:
 
 | Layer | Protocol | How | Scenario |
 |-------|----------|-----|----------|
 | **Terminal** | MCP | Built-in `codex mcp-server` + `claude mcp serve`, zero code | CC ↔ Codex direct calls in your terminal |
-| **Telegram Group** | Custom A2A | This project's A2A bus, auto-broadcast | Multiple bots in one group, chiming in |
-| **Telegram DM** | Custom A2A | This project's `/relay` command | Explicit cross-bot forwarding from phone |
-| **Server** | Google A2A v0.3.0 | [openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway) | OpenClaw agents across servers |
-
-> **MCP vs A2A**: MCP is a tool-calling protocol (I invoke your capability). A2A is a peer communication protocol (I talk to you as an equal). CC calling Codex via MCP is using Codex as a tool — not two agents chatting.
+| **Telegram Group** | Shared context | This project's shared context store | Multiple bots in one group, reading each other's replies |
 
 ### Terminal: CLI-to-CLI via MCP (No Telegram Needed)
 
@@ -393,11 +332,7 @@ args = ["mcp", "serve"]
 
 ### Telegram: This Project
 
-Groups use A2A auto-broadcast. DMs use `/relay`. See sections above.
-
-### Server: openclaw-a2a-gateway
-
-For OpenClaw agents communicating across servers via the Google A2A v0.3.0 standard protocol. A different system entirely — see [openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway).
+Groups use shared context so bots can read each other's replies. See sections above.
 
 ## Development
 
