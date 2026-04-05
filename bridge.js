@@ -33,6 +33,12 @@ import { getBackendProfile } from "./config.js";
 import { initSharedContext, writeSharedMessage, readSharedMessages } from "./shared-context.js";
 import { createA2ABus } from "./a2a/bus.js";
 import { createFlushGate } from "./flush-gate.js";
+import { createRateLimiter } from "./rate-limiter.js";
+import { createDirManager } from "./dir-manager.js";
+import { createIdleMonitor } from "./idle-monitor.js";
+import { createCronManager } from "./cron.js";
+import { runHealthCheck } from "./doctor.js";
+import { Database } from "bun:sqlite";
 
 // 防止嵌套检测（从 CC 内部启动时需要）
 delete process.env.CLAUDECODE;
@@ -90,6 +96,19 @@ if (process.env.A2A_PEERS) {
     }
   }
 }
+
+// 限流配置
+const RATE_LIMIT_MAX_REQUESTS = Number(process.env.RATE_LIMIT_MAX_REQUESTS || 10);
+const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 60000);
+
+// Idle 监控配置
+const IDLE_TIMEOUT_MS = Number(process.env.IDLE_TIMEOUT_MS || 1800000);
+const RESET_ON_IDLE_MS = Number(process.env.RESET_ON_IDLE_MS || 0);
+
+// Cron 配置
+const CRON_ENABLED = process.env.CRON_ENABLED !== "false";
+const CRON_MAX_JOBS = Number(process.env.CRON_MAX_JOBS || 10);
+const CRON_DEFAULT_TIMEOUT_MS = Number(process.env.CRON_DEFAULT_TIMEOUT_MS || 600000);
 
 // ── 初始化共享上下文（跨 bot 进程可见）──
 await initSharedContext(sharedContextConfig);
@@ -239,6 +258,27 @@ if (!ACTIVE_BACKENDS.length) {
   process.exit(1);
 }
 
+// ── 初始化新模块 ──
+const rateLimiter = createRateLimiter({
+  maxRequests: RATE_LIMIT_MAX_REQUESTS,
+  windowMs: RATE_LIMIT_WINDOW_MS,
+});
+
+const dirManager = createDirManager(CC_CWD);
+
+const idleMonitor = createIdleMonitor({
+  idleTimeoutMs: IDLE_TIMEOUT_MS,
+  resetOnIdleMs: RESET_ON_IDLE_MS,
+  onTimeout: async (chatId) => {
+    try {
+      await bot.api.sendMessage(chatId, "⏰ 会话处理超时，已自动终止。发新消息即可继续。");
+    } catch {}
+  },
+});
+
+// Cron: 延迟初始化（需要 bot 实例，在 bot 创建后完成）
+let cronManager = null;
+
 function resolveBackend(chatId, backendName = null) {
   const effectiveBackend = backendName && adapters[backendName]
     ? backendName
@@ -286,6 +326,47 @@ const bot = new Bot(TOKEN, {
     baseFetchConfig: fetchOptions,
   },
 });
+
+// ── 初始化 Cron（bot 已就绪）──
+if (CRON_ENABLED) {
+  const cronDbPath = process.env.SESSIONS_DB
+    ? process.env.SESSIONS_DB.replace(/\.db$/, "-cron.db")
+    : "cron.db";
+  const cronDb = new Database(cronDbPath);
+  cronDb.exec("PRAGMA journal_mode = WAL");
+
+  cronManager = createCronManager({
+    db: cronDb,
+    maxJobs: CRON_MAX_JOBS,
+    defaultTimeoutMs: CRON_DEFAULT_TIMEOUT_MS,
+    onExecute: async (job) => {
+      const { adapter } = resolveBackend(job.chatId);
+      if (!adapter) return "后端不可用";
+
+      let resultText = "";
+      const streamOverrides = {};
+      if (getBackendName(job.chatId) === "claude") {
+        streamOverrides.permissionMode = "bypassPermissions";
+      }
+
+      for await (const event of adapter.streamQuery(job.prompt, null, undefined, streamOverrides)) {
+        if (event.type === "text") resultText += event.text;
+        if (event.type === "result" && event.text && !resultText) resultText = event.text;
+      }
+      return resultText || "(无输出)";
+    },
+    onOutput: async (chatId, text) => {
+      try {
+        await bot.api.sendMessage(chatId, text);
+      } catch (e) {
+        console.error(`[cron] 发送失败: ${e.message}`);
+      }
+    },
+  });
+
+  const restored = cronManager.restore();
+  if (restored > 0) console.log(`[cron] 恢复了 ${restored} 个定时任务`);
+}
 
 // ── 内存状态 ──
 const groupContext = new Map(); // chatId -> [{ messageId, role, source, text, ts }]
@@ -829,6 +910,7 @@ async function processPrompt(ctx, prompt) {
 
   try {
     markTaskStarted(taskId);
+    idleMonitor.startProcessing(chatId);
     await progress.start();
 
     const fullPrompt = await buildPromptWithContext(ctx, prompt);
@@ -847,7 +929,11 @@ async function processPrompt(ctx, prompt) {
     }, WATCHDOG_WARN_MS);
 
     const modelOverride = getChatModel(chatId);
-    const streamOverrides = modelOverride ? { model: modelOverride } : {};
+    const chatCwd = dirManager.current(chatId);
+    const streamOverrides = {
+      ...(modelOverride ? { model: modelOverride } : {}),
+      ...(chatCwd !== CC_CWD ? { cwd: chatCwd } : {}),
+    };
 
     // Tool approval: only for Claude backend
     if (backendName === "claude") {
@@ -884,6 +970,7 @@ async function processPrompt(ctx, prompt) {
         }
 
         // 实时进度（progress + text 事件）
+        idleMonitor.heartbeat(chatId);
         progress.processEvent(event);
 
         // 捕获最终结果
@@ -902,6 +989,7 @@ async function processPrompt(ctx, prompt) {
       finalizeFailure(summarizeText(resultText, 240), "EXECUTOR_ERROR");
     } finally {
       clearTimeout(watchdogHandle);
+      idleMonitor.stopProcessing(chatId);
     }
 
     // 存 session
@@ -991,10 +1079,18 @@ async function processPrompt(ctx, prompt) {
 // submitAndWait: 外层入口，通过 FlushGate 合并连续消息
 async function submitAndWait(ctx, prompt) {
   const chatId = ctx.chat.id;
+
+  // 闲置轮转：用户长时间没说话，自动开新 session
+  if (idleMonitor.shouldAutoReset(chatId)) {
+    deleteSession(chatId);
+    await ctx.reply("🔄 检测到长时间未活跃，已自动开启新会话。").catch(() => {});
+  }
+
+  idleMonitor.touch(chatId);
   await flushGate.enqueue(chatId, { ctx, prompt }, processPrompt);
 }
 
-// ── 权限 + 群聊过滤中间件 ──
+// ── 权限 + 群聊过滤 + 限流中间件 ──
 bot.use((ctx, next) => {
   // 群聊消息先入上下文
   if (ctx.chat?.type === "group" || ctx.chat?.type === "supergroup") {
@@ -1013,6 +1109,15 @@ bot.use((ctx, next) => {
     if (!isCommand && !isMention && !isReplyToBot) return;
   }
   if (isDuplicateTrigger(ctx)) return;
+  // 限流检查（回调按钮不限流）
+  if (!ctx.callbackQuery && ctx.chat?.id) {
+    if (!rateLimiter.isAllowed(ctx.chat.id)) {
+      const retryMs = rateLimiter.retryAfterMs(ctx.chat.id);
+      const retrySec = Math.ceil(retryMs / 1000);
+      ctx.reply(`🐌 消息太快了，${retrySec}s 后再试`).catch(() => {});
+      return;
+    }
+  }
   return next();
 });
 
@@ -1181,9 +1286,10 @@ bot.command("status", async (ctx) => {
     `执行器: ${executor.label} (${executor.name})\n` +
     `模式: ${info.mode}\n` +
     `模型: ${info.model}\n` +
-    `工作目录: ${info.cwd}\n` +
+    `工作目录: ${dirManager.current(ctx.chat.id)}\n` +
     `${sessionLine}${sessionMetaLine}${resumeHint}\n` +
     `进度详细度: ${verbose}（0=关/1=工具名/2=详细）` +
+    `${cronManager ? `\nCron: ${cronManager.count(ctx.chat.id)} 个任务` : ""}` +
     `${activeTask ? `\n活动任务: ${formatTaskStatus(activeTask)}` : ""}`,
     { parse_mode: "Markdown" }
   );
@@ -1313,6 +1419,168 @@ bot.command("model", async (ctx) => {
   }
   setChatModel(ctx.chat.id, arg);
   await ctx.reply(`${adapter.icon} 模型已切换为: ${arg}`);
+});
+
+// ── /dir 命令：切换工作目录 ──
+bot.command("dir", async (ctx) => {
+  const chatId = ctx.chat.id;
+  const arg = ctx.match?.trim();
+
+  if (!arg) {
+    const current = dirManager.current(chatId);
+    await ctx.reply(`📂 当前目录: ${current}`);
+    return;
+  }
+
+  if (arg === "list") {
+    const hist = dirManager.history(chatId);
+    if (!hist.length) {
+      await ctx.reply("📂 暂无目录历史");
+      return;
+    }
+    const current = dirManager.current(chatId);
+    const lines = hist.map((d, i) =>
+      `${d === current ? "▸ " : "  "}${i + 1}. ${d}`
+    );
+    await ctx.reply(`📂 目录历史:\n${lines.join("\n")}`);
+    return;
+  }
+
+  const result = dirManager.switchDir(chatId, arg);
+  if (!result.ok) {
+    await ctx.reply(`❌ ${result.error}`);
+    return;
+  }
+  await ctx.reply(`📂 已切换: ${result.current}\n   上一个: ${result.prev}`);
+});
+
+// ── /cron 命令：定时任务管理 ──
+bot.command("cron", async (ctx) => {
+  if (!cronManager) {
+    await ctx.reply("⏭️ Cron 未启用（config: cronEnabled=false）");
+    return;
+  }
+
+  const chatId = ctx.chat.id;
+  const arg = ctx.match?.trim() || "";
+  const parts = arg.split(/\s+/);
+  const subCmd = parts[0]?.toLowerCase();
+
+  if (!subCmd || subCmd === "list") {
+    const jobList = cronManager.list(chatId);
+    if (!jobList.length) {
+      await ctx.reply("⏰ 没有定时任务。\n\n用法:\n/cron add <cron表达式> <指令>\n/cron remove <id>\n/cron pause <id>\n/cron resume <id>");
+      return;
+    }
+    const lines = jobList.map((j) => {
+      const status = j.status === "active" ? "▶️" : "⏸️";
+      const next = j.nextRun ? new Date(j.nextRun).toLocaleString("zh-CN") : "-";
+      return `${status} \`${j.id}\`\n   ${j.cronExpr} — ${j.prompt.slice(0, 40)}\n   下次: ${next}`;
+    });
+    await ctx.reply(`⏰ 定时任务 (${jobList.length}):\n\n${lines.join("\n\n")}`, { parse_mode: "Markdown" }).catch(() =>
+      ctx.reply(`⏰ 定时任务 (${jobList.length}):\n\n${lines.join("\n\n").replace(/`/g, "")}`)
+    );
+    return;
+  }
+
+  if (subCmd === "add") {
+    // /cron add "0 9 * * *" bun test
+    // /cron add 0 9 * * * bun test
+    const rest = arg.slice(4).trim();
+    let cronExpr, prompt;
+
+    if (rest.startsWith('"') || rest.startsWith("'")) {
+      // 引号包裹的 cron 表达式
+      const quote = rest[0];
+      const endQuote = rest.indexOf(quote, 1);
+      if (endQuote === -1) {
+        await ctx.reply('❌ 未闭合的引号。用法: /cron add "0 9 * * *" 你的指令');
+        return;
+      }
+      cronExpr = rest.slice(1, endQuote);
+      prompt = rest.slice(endQuote + 1).trim();
+    } else {
+      // 前 5 个 token 是 cron 表达式
+      const tokens = rest.split(/\s+/);
+      if (tokens.length < 6) {
+        await ctx.reply('❌ 参数不足。用法: /cron add "0 9 * * *" 你的指令\n或: /cron add 0 9 * * * 你的指令');
+        return;
+      }
+      cronExpr = tokens.slice(0, 5).join(" ");
+      prompt = tokens.slice(5).join(" ");
+    }
+
+    if (!prompt) {
+      await ctx.reply("❌ 缺少执行指令。");
+      return;
+    }
+
+    const result = cronManager.add(chatId, cronExpr, prompt);
+    if (!result.ok) {
+      await ctx.reply(`❌ ${result.error}`);
+      return;
+    }
+    const nextStr = result.nextRun ? new Date(result.nextRun).toLocaleString("zh-CN") : "-";
+    await ctx.reply(`✅ 任务已创建\nID: \`${result.id}\`\n表达式: ${cronExpr}\n指令: ${prompt}\n下次执行: ${nextStr}`, { parse_mode: "Markdown" }).catch(() =>
+      ctx.reply(`✅ 任务已创建\nID: ${result.id}\n表达式: ${cronExpr}\n指令: ${prompt}\n下次执行: ${nextStr}`)
+    );
+    return;
+  }
+
+  if (subCmd === "remove" || subCmd === "delete" || subCmd === "rm") {
+    const id = parts[1];
+    if (!id) { await ctx.reply("❌ 缺少任务 ID。"); return; }
+    if (cronManager.remove(id)) {
+      await ctx.reply(`✅ 任务 ${id} 已删除`);
+    } else {
+      await ctx.reply(`❌ 未找到任务: ${id}`);
+    }
+    return;
+  }
+
+  if (subCmd === "pause") {
+    const id = parts[1];
+    if (!id) { await ctx.reply("❌ 缺少任务 ID。"); return; }
+    if (cronManager.pause(id)) {
+      await ctx.reply(`⏸️ 任务 ${id} 已暂停`);
+    } else {
+      await ctx.reply(`❌ 未找到任务: ${id}`);
+    }
+    return;
+  }
+
+  if (subCmd === "resume") {
+    const id = parts[1];
+    if (!id) { await ctx.reply("❌ 缺少任务 ID。"); return; }
+    if (cronManager.resume(id)) {
+      await ctx.reply(`▶️ 任务 ${id} 已恢复`);
+    } else {
+      await ctx.reply(`❌ 未找到任务: ${id}`);
+    }
+    return;
+  }
+
+  await ctx.reply("❌ 未知子命令。可用: list / add / remove / pause / resume");
+});
+
+// ── /doctor 命令：健康检查 ──
+bot.command("doctor", async (ctx) => {
+  const chatId = ctx.chat.id;
+  const report = await runHealthCheck({
+    adapters,
+    activeBackends: ACTIVE_BACKENDS,
+    cronManager,
+    rateLimiter,
+    idleMonitor,
+    dirManager,
+    a2aBus,
+    sharedContextConfig,
+    cwd: dirManager.current(chatId),
+    chatId,
+  });
+  await ctx.reply(report, { parse_mode: "Markdown" }).catch(() =>
+    ctx.reply(report.replace(/\*/g, ""))
+  );
 });
 
 // ── 按钮回调：模型选择 ──
@@ -1564,4 +1832,7 @@ console.log("Telegram-AI-Bridge 启动中...");
 console.log(`  实例后端: ${getFallbackBackend()}`);
 console.log(`  工作目录: ${CC_CWD}`);
 console.log(`  进度详细度: ${DEFAULT_VERBOSE}`);
+console.log(`  限流: ${RATE_LIMIT_MAX_REQUESTS}/${Math.round(RATE_LIMIT_WINDOW_MS / 1000)}s`);
+console.log(`  Idle: timeout=${IDLE_TIMEOUT_MS > 0 ? Math.round(IDLE_TIMEOUT_MS / 60000) + "min" : "off"}, reset=${RESET_ON_IDLE_MS > 0 ? Math.round(RESET_ON_IDLE_MS / 60000) + "min" : "off"}`);
+console.log(`  Cron: ${CRON_ENABLED ? "enabled" : "disabled"}`);
 await startBotPolling();
