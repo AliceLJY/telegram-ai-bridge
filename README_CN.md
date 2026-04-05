@@ -55,7 +55,7 @@ Claude Code 先后上线了 [Remote Control](https://code.claude.com/docs/en/rem
 
 | 后端 | SDK | 状态 |
 |------|-----|------|
-| `claude` | Claude Agent SDK | 主推荐 |
+| `claude` | Claude Code（通过 Agent SDK） | 主推荐 |
 | `codex` | Codex SDK | 主推荐 |
 | `gemini` | Gemini Code Assist API | 实验兼容 |
 
