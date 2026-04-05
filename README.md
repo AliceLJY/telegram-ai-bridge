@@ -4,9 +4,9 @@
 
 **Your AI Agents, Fully Managed from Telegram**
 
-*Create sessions, browse history, switch models, orchestrate multi-agent workflows — all from your phone.*
+*Run 4 parallel Claude Code sessions from your phone. Shared memory, independent contexts, zero configuration drift.*
 
-A self-hosted Telegram bridge that gives you full session control over local AI coding agents — Claude Code, Codex, and Gemini.
+A self-hosted Telegram bridge that turns your phone into a multi-window AI terminal — with full session control over Claude Code, Codex, and Gemini.
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)
@@ -22,26 +22,28 @@ A self-hosted Telegram bridge that gives you full session control over local AI 
 
 Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-control) (Feb 2026) and a [Telegram channel plugin](https://code.claude.com/docs/en/channels) (Mar 2026). Both let you talk to Claude from your phone. Neither gives you session management, multi-backend support, or agent-to-agent collaboration.
 
-| What you'd expect from phone control | [Remote Control](https://code.claude.com/docs/en/remote-control) | [Channels](https://code.claude.com/docs/en/channels) (TG plugin) | This project |
-|---------------------------------------|:-:|:-:|:-:|
-| Create new sessions from phone        | &mdash; | &mdash; | `/new` |
-| Browse & resume past sessions         | &mdash; | &mdash; | `/sessions` `/resume` `/peek` |
-| Switch models on the fly              | &mdash; | &mdash; | `/model` with inline buttons |
-| Claude + Codex + Gemini backends      | Claude only | Claude only | All three, per-chat switchable |
-| Tool approval from phone              | Partial (limited UI) | Yes | Inline buttons: Allow / Deny / Always / YOLO |
-| Multi-agent group collaboration       | &mdash; | &mdash; | A2A bus + shared context |
-| Cross-agent collaboration             | &mdash; | &mdash; | A2A broadcast (groups) + MCP/CLI (DMs) |
-| Real-time progress streaming          | Terminal output only | &mdash; | Tool icons + 3 verbosity levels + summary |
-| Rapid message batching                | N/A | &mdash; | FlushGate: 800ms window, auto-merge |
-| Photo / document / voice input        | &mdash; | Text only | Auto-download + reference in prompt |
-| Smart quick-reply buttons             | &mdash; | &mdash; | Yes/No + numbered options (1. 1、 1) formats) |
-| Runs as background daemon             | Terminal must stay open | Session must be open | LaunchAgent / Docker |
-| Survives network interruptions        | 10-min timeout kills session | Tied to session lifecycle | SQLite + Redis persistence |
-| Group context compression             | N/A | N/A | 3-tier: recent full / middle truncated / old keywords |
-| Shared context backend                | N/A | N/A | SQLite / JSON / Redis (pluggable) |
-| Task audit trail                      | &mdash; | &mdash; | SQLite: status, cost, duration, approval log |
-| Loop guard for bot-to-bot             | N/A | N/A | 5-layer: generation + cooldown + rate + dedup + AI |
-| Stable release                        | Yes | Research preview | Yes (v2.2) |
+| What you'd expect from phone control | [Remote Control](https://code.claude.com/docs/en/remote-control) | [Channels](https://code.claude.com/docs/en/channels) (TG plugin) | [OpenClaw](https://github.com/openclaw/openclaw) | This project |
+|---------------------------------------|:-:|:-:|:-:|:-:|
+| Parallel sessions (multi-instance)    | &mdash; | &mdash; | 1 bot = 1 session | **N bots, N parallel CC instances, shared memory** |
+| Create new sessions from phone        | &mdash; | &mdash; | &mdash; | `/new` |
+| Browse & resume past sessions         | &mdash; | &mdash; | &mdash; | `/sessions` `/resume` `/peek` |
+| Switch models on the fly              | &mdash; | &mdash; | Per-bot config | `/model` with inline buttons |
+| Claude + Codex + Gemini backends      | Claude only | Claude only | Provider-locked | All three, per-chat switchable |
+| Tool approval from phone              | Partial (limited UI) | Yes | Yes | Inline buttons: Allow / Deny / Always / YOLO |
+| Multi-agent group collaboration       | &mdash; | &mdash; | &mdash; | A2A bus + shared context |
+| Cross-agent collaboration             | &mdash; | &mdash; | Gateway channels | A2A broadcast (groups) + MCP/CLI (DMs) |
+| Real-time progress streaming          | Terminal output only | &mdash; | Yes | Tool icons + 3 verbosity levels + summary |
+| Rapid message batching                | N/A | &mdash; | &mdash; | FlushGate: 800ms window, auto-merge |
+| Photo / document / voice input        | &mdash; | Text only | Yes | Auto-download + reference in prompt |
+| Smart quick-reply buttons             | &mdash; | &mdash; | &mdash; | Yes/No + numbered options (1. 1、 1) formats) |
+| Runs as background daemon             | Terminal must stay open | Session must be open | Yes (Gateway) | LaunchAgent / Docker |
+| Survives network interruptions        | 10-min timeout kills session | Tied to session lifecycle | Gateway reconnect | SQLite + Redis persistence |
+| Memory shared across instances        | N/A | N/A | Per-bot isolated | **All instances share CLAUDE.md + MCP memory** |
+| Group context compression             | N/A | N/A | N/A | 3-tier: recent full / middle truncated / old keywords |
+| Shared context backend                | N/A | N/A | N/A | SQLite / JSON / Redis (pluggable) |
+| Task audit trail                      | &mdash; | &mdash; | &mdash; | SQLite: status, cost, duration, approval log |
+| Loop guard for bot-to-bot             | N/A | N/A | N/A | 5-layer: generation + cooldown + rate + dedup + AI |
+| Stable release                        | Yes | Research preview | Yes | Yes (v2.2) |
 
 **What official tools do better:** Remote Control streams full terminal output. Channels relay tool-approval dialogs natively. Claude Code on the web provides cloud compute without local setup. This project optimizes for a different job: **persistent, multi-agent session management entirely from Telegram.**
 
@@ -55,7 +57,7 @@ Supported backends:
 | `codex` | Codex SDK | Recommended |
 | `gemini` | Gemini Code Assist API | Experimental |
 
-> **Core rule:** One bot = one backend = one mental model.
+> **Core rule:** One bot = one process = one independent agent. Run as many as you need.
 
 ---
 
@@ -73,15 +75,35 @@ bun run start --backend claude
 
 ### Recommended Deployment
 
-Run separate bots for separate agents:
+Run multiple bots for parallel workflows:
 
-- `@your-claude-bot` → Claude only
-- `@your-codex-bot` → Codex only
-- `@your-gemini-bot` → Gemini only (if you explicitly need it)
+- `@cc-alpha` → Claude Code instance 1 (primary)
+- `@cc-beta` → Claude Code instance 2 (parallel tasks)
+- `@cc-gamma` → Claude Code instance 3 (parallel tasks)
+- `@your-codex-bot` → Codex (different backend)
+
+Each Claude instance shares memory automatically. No configuration needed — CC's memory lives in `~/.claude/`, not in the bot.
 
 ---
 
 ## What This Unlocks
+
+### Parallel Sessions — Your Phone is a Multi-Window Terminal
+
+On your desktop you run 4-5 Claude Code windows simultaneously. Now do the same from your phone:
+
+```
+TG Bot 1 (🟣) ──→ CC Instance 1 ──┐
+TG Bot 2 (🔵) ──→ CC Instance 2 ──┤── Shared: CLAUDE.md + MCP memory + ~/.claude/
+TG Bot 3 (🟢) ──→ CC Instance 3 ──┤
+TG Bot 4 (🟡) ──→ CC Instance 4 ──┘
+```
+
+Each bot runs an independent CC process with its own session. All instances share the same memory layer (CLAUDE.md, RecallNest, project settings) — what you tell one, the others already know. No memory fragmentation, no sync overhead.
+
+Setup takes 30 seconds per instance: create a bot with @BotFather, copy a config, start a process. See [Multi-Instance Deployment](#multi-instance-deployment) below.
+
+> **Why this matters:** OpenClaw gives you one bot = one session. Claude's official tools give you one session, period. This project gives you N parallel sessions with shared memory — the same workflow that makes desktop CC productive, now on your phone.
 
 ### Phone-First Agent Control
 
@@ -271,6 +293,63 @@ Inspect resolved config: `bun run config --backend claude` (secrets redacted).
 - Recommended only when you intentionally need Gemini support
 
 </details>
+
+## Multi-Instance Deployment
+
+Run N parallel Claude Code instances, each with its own Telegram bot:
+
+**1. Create a bot** — message @BotFather on Telegram, get a token.
+
+**2. Create a config file** — copy and customize:
+
+```bash
+cp config.json config-2.json
+# Edit config-2.json: change telegramBotToken, sessionsDb, tasksDb
+```
+
+```json
+{
+  "shared": {
+    "ownerTelegramId": "YOUR_ID",
+    "tasksDb": "tasks-2.db"
+  },
+  "backends": {
+    "claude": {
+      "enabled": true,
+      "telegramBotToken": "NEW_TOKEN_FROM_BOTFATHER",
+      "sessionsDb": "sessions-2.db",
+      "model": "claude-opus-4-6",
+      "permissionMode": "bypassPermissions"
+    }
+  }
+}
+```
+
+**3. Start it:**
+
+```bash
+bun run start --backend claude --config config-2.json
+```
+
+**4. (Optional) Register as LaunchAgent** for auto-start:
+
+```bash
+# The run script accepts an optional config path as second argument:
+# scripts/run-launch-agent.sh <backend> [config-file]
+```
+
+See the LaunchAgent section below for plist setup.
+
+> **What's shared vs isolated:**
+>
+> | Shared (automatic) | Isolated (per-instance) |
+> |---|---|
+> | `~/.claude/` (CLAUDE.md, memory, skills, hooks) | Telegram bot token |
+> | MCP servers (RecallNest, etc.) | SQLite sessions DB |
+> | Project settings & rules | SQLite tasks DB |
+> | Git repos & file system | Log files |
+
+---
 
 <details>
 <summary><strong>macOS LaunchAgent</strong></summary>
