@@ -30,6 +30,7 @@ Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-co
 | Switch models on the fly              | &mdash; | &mdash; | Per-bot config | `/model` with inline buttons |
 | Claude + Codex + Gemini backends      | Claude only | Claude only | Provider-locked | All three, per-chat switchable |
 | Tool approval from phone              | Partial (limited UI) | Yes | Yes | Inline buttons: Allow / Deny / Always / YOLO |
+| War Room (multi-agent command center) | &mdash; | &mdash; | &mdash; | @mention dispatch + Redis shared context |
 | Multi-agent group collaboration       | &mdash; | &mdash; | &mdash; | A2A bus + shared context |
 | Cross-agent collaboration             | &mdash; | &mdash; | Gateway channels | A2A broadcast (groups) + MCP/CLI (DMs) |
 | Real-time progress streaming          | Terminal output only | &mdash; | Yes | Tool icons + 3 verbosity levels + summary |
@@ -122,6 +123,30 @@ Walk away from your desk. Open Telegram. `/new` starts a fresh session. `/resume
 ### Multi-Agent Collaboration
 
 Put `@claude-bot` and `@codex-bot` in the same Telegram group. Ask Claude to review code — Codex reads the reply via shared context and offers its own take automatically. Built-in loop guards and circuit breakers prevent runaway bot-to-bot conversations. For DM cross-checking, bots communicate directly via MCP/CLI — no relay needed.
+
+### War Room — Multi-CC Command Center
+
+Put all 4 CC bots in one Telegram group. Each bot stays silent until @mentioned — no crosstalk, no chaos. But every bot can read what the others said via shared context (Redis-backed). You orchestrate:
+
+```
+You:      @cc-alpha Analyze this API design
+Alpha:    [deep analysis, writes to shared context]
+
+You:      @cc-beta Write integration tests based on Alpha's analysis
+Beta:     [reads Alpha's analysis from shared context, writes tests]
+
+You:      @cc-gamma Review both — any gaps?
+Gamma:    [reads everything, reviews]
+
+You:      @cc-delta Ship it — commit and push
+Delta:    [reads full context, commits]
+```
+
+**4 agents, 1 group, shared memory, zero noise.** Each bot only speaks when called. All context flows through Redis — no copy-pasting, no re-explaining. This is how a human manages a team: delegate, review, ship.
+
+Two collaboration modes in one project:
+- **A2A mode** (CC + Codex group): bots auto-respond to each other with loop guards — for brainstorming and debate
+- **War Room mode** (multi-CC group): @mention only — for coordinated parallel execution
 
 ### Always-On, Self-Hosted
 
