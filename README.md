@@ -39,6 +39,7 @@ Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-co
 | Runs as background daemon             | Terminal must stay open | Session must be open | Yes (Gateway) | LaunchAgent / Docker |
 | Survives network interruptions        | 10-min timeout kills session | Tied to session lifecycle | Gateway reconnect | SQLite + Redis persistence |
 | Memory shared across instances        | N/A | N/A | Per-bot isolated | **All instances share CLAUDE.md + MCP memory** |
+| Per-bot persona                       | N/A | N/A | SOUL.md per bot | Per-bot `CLAUDE.md` workspace + shared global rules |
 | Group context compression             | N/A | N/A | N/A | 3-tier: recent full / middle truncated / old keywords |
 | Shared context backend                | N/A | N/A | N/A | SQLite / JSON / Redis (pluggable) |
 | Task audit trail                      | &mdash; | &mdash; | &mdash; | SQLite: status, cost, duration, approval log |
@@ -103,7 +104,16 @@ Each bot runs an independent CC process with its own session. All instances shar
 
 Setup takes 30 seconds per instance: create a bot with @BotFather, copy a config, start a process. See [Multi-Instance Deployment](#multi-instance-deployment) below.
 
-> **Why this matters:** OpenClaw gives you one bot = one session. Claude's official tools give you one session, period. This project gives you N parallel sessions with shared memory — the same workflow that makes desktop CC productive, now on your phone.
+**Want different personalities?** Point each bot's `cwd` to a directory with its own `CLAUDE.md`. CC loads global rules from `~/.claude/CLAUDE.md` + per-bot persona from the workspace — just like OpenClaw's SOUL.md, but with CC's full skill/hook/MCP stack behind it.
+
+```
+~/.claude/CLAUDE.md              ← shared rules (memory, safety, workflow)
+~/bots/researcher/CLAUDE.md      ← "You are a deep research analyst..."
+~/bots/reviewer/CLAUDE.md        ← "You are a senior code reviewer..."
+~/bots/writer/CLAUDE.md          ← "You are a content strategist..."
+```
+
+> **Why this matters:** OpenClaw gives you one bot = one session, isolated memory. Claude's official tools give you one session, period. This project gives you N parallel sessions with shared memory and optional per-bot personas — the same workflow that makes desktop CC productive, now on your phone.
 
 ### Phone-First Agent Control
 
