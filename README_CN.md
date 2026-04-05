@@ -56,7 +56,7 @@ Claude Code 先后上线了 [Remote Control](https://code.claude.com/docs/en/rem
 | 后端 | SDK | 状态 |
 |------|-----|------|
 | `claude` | Claude Code（通过 Agent SDK） | 主推荐 |
-| `codex` | Codex SDK | 主推荐 |
+| `codex` | Codex CLI（通过 Codex SDK） | 主推荐 |
 | `gemini` | Gemini Code Assist API | 实验兼容 |
 
 > **核心规则：** 一个 bot = 一个独立进程 = 一个独立 Agent。想开几个开几个。
