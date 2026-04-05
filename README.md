@@ -55,7 +55,7 @@ Supported backends:
 
 | Backend | SDK | Status |
 |---------|-----|--------|
-| `claude` | Claude Agent SDK | Recommended |
+| `claude` | Claude Code (via Agent SDK) | Recommended |
 | `codex` | Codex SDK | Recommended |
 | `gemini` | Gemini Code Assist API | Experimental |
 
