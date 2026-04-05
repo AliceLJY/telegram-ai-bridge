@@ -49,6 +49,26 @@ Claude Code 先后上线了 [Remote Control](https://code.claude.com/docs/en/rem
 
 **官方工具的长处：** Remote Control 能实时看完整终端输出。Channels 能原生转发工具授权请求。Claude Code Web 提供云端算力，不需要本地环境。本项目专注另一件事：**在 Telegram 里做持久化的多 Agent 会话管理。**
 
+### 想脱离 OpenClaw？对照表在这
+
+OpenClaw 的每个功能，这里都有直接对应——而且大部分就是 CC 原生能力，不需要额外实现：
+
+| OpenClaw 功能 | 本项目怎么做的 |
+|---|---|
+| **IM 接入**（Telegram/WhatsApp） | grammy Telegram bot + Claude Code Agent SDK——跑的是完整 CC，不是 API 套壳 |
+| **多 Agent 路由** | A2A 总线（自动辩论）+ War Room（@点名派活） |
+| **Skills 技能包** | CC 原生 skill（`~/.claude/skills/`）——不需要转换 |
+| **记忆系统** | CC 原生（`CLAUDE.md` + MCP 记忆如 RecallNest）——所有实例自动共享 |
+| **定时任务（cron）** | CC 原生 cron——在 agent 内部运行，结果投递到 TG |
+| **工具调用**（bash/fs/web） | CC 原生工具——Bash、Read、Write、Edit、Glob、Grep、WebFetch 等 |
+| **外部 Agent（ACP）** | CC 子 agent + MCP 服务器 |
+| **Hooks 钩子** | CC 原生 hooks（`~/.claude/settings.json`） |
+| **Web UI 管理** | **Telegram 就是 UI**——内联按钮、推送通知、多设备、零部署 |
+| **SOUL.md 人格** | 每 bot 独立 `CLAUDE.md` 工作空间 + 共享全局规则 |
+| **工作空间记忆** | 项目级 `CLAUDE.md` + MCP 记忆——CC 自动加载 |
+
+**核心区别：** OpenClaw 在 API 之上重新实现这些功能。本项目跑的是**真正的 Claude Code**——CC 有的能力，你全部自动获得。
+
 > **三者的区别：** Remote Control = 手机*看着*终端。Channels = 终端*收着*手机消息。本项目 = 手机**就是**终端。
 
 支持的后端：

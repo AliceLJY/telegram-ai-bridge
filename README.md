@@ -49,6 +49,26 @@ Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-co
 
 **What official tools do better:** Remote Control streams full terminal output. Channels relay tool-approval dialogs natively. Claude Code on the web provides cloud compute without local setup. This project optimizes for a different job: **persistent, multi-agent session management entirely from Telegram.**
 
+### Replacing OpenClaw? Here's your checklist
+
+Every OpenClaw feature has a direct equivalent — most of them are just CC running natively behind the bridge:
+
+| OpenClaw feature | How this project handles it |
+|---|---|
+| **IM integration** (Telegram/WhatsApp) | grammy Telegram bot + Claude Code Agent SDK — runs full CC, not an API wrapper |
+| **Multi-agent routing** | A2A bus (auto-debate) + War Room (@mention dispatch) |
+| **Skills** | CC native skills (`~/.claude/skills/`) — no conversion needed |
+| **Memory system** | CC native (`CLAUDE.md` + MCP memory like RecallNest) — shared across all instances |
+| **Cron / scheduled tasks** | CC native cron — runs inside the agent, results delivered to TG |
+| **Tool execution** (bash/fs/web) | CC native tools — Bash, Read, Write, Edit, Glob, Grep, WebFetch, etc. |
+| **External agents (ACP)** | CC subagents + MCP servers |
+| **Hooks** | CC native hooks (`~/.claude/settings.json`) |
+| **Web UI** | **Telegram IS the UI** — inline buttons, notifications, multi-device, zero deployment |
+| **SOUL.md persona** | Per-bot `CLAUDE.md` workspace + shared global rules |
+| **Workspace memory** | Per-project `CLAUDE.md` + MCP memory — CC loads both automatically |
+
+**The difference:** OpenClaw reimplements these features on top of an API. This project runs **actual Claude Code** — every feature CC has, you get for free.
+
 > **How they differ:** Remote Control = your phone *watches* the terminal. Channels = the terminal *receives* phone messages. This project = your phone **IS** the terminal.
 
 Supported backends:
