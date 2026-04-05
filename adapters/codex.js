@@ -240,9 +240,10 @@ export function createAdapter(config = {}) {
       const effectiveModel = (overrides.model && overrides.model !== "__default__") ? overrides.model : defaultModel;
       const sdk = ensureSDK(effectiveModel);
 
+      const effectiveCwd = overrides.cwd || cwd;
       const thread = sessionId
         ? sdk.resumeThread(sessionId)
-        : sdk.startThread({ workingDirectory: cwd, skipGitRepoCheck: true });
+        : sdk.startThread({ workingDirectory: effectiveCwd, skipGitRepoCheck: true });
 
       // runStreamed 支持 signal 取消
       const turnOpts = abortSignal ? { signal: abortSignal } : {};
