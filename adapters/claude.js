@@ -139,11 +139,12 @@ export function createAdapter(config = {}) {
       } = overrides;
       const model = (restOverrides.model && restOverrides.model !== "__default__") ? restOverrides.model : defaultModel;
       const effectivePermMode = overridePermMode || permMode;
+      const effectiveCwd = restOverrides.cwd || cwd;
       const options = {
         model,
         permissionMode: effectivePermMode,
         ...(effectivePermMode === "bypassPermissions" && { allowDangerouslySkipPermissions: true }),
-        cwd,
+        cwd: effectiveCwd,
       };
 
       // A2A overrides: allowedTools, persistSession, maxTurns

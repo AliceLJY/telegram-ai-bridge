@@ -159,6 +159,16 @@ export function createDefaultConfig() {
       a2aWindowMs: 300000,
       a2aCircuitBreakerThreshold: 3,
       a2aCircuitBreakerResetMs: 30000,
+      // 限流配置
+      rateLimitMaxRequests: 10,
+      rateLimitWindowMs: 60000,
+      // Idle 监控配置
+      idleTimeoutMs: 1800000,
+      resetOnIdleMs: 0,
+      // Cron 配置
+      cronEnabled: true,
+      cronMaxJobs: 10,
+      cronDefaultTimeoutMs: 600000,
     },
     backends: {
       claude: {
@@ -295,6 +305,17 @@ function buildEnvFromConfig(config, backend, configPath) {
     A2A_COOLDOWN_MS: String(shared.a2aCooldownMs ?? 60000),
     A2A_MAX_RESPONSES_PER_WINDOW: String(shared.a2aMaxResponsesPerWindow ?? 3),
     A2A_WINDOW_MS: String(shared.a2aWindowMs ?? 300000),
+
+    // 限流
+    RATE_LIMIT_MAX_REQUESTS: String(shared.rateLimitMaxRequests ?? 10),
+    RATE_LIMIT_WINDOW_MS: String(shared.rateLimitWindowMs ?? 60000),
+    // Idle 监控
+    IDLE_TIMEOUT_MS: String(shared.idleTimeoutMs ?? 1800000),
+    RESET_ON_IDLE_MS: String(shared.resetOnIdleMs ?? 0),
+    // Cron
+    CRON_ENABLED: String(shared.cronEnabled ?? true),
+    CRON_MAX_JOBS: String(shared.cronMaxJobs ?? 10),
+    CRON_DEFAULT_TIMEOUT_MS: String(shared.cronDefaultTimeoutMs ?? 600000),
   };
 
   if (selectedBackend === "claude") {
