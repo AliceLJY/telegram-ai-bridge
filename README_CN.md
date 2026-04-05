@@ -4,9 +4,9 @@
 
 **你的 AI Agent，在 Telegram 里全权管理**
 
-*建会话、翻历史、切模型、多 Agent 协作——全在手机上搞定。*
+*手机上同时开 4 个 Claude Code 窗口。共享记忆，独立上下文，零配置漂移。*
 
-一个自托管的 Telegram 桥接工具，让你在手机上完整控制本地 AI coding agent——Claude Code、Codex、Gemini。
+一个自托管的 Telegram 桥接工具，把你的手机变成多窗口 AI 终端——完整控制 Claude Code、Codex、Gemini。
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)
@@ -22,26 +22,30 @@
 
 Claude Code 先后上线了 [Remote Control](https://code.claude.com/docs/en/remote-control)（2026.2）和 [Telegram 频道插件](https://code.claude.com/docs/en/channels)（2026.3）。都能从手机跟 Claude 聊天，但都做不到会话管理、多后端、多 Agent 协作。
 
-| 你在手机上想做的 | [Remote Control](https://code.claude.com/docs/en/remote-control) | [Channels](https://code.claude.com/docs/en/channels)（TG 插件） | 本项目 |
-|-----------------|:-:|:-:|:-:|
-| 从手机新建会话 | &mdash; | &mdash; | `/new` |
-| 浏览并恢复历史会话 | &mdash; | &mdash; | `/sessions` `/resume` `/peek` |
-| 随时切换模型 | &mdash; | &mdash; | `/model` 按钮选择 |
-| Claude + Codex + Gemini 多后端 | 仅 Claude | 仅 Claude | 全部支持，按 chat 切换 |
-| 手机审批工具调用 | 部分（UI 有限） | 支持 | 按钮：允许 / 拒绝 / 始终允许 / YOLO |
-| 多 Agent 群聊协作 | &mdash; | &mdash; | A2A 总线 + 共享上下文 |
-| 跨 Agent 协作 | &mdash; | &mdash; | A2A 广播（群聊）+ MCP/CLI（私聊） |
-| 实时进度流式展示 | 终端输出 | &mdash; | 工具图标 + 3 级详细度 + 完成摘要 |
-| 连续消息合并发送 | N/A | &mdash; | FlushGate：800ms 窗口自动合并 |
-| 图片 / 文件 / 语音输入 | &mdash; | 仅文字 | 自动下载 + 注入 prompt |
-| 智能快捷回复按钮 | &mdash; | &mdash; | 是否类 + 数字选项（支持 1. 1、 1) 格式） |
-| 后台常驻运行 | 终端关了就断 | 会话关了就断 | LaunchAgent / Docker |
-| 断网恢复 | 10 分钟超时断开 | 跟随会话生命周期 | SQLite + Redis 持久化 |
-| 群聊上下文压缩 | N/A | N/A | 三级：近期原文 / 中期截断 / 远期关键词 |
-| 共享上下文后端 | N/A | N/A | SQLite / JSON / Redis（可插拔） |
-| 任务审计追踪 | &mdash; | &mdash; | SQLite：状态、费用、耗时、审批记录 |
-| bot 间对话防环 | N/A | N/A | 五层：代数 + 冷却 + 限速 + 去重 + AI 判断 |
-| 稳定版本 | 是 | research preview | 是（v2.2） |
+| 你在手机上想做的 | [Remote Control](https://code.claude.com/docs/en/remote-control) | [Channels](https://code.claude.com/docs/en/channels)（TG 插件） | [OpenClaw](https://github.com/openclaw/openclaw) | 本项目 |
+|-----------------|:-:|:-:|:-:|:-:|
+| 多实例并行会话 | &mdash; | &mdash; | 1 bot = 1 会话 | **N 个 bot，N 个并行 CC 实例，共享记忆** |
+| War Room 指挥中心 | &mdash; | &mdash; | &mdash; | @点名派活 + Redis 共享上下文 |
+| 从手机新建会话 | &mdash; | &mdash; | &mdash; | `/new` |
+| 浏览并恢复历史会话 | &mdash; | &mdash; | &mdash; | `/sessions` `/resume` `/peek` |
+| 随时切换模型 | &mdash; | &mdash; | 按 bot 配置 | `/model` 按钮选择 |
+| Claude + Codex + Gemini 多后端 | 仅 Claude | 仅 Claude | 绑定 Provider | 全部支持，按 chat 切换 |
+| 手机审批工具调用 | 部分（UI 有限） | 支持 | 支持 | 按钮：允许 / 拒绝 / 始终允许 / YOLO |
+| 多 Agent 群聊协作 | &mdash; | &mdash; | &mdash; | A2A 总线 + 共享上下文 |
+| 跨 Agent 协作 | &mdash; | &mdash; | Gateway 频道 | A2A 广播（群聊）+ MCP/CLI（私聊） |
+| 实时进度流式展示 | 终端输出 | &mdash; | 支持 | 工具图标 + 3 级详细度 + 完成摘要 |
+| 连续消息合并发送 | N/A | &mdash; | &mdash; | FlushGate：800ms 窗口自动合并 |
+| 图片 / 文件 / 语音输入 | &mdash; | 仅文字 | 支持 | 自动下载 + 注入 prompt |
+| 智能快捷回复按钮 | &mdash; | &mdash; | &mdash; | 是否类 + 数字选项（支持 1. 1、 1) 格式） |
+| 后台常驻运行 | 终端关了就断 | 会话关了就断 | Gateway 常驻 | LaunchAgent / Docker |
+| 断网恢复 | 10 分钟超时断开 | 跟随会话生命周期 | Gateway 重连 | SQLite + Redis 持久化 |
+| 跨实例共享记忆 | N/A | N/A | 按 bot 隔离 | **所有实例共享 CLAUDE.md + MCP 记忆** |
+| 每 bot 独立人格 | N/A | N/A | SOUL.md 按 bot | 工作空间 `CLAUDE.md` + 共享全局规则 |
+| 群聊上下文压缩 | N/A | N/A | N/A | 三级：近期原文 / 中期截断 / 远期关键词 |
+| 共享上下文后端 | N/A | N/A | N/A | SQLite / JSON / Redis（可插拔） |
+| 任务审计追踪 | &mdash; | &mdash; | &mdash; | SQLite：状态、费用、耗时、审批记录 |
+| bot 间对话防环 | N/A | N/A | N/A | 五层：代数 + 冷却 + 限速 + 去重 + AI 判断 |
+| 稳定版本 | 是 | research preview | 是 | 是（v2.2） |
 
 **官方工具的长处：** Remote Control 能实时看完整终端输出。Channels 能原生转发工具授权请求。Claude Code Web 提供云端算力，不需要本地环境。本项目专注另一件事：**在 Telegram 里做持久化的多 Agent 会话管理。**
 
@@ -55,7 +59,7 @@ Claude Code 先后上线了 [Remote Control](https://code.claude.com/docs/en/rem
 | `codex` | Codex SDK | 主推荐 |
 | `gemini` | Gemini Code Assist API | 实验兼容 |
 
-> **核心规则：** 一个 bot = 一个 backend = 一套清晰心智模型。
+> **核心规则：** 一个 bot = 一个独立进程 = 一个独立 Agent。想开几个开几个。
 
 ---
 
@@ -73,15 +77,35 @@ bun run start --backend claude
 
 ### 推荐部署方式
 
-不同 agent 用不同 bot：
+多 bot 并行，按需扩展：
 
-- `@your-claude-bot` → 只连 Claude
-- `@your-codex-bot` → 只连 Codex
-- `@your-gemini-bot` → 只连 Gemini（明确需要时再开）
+- `@cc-alpha` → Claude Code 实例 1（主力）
+- `@cc-beta` → Claude Code 实例 2（并行任务）
+- `@cc-gamma` → Claude Code 实例 3（并行任务）
+- `@your-codex-bot` → Codex（不同后端）
+
+所有 Claude 实例自动共享记忆，无需配置——CC 的记忆在 `~/.claude/`，不在 bot 层。
 
 ---
 
 ## 能解锁什么
+
+### 多窗口并行——手机就是多窗口终端
+
+在电脑上你同时开 4-5 个 Claude Code 窗口。现在手机上也一样：
+
+```
+TG Bot 1 (🟣) ──→ CC 实例 1 ──┐
+TG Bot 2 (🔵) ──→ CC 实例 2 ──┤── 共享：CLAUDE.md + MCP 记忆 + ~/.claude/
+TG Bot 3 (🟢) ──→ CC 实例 3 ──┤
+TG Bot 4 (🟡) ──→ CC 实例 4 ──┘
+```
+
+每个 bot 运行独立的 CC 进程，有自己的会话。所有实例共享同一套记忆层——你跟任何一个说过的话，其他的都知道。
+
+**想要不同人格？** 给每个 bot 的 `cwd` 指向一个有自己 `CLAUDE.md` 的目录。CC 加载全局规则 + 工作空间人格——跟 OpenClaw 的 SOUL.md 一样，但背后是 CC 完整的 skill/hook/MCP 能力栈。
+
+> **为什么这很重要：** OpenClaw 一个 bot = 一个会话，记忆隔离。官方工具一个会话，没了。本项目给你 N 个并行会话，共享记忆，可选独立人格。
 
 ### 手机优先的 Agent 控制
 
@@ -90,6 +114,28 @@ bun run start --backend claude
 ### 多 Agent 协作
 
 把 `@claude-bot` 和 `@codex-bot` 拉进同一个 Telegram 群。让 Claude review 代码——Codex 通过共享上下文读到 Claude 的回复，自动给出自己的意见。内置防死循环和熔断机制，防止 bot 之间无限接话。私聊场景下，bot 通过 MCP/CLI 直接互通，无需中转。
+
+### War Room——多 CC 指挥中心
+
+把 4 个 CC bot 拉进同一个群。每个 bot @才说话——不抢话，不混乱。但每个 bot 都能通过共享上下文（Redis）读到其他人的回复。你来调度：
+
+```
+你:       @cc-alpha 分析这个 API 设计
+Alpha:    [深度分析，写入共享上下文]
+
+你:       @cc-beta 根据 Alpha 的分析写集成测试
+Beta:     [读取 Alpha 的上下文，写测试]
+
+你:       @cc-gamma 审查两边的产出——有没有遗漏？
+Gamma:    [读取所有上下文，审查]
+
+你:       @cc-delta 提交推送
+Delta:    [读取完整上下文，commit and push]
+```
+
+**4 个 agent，1 个群，共享记忆，零噪音。** 两种协作模式：
+- **A2A 模式**（CC + Codex 群）：bot 自动互相接话，适合头脑风暴
+- **War Room 模式**（多 CC 群）：@点名才说话，适合协调并行执行
 
 ### 常驻运行，自托管
 
