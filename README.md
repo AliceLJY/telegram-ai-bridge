@@ -56,7 +56,7 @@ Supported backends:
 | Backend | SDK | Status |
 |---------|-----|--------|
 | `claude` | Claude Code (via Agent SDK) | Recommended |
-| `codex` | Codex SDK | Recommended |
+| `codex` | Codex CLI (via Codex SDK) | Recommended |
 | `gemini` | Gemini Code Assist API | Experimental |
 
 > **Core rule:** One bot = one process = one independent agent. Run as many as you need.
