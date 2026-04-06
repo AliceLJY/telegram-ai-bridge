@@ -983,8 +983,8 @@ async function processPrompt(ctx, prompt) {
     idleMonitor.startProcessing(chatId);
     await progress.start();
 
-    // 注入 bridge 行为指令：禁止 CC 自己调 TG API，图片/文件由 bridge 自动回传
-    const bridgeHint = "[系统提示: 你通过 Telegram Bridge 与用户对话。不要自己调用 Telegram Bot API（如 curl sendPhoto/sendDocument）来发送图片或文件给用户。如果用户要求截图或生成文件，正常执行即可，bridge 会自动检测并回传给用户。]\n\n";
+    // 注入 bridge 行为指令
+    const bridgeHint = "[系统提示: 你通过 Telegram Bridge 与用户对话。当用户要求截图、生成文件、或发送已有文件时，只需在回复中写出文件的完整绝对路径（如 /Users/anxianjingya/Desktop/file.png），bridge 会自动检测路径并将文件发送给用户。绝对不要自己调用 curl/Telegram Bot API 来发送文件。]\n\n";
     const fullPrompt = await buildPromptWithContext(ctx, bridgeHint + prompt);
     const session = getSession(chatId);
     // 只复用同后端的 session
