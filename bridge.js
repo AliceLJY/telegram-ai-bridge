@@ -601,7 +601,7 @@ const SENDABLE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf",
 function extractFilePathsFromText(text, fileList) {
   const HOME = process.env.HOME || "/Users/anxianjingya";
   const existing = new Set(fileList.map(f => f.filePath));
-  const extGroup = "png|jpg|jpeg|gif|webp|pdf|docx|xlsx|csv|html|svg";
+  const extGroup = "png|jpg|jpeg|gif|webp|pdf|docx|xlsx|csv|html|svg|txt|md|json|js|ts|py|sh|yaml|yml|xml|log|zip|tar|gz";
 
   // 1. 绝对路径（/开头）
   const absPattern = new RegExp(`(\\/(?:[\\w.\\-]+\\/)*[\\w.\\-\\u4e00-\\u9fff\\u3000-\\u303f\\uff00-\\uffef ]+\\.(?:${extGroup}))`, "gi");
@@ -984,7 +984,7 @@ async function processPrompt(ctx, prompt) {
     await progress.start();
 
     // 注入 bridge 行为指令
-    const bridgeHint = "[系统提示: 你通过 Telegram Bridge 与用户对话。当用户要求截图、生成文件、或发送已有文件时，只需在回复中写出文件的完整绝对路径（如 /Users/anxianjingya/Desktop/file.png），bridge 会自动检测路径并将文件发送给用户。绝对不要自己调用 curl/Telegram Bot API 来发送文件。]\n\n";
+    const bridgeHint = "[系统提示: 你通过 Telegram Bridge 与用户对话。当用户要求发送文件、截图或查看图片时：1) 用工具找到/生成文件 2) 在回复中包含文件的完整绝对路径（如 /Users/xxx/file.png），bridge 会自动检测路径并发送给用户。用户不需要知道路径，你来找。绝对不要自己调用 curl/Telegram Bot API。]\n\n";
     const fullPrompt = await buildPromptWithContext(ctx, bridgeHint + prompt);
     const session = getSession(chatId);
     // 只复用同后端的 session
@@ -1118,7 +1118,7 @@ async function processPrompt(ctx, prompt) {
 
     if (resultSuccess && capturedFiles.length > 0) {
       const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
-      const DOC_EXTS = new Set([".pdf", ".docx", ".xlsx", ".csv", ".html"]);
+      const DOC_EXTS = new Set([".pdf", ".docx", ".xlsx", ".csv", ".html", ".txt", ".md", ".json", ".js", ".ts", ".py", ".sh", ".yaml", ".yml", ".xml", ".log", ".zip", ".tar", ".gz"]);
       const HOME = process.env.HOME || "";
       const sentPaths = new Set();
       for (const f of capturedFiles) {
