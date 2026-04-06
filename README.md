@@ -98,6 +98,8 @@ Two collaboration modes in one project:
 
 Done discussing? `/export` dumps the entire cross-bot conversation as a Markdown file — full audit trail, every bot's contribution timestamped.
 
+<img src="assets/export-demo.png" alt="/export — War Room conversation exported as Markdown" width="600">
+
 ### Always-On, Self-Hosted
 
 macOS LaunchAgent or Docker keeps the bridge running in the background. Sessions persist in SQLite across restarts and reboots — pick up where you left off after a reboot, a network drop, or a flight. Code and credentials never leave your machine. Owner-only access by default.
