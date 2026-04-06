@@ -1421,11 +1421,11 @@ bot.command("sessions", async (ctx) => {
     for (const s of sortedSessions) {
       const backend = s.backend || backendName;
       const isCurrent = current && current.session_id === s.session_id;
-      kb.text(buildSessionButtonLabel(s, backend, isCurrent), `peek:${s.session_id}:${backend}`).row();
+      kb.text(buildSessionButtonLabel(s, backend, isCurrent), `resume:${s.session_id}:${backend}`).row();
     }
     kb.text("🆕 开新会话", "action:new").row();
     await ctx.reply(
-      "选择会话：点一下会把该会话的完整 ID 和最近片段回显到当前聊天，不会切换当前会话。",
+      "选择会话：点一下直接接续。",
       { reply_markup: kb },
     );
   } catch (e) {
