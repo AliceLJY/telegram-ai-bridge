@@ -96,6 +96,8 @@ Two collaboration modes in one project:
 - **A2A mode** (CC + Codex group): bots auto-respond to each other with loop guards — for brainstorming and debate
 - **War Room mode** (multi-CC group): @mention only — for coordinated parallel execution
 
+Done discussing? `/export` dumps the entire cross-bot conversation as a Markdown file — full audit trail, every bot's contribution timestamped.
+
 ### Always-On, Self-Hosted
 
 macOS LaunchAgent or Docker keeps the bridge running in the background. Sessions persist in SQLite across restarts and reboots — pick up where you left off after a reboot, a network drop, or a flight. Code and credentials never leave your machine. Owner-only access by default.
@@ -163,6 +165,7 @@ Sessions are sticky: messages continue the current session until you explicitly 
 | `/tasks` | Show recent task history |
 | `/verbose 0\|1\|2` | Change progress verbosity |
 | `/cron` | Manage scheduled tasks |
+| `/export` | Export group shared context as Markdown file |
 | `/doctor` | Run health check |
 | `/a2a` | Show A2A bus status, peer health, and loop guard stats |
 
