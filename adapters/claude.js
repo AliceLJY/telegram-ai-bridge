@@ -230,6 +230,10 @@ export function createAdapter(config = {}) {
                   };
                 }
               }
+              // 从 Write/Edit 输入提取文件路径
+              if ((block.name === "Write" || block.name === "Edit") && block.input?.file_path) {
+                yield { type: "file_written", filePath: block.input.file_path, tool: block.name };
+              }
               yield {
                 type: "progress",
                 toolName: block.name,
@@ -238,6 +242,43 @@ export function createAdapter(config = {}) {
             } else if (block.type === "text" && block.text) {
               yield { type: "text", text: block.text };
             }
+          }
+        }
+
+        // 捕获工具结果中的图片（SDKUserMessage）
+        if (msg.type === "user" && msg.parent_tool_use_id) {
+          const content = msg.message?.content;
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              // tool_result 嵌套内容
+              if (block.type === "tool_result" && Array.isArray(block.content)) {
+                for (const part of block.content) {
+                  if (part.type === "image" && part.source?.data) {
+                    yield {
+                      type: "image",
+                      data: part.source.data,
+                      mediaType: part.source.media_type || "image/png",
+                      toolUseId: block.tool_use_id,
+                    };
+                  }
+                }
+              }
+              // 顶层 image block
+              if (block.type === "image" && block.source?.data) {
+                yield {
+                  type: "image",
+                  data: block.source.data,
+                  mediaType: block.source.media_type || "image/png",
+                };
+              }
+            }
+          }
+        }
+
+        // 捕获文件持久化事件
+        if (msg.type === "system" && msg.subtype === "files_persisted") {
+          for (const f of msg.files || []) {
+            yield { type: "file_persisted", filename: f.filename, fileId: f.file_id };
           }
         }
 

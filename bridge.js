@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 // Telegram → AI Bridge（多后端：Claude Agent SDK / Codex SDK）
 
-import { Bot, InlineKeyboard, GrammyError } from "grammy";
+import { Bot, InlineKeyboard, InputFile, GrammyError } from "grammy";
 import { HttpsProxyAgent } from "https-proxy-agent";
-import { mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync } from "fs";
+import { mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync, existsSync } from "fs";
 import { basename, join } from "path";
 import {
   getSession,
@@ -563,6 +563,19 @@ async function sendLong(ctx, text) {
   }
 }
 
+function estimateCodeRatio(text) {
+  const codeBlocks = text.match(/```[\s\S]*?```/g) || [];
+  const codeLen = codeBlocks.reduce((sum, b) => sum + b.length, 0);
+  return text.length > 0 ? codeLen / text.length : 0;
+}
+
+function detectCodeLang(text) {
+  const m = text.match(/```(\w+)/);
+  const lang = m?.[1]?.toLowerCase();
+  const map = { javascript: "js", typescript: "ts", python: "py", bash: "sh", shell: "sh", ruby: "rb" };
+  return map[lang] || lang || "txt";
+}
+
 function getSessionProjectLabel(sessionMeta, fallbackCwd = "") {
   const cwd = sessionMeta?.cwd || fallbackCwd || "";
   if (!cwd) return "";
@@ -921,6 +934,8 @@ async function processPrompt(ctx, prompt) {
     let capturedSessionId = sessionId || null;
     let resultText = "";
     let resultSuccess = true;
+    const capturedImages = [];  // { data, mediaType, toolUseId }
+    const capturedFiles = [];   // { filePath, source }
 
     // 软看门狗：只打日志，不 abort（TG 发出去的消息无法撤回）
     const startTime = Date.now();
@@ -969,6 +984,17 @@ async function processPrompt(ctx, prompt) {
           });
         }
 
+        // 收集图片/文件事件
+        if (event.type === "image" && capturedImages.length < 10) {
+          capturedImages.push(event);
+        }
+        if (event.type === "file_persisted") {
+          capturedFiles.push({ filePath: event.filename, source: "persisted" });
+        }
+        if (event.type === "file_written") {
+          capturedFiles.push({ filePath: event.filePath, source: event.tool });
+        }
+
         // 实时进度（progress + text 事件）
         idleMonitor.heartbeat(chatId);
         progress.processEvent(event);
@@ -1004,6 +1030,43 @@ async function processPrompt(ctx, prompt) {
       durationMs: Date.now() - startTime,
     });
 
+    // 发送捕获的图片（在文字结果之前）
+    if (resultSuccess && capturedImages.length > 0) {
+      for (const img of capturedImages) {
+        try {
+          const buf = Buffer.from(img.data, "base64");
+          if (buf.length > 10 * 1024 * 1024) continue; // TG sendPhoto 限 10MB
+          const ext = (img.mediaType || "image/png").split("/")[1] || "png";
+          await ctx.replyWithPhoto(new InputFile(buf, `output.${ext}`));
+        } catch (e) {
+          console.error(`[Bridge] sendPhoto failed: ${e.message}`);
+        }
+      }
+    }
+
+    // 发送捕获的文件（图片/文档类）
+    if (resultSuccess && capturedFiles.length > 0) {
+      const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
+      const DOC_EXTS = new Set([".pdf", ".docx", ".xlsx", ".csv", ".html"]);
+      const sentPaths = new Set();
+      for (const f of capturedFiles) {
+        if (!f.filePath || sentPaths.has(f.filePath)) continue;
+        const ext = f.filePath.slice(f.filePath.lastIndexOf(".")).toLowerCase();
+        if (!IMAGE_EXTS.has(ext) && !DOC_EXTS.has(ext)) continue;
+        if (!existsSync(f.filePath)) continue;
+        sentPaths.add(f.filePath);
+        try {
+          if (IMAGE_EXTS.has(ext)) {
+            await ctx.replyWithPhoto(new InputFile(f.filePath));
+          } else {
+            await ctx.replyWithDocument(new InputFile(f.filePath));
+          }
+        } catch (e) {
+          console.error(`[Bridge] sendFile failed (${basename(f.filePath)}): ${e.message}`);
+        }
+      }
+    }
+
     // 发最终结果
     if (!resultSuccess) {
       finalizeFailure(summarizeText(resultText, 240), "RESULT_ERROR");
@@ -1014,11 +1077,16 @@ async function processPrompt(ctx, prompt) {
       if (replies && resultText.length <= 4000) {
         const kb = new InlineKeyboard();
         for (const r of replies) {
-          // TG callback_data 限 64 字节，"reply:" 占 6 字节，剩 58 给内容
           const cbData = `reply:${r.slice(0, 58)}`;
           kb.text(r, cbData);
         }
         await ctx.reply(resultText, { reply_markup: kb });
+      } else if (resultText.length > 4000 && estimateCodeRatio(resultText) > 0.6) {
+        // 长代码输出 → 文件附件 + 摘要
+        const ext = detectCodeLang(resultText) || "txt";
+        await ctx.replyWithDocument(new InputFile(Buffer.from(resultText, "utf-8"), `output.${ext}`));
+        const preview = resultText.slice(0, 300).replace(/```\w*\n?/, "");
+        await ctx.reply(`${preview}\n\n📎 完整输出 (${resultText.length} 字符) 见附件`);
       } else {
         await sendLong(ctx, resultText);
       }
