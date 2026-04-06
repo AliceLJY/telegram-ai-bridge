@@ -38,7 +38,7 @@ Delta:    [reads full context, commits]
 
 **4 agents, 1 group, shared memory, zero noise.** The same workflow that takes 4 terminal windows on your desk — now fits in your pocket.
 
-<!-- TODO: Add a GIF or screenshot of the Telegram War Room in action -->
+<img src="assets/war-room-demo.png" alt="War Room — 4 CC bots processing in parallel" width="600">
 
 ---
 

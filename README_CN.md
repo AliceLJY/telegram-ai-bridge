@@ -36,7 +36,7 @@ Delta:    [读取完整上下文，commit and push]
 
 **4 个 agent，1 个群，共享记忆，零噪音。** 桌面上要开 4 个终端窗口的工作流，现在装进口袋。
 
-<!-- TODO: 添加 Telegram War Room 实际截图或 GIF -->
+<img src="assets/war-room-demo.png" alt="War Room — 4 个 CC bot 同时处理" width="600">
 
 ---
 
