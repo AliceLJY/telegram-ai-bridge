@@ -36,6 +36,9 @@ Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-co
 | Real-time progress streaming          | Terminal output only | &mdash; | Yes | Tool icons + 3 verbosity levels + summary |
 | Rapid message batching                | N/A | &mdash; | &mdash; | FlushGate: 800ms window, auto-merge |
 | Photo / document / voice input        | &mdash; | Text only | Yes | Auto-download + reference in prompt |
+| **Image / file output relay**         | Terminal only | &mdash; | &mdash; | **Screenshots & files auto-sent to TG chat** |
+| Cancel running task                   | Ctrl+C in terminal | &mdash; | &mdash; | `/cancel` — abort from phone |
+| Message reply context                 | N/A | &mdash; | &mdash; | Reply to any message → quoted text as context |
 | Smart quick-reply buttons             | &mdash; | &mdash; | &mdash; | Yes/No + numbered options (1. 1、 1) formats) |
 | Runs as background daemon             | Terminal must stay open | Session must be open | Yes (Gateway) | LaunchAgent / Docker |
 | Survives network interruptions        | 10-min timeout kills session | Tied to session lifecycle | Gateway reconnect | SQLite + Redis persistence |
@@ -140,6 +143,18 @@ Setup takes 30 seconds per instance: create a bot with @BotFather, copy a config
 
 Walk away from your desk. Open Telegram. `/new` starts a fresh session. `/resume 3` picks up where you left off. `/peek 5` reads a session without touching it. `/model` switches models on the fly. Full session lifecycle from your phone — no terminal required.
 
+### Bidirectional Media — Screenshots & Files Flow Back
+
+Input has always been bidirectional: text, photos, documents, voice all flow to CC. Now **output is too**:
+
+- **Screenshots**: CC takes a screenshot → image appears in your TG chat automatically
+- **Files**: CC creates or references a file → bridge detects the path and sends it as a TG attachment
+- **Long code**: Output >4000 chars with >60% code → sent as a file attachment with preview summary
+
+The bridge captures images from SDK tool results (base64 data from Read/peekaboo/screenshot tools) and scans CC's response text for file paths. No manual copy-paste, no "where did you save it?" — files just appear in the chat.
+
+> **Reply to cancel**: Task taking too long? Send `/cancel` to abort. Need context from a previous message? Reply to it — the quoted text is automatically included as context.
+
 ### Multi-Agent Collaboration
 
 Put `@claude-bot` and `@codex-bot` in the same Telegram group. Ask Claude to review code — Codex reads the reply via shared context and offers its own take automatically. Built-in loop guards and circuit breakers prevent runaway bot-to-bot conversations. For DM cross-checking, bots communicate directly via MCP/CLI — no relay needed.
@@ -180,15 +195,20 @@ Sessions are sticky: messages continue the current session until you explicitly 
 
 | Command | Description |
 |---------|-------------|
+| `/help` | Show all commands with descriptions |
 | `/new` | Start a new session |
+| `/cancel` | Abort the currently running task |
 | `/sessions` | List recent sessions |
 | `/peek <id>` | Read-only preview a session |
 | `/resume <id>` | Rebind current chat to an owned session |
 | `/model` | Pick a model for the current bot |
 | `/status` | Show backend, model, cwd, and session |
+| `/dir` | Switch working directory |
 | `/tasks` | Show recent task history |
 | `/verbose 0\|1\|2` | Change progress verbosity |
-| `/a2a status` | Show A2A bus status, peer health, and loop guard stats |
+| `/cron` | Manage scheduled tasks |
+| `/doctor` | Run health check |
+| `/a2a` | Show A2A bus status, peer health, and loop guard stats |
 
 ---
 
