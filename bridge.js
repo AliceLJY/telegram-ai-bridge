@@ -655,10 +655,13 @@ function getCompactSourceLabel(sessionMeta, backend) {
   return backend.toUpperCase();
 }
 
-function getTopicSnippet(sessionMeta, maxLen = 16) {
-  const topic = (sessionMeta?.display_name || "").replace(/\s+/g, " ").trim();
+function getTopicSnippet(sessionMeta, maxLen = 30) {
+  let topic = (sessionMeta?.display_name || "").replace(/\s+/g, " ").trim();
   if (!topic || topic === "(空)") return "";
-  return topic.length > maxLen ? `${topic.slice(0, maxLen)}...` : topic;
+  // 过滤掉 bridge hint 和内部命令前缀
+  topic = topic.replace(/^\[系统提示:.*?\]\s*/s, "").replace(/^<local-command-.*$/s, "").trim();
+  if (!topic) return "";
+  return topic.length > maxLen ? `${topic.slice(0, maxLen)}…` : topic;
 }
 
 function buildResumeHint(backend, sessionId, cwdHint = "") {
@@ -679,12 +682,14 @@ function formatSessionIdShort(sessionId, length = 8) {
 function buildSessionButtonLabel(sessionMeta, backend, isCurrent) {
   const icon = backend === "codex" ? "🟢" : backend === "gemini" ? "🔵" : "🟣";
   const time = new Date(sessionMeta.last_active).toISOString().slice(5, 16).replace("T", " ");
-  const project = getSessionProjectLabel(sessionMeta);
-  const source = getCompactSourceLabel(sessionMeta, backend);
   const topic = getTopicSnippet(sessionMeta);
-  const parts = [icon, source, project || "(unknown)", time, topic].filter(Boolean);
+  // 只在非 home 目录时显示项目名
+  const project = getSessionProjectLabel(sessionMeta);
+  const HOME_BASE = basename(process.env.HOME || "");
+  const showProject = project && project !== HOME_BASE && project !== "(unknown)";
+  const parts = [icon, topic || "(空会话)", time, showProject ? project : null].filter(Boolean);
   const mark = isCurrent ? " ✦" : "";
-  return `${parts.join(" · ").slice(0, 55)}${mark}`;
+  return `${parts.join(" · ").slice(0, 58)}${mark}`;
 }
 
 function formatPreviewRole(role) {

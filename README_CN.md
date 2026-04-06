@@ -139,6 +139,8 @@ bun run start --backend claude
 
 > **核心规则：** 一个 bot = 一个独立进程 = 一个独立 Agent。想开几个开几个。
 
+> **Bridge 是透明的。** TG bot 继承你本地 CC 的全部能力——skills、MCP 服务器、hooks，终端里能做的事，TG 里一样能做。Bridge 只管会话管理和消息中转，能力全部来自 CC 本身。
+
 ---
 
 ## Telegram 命令
