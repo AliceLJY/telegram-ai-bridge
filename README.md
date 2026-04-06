@@ -2,11 +2,11 @@
 
 # telegram-ai-bridge
 
-**Your AI Agents, Fully Managed from Telegram**
+**Full Claude Code. Everywhere. Anytime.**
 
-*Run 4 parallel Claude Code sessions from your phone. Shared memory, independent contexts, zero configuration drift.*
+*N parallel Claude Code sessions from your phone. Shared memory. War Room coordination. Always-on. Self-hosted.*
 
-A self-hosted Telegram bridge that turns your phone into a multi-window AI terminal — with full session control over Claude Code, Codex, and Gemini.
+A self-hosted Telegram bridge that runs **actual Claude Code** — not an API wrapper — with full session management, multi-backend support (Claude + Codex + Gemini), and agent-to-agent collaboration.
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)
@@ -16,9 +16,153 @@ A self-hosted Telegram bridge that turns your phone into a multi-window AI termi
 
 </div>
 
+> Remote Control = your phone *watches* the terminal.
+> Channels = the terminal *receives* phone messages.
+> **This project = your phone IS the terminal.**
+
+```
+You:      @cc-alpha Analyze this API design
+Alpha:    [deep analysis, writes to shared context]
+
+You:      @cc-beta Write integration tests based on Alpha's analysis
+Beta:     [reads Alpha's analysis from shared context, writes tests]
+
+You:      @cc-gamma Review both — any gaps?
+Gamma:    [reads everything, reviews]
+
+You:      @cc-delta Ship it — commit and push
+Delta:    [reads full context, commits]
+```
+
+**4 agents, 1 group, shared memory, zero noise.** The same workflow that takes 4 terminal windows on your desk — now fits in your pocket.
+
+<!-- TODO: Add a GIF or screenshot of the Telegram War Room in action -->
+
 ---
 
-## Why Not Just Use Claude's Built-in Remote Features?
+## What This Unlocks
+
+### War Room — Multi-CC Command Center
+
+Put all 4 CC bots in one Telegram group. Each bot stays silent until @mentioned — no crosstalk, no chaos. But every bot can read what the others said via shared context (Redis-backed). You orchestrate — they execute.
+
+Two collaboration modes in one project:
+- **A2A mode** (CC + Codex group): bots auto-respond to each other with loop guards — for brainstorming and debate
+- **War Room mode** (multi-CC group): @mention only — for coordinated parallel execution
+
+### Parallel Sessions — Desktop Power, Phone Form Factor
+
+On your desktop you run 4-5 Claude Code windows simultaneously. Now do the same from your phone:
+
+```
+TG Bot 1 (🟣) ──→ CC Instance 1 ──┐
+TG Bot 2 (🔵) ──→ CC Instance 2 ──┤── Shared: CLAUDE.md + MCP memory + ~/.claude/
+TG Bot 3 (🟢) ──→ CC Instance 3 ──┤
+TG Bot 4 (🟡) ──→ CC Instance 4 ──┘
+```
+
+Each bot runs an independent CC process with its own session. Not a thin API client — **full Claude Code** with all native tools (Bash, Read, Write, Edit, Glob, Grep, WebFetch), skills, hooks, and MCP servers. All instances share the same memory layer (CLAUDE.md, RecallNest, project settings) — what you tell one, the others already know. No memory fragmentation, no sync overhead.
+
+Setup takes 30 seconds per instance: create a bot with @BotFather, copy a config, start a process. See [Multi-Instance Deployment](#multi-instance-deployment) below.
+
+**Want different personalities?** Point each bot's `cwd` to a directory with its own `CLAUDE.md`. CC loads global rules from `~/.claude/CLAUDE.md` + per-bot persona from the workspace — just like OpenClaw's SOUL.md, but with CC's full skill/hook/MCP stack behind it.
+
+```
+~/.claude/CLAUDE.md              ← shared rules (memory, safety, workflow)
+~/bots/researcher/CLAUDE.md      ← "You are a deep research analyst..."
+~/bots/reviewer/CLAUDE.md        ← "You are a senior code reviewer..."
+~/bots/writer/CLAUDE.md          ← "You are a content strategist..."
+```
+
+### Phone-First Agent Control
+
+Walk away from your desk. Open Telegram. `/new` starts a fresh session. `/resume 3` picks up where you left off. `/peek 5` reads a session without touching it. `/model` switches models on the fly. Full session lifecycle from your phone — no terminal required.
+
+### Bidirectional Media — Screenshots & Files Flow Back
+
+Input has always been bidirectional: text, photos, documents, voice all flow to CC. Now **output is too**:
+
+- **Screenshots**: CC takes a screenshot → image appears in your TG chat automatically
+- **Files**: CC creates or references a file → bridge detects the path and sends it as a TG attachment
+- **Long code**: Output >4000 chars with >60% code → sent as a file attachment with preview summary
+
+The bridge captures images from SDK tool results (base64 data from Read/peekaboo/screenshot tools) and scans CC's response text for file paths. No manual copy-paste, no "where did you save it?" — files just appear in the chat.
+
+> **Reply to cancel**: Task taking too long? Send `/cancel` to abort. Need context from a previous message? Reply to it — the quoted text is automatically included as context.
+
+### Multi-Agent Collaboration
+
+Put `@claude-bot` and `@codex-bot` in the same Telegram group. Ask Claude to review code — Codex reads the reply via shared context and offers its own take automatically. Built-in loop guards and circuit breakers prevent runaway bot-to-bot conversations. For DM cross-checking, bots communicate directly via MCP/CLI — no relay needed.
+
+### Always-On, Self-Hosted
+
+macOS LaunchAgent or Docker keeps the bridge running in the background. Sessions persist in SQLite across restarts and reboots — pick up where you left off after a reboot, a network drop, or a flight. Code and credentials never leave your machine. Owner-only access by default.
+
+> **Why this matters:** Claude's official tools give you one session, tied to a terminal. OpenClaw gives you one bot per session, isolated memory. This project gives you N parallel sessions with shared memory, persistent state, and full CC capabilities — the same productive workflow you have on desktop, now available everywhere you have Telegram.
+
+---
+
+## Quick Start
+
+```bash
+git clone https://github.com/AliceLJY/telegram-ai-bridge.git
+cd telegram-ai-bridge
+bun install
+bun run bootstrap --backend claude
+bun run setup --backend claude
+bun run check --backend claude
+bun run start --backend claude
+```
+
+> **Want parallel agents?** Add a second bot in 30 seconds — see [Multi-Instance Deployment](#multi-instance-deployment).
+
+### Recommended Deployment
+
+Run multiple bots for parallel workflows:
+
+- `@cc-alpha` → Claude Code instance 1 (primary)
+- `@cc-beta` → Claude Code instance 2 (parallel tasks)
+- `@cc-gamma` → Claude Code instance 3 (parallel tasks)
+- `@your-codex-bot` → Codex (different backend)
+
+Each Claude instance shares memory automatically. No configuration needed — CC's memory lives in `~/.claude/`, not in the bot.
+
+Supported backends:
+
+| Backend | SDK | Status |
+|---------|-----|--------|
+| `claude` | Claude Code (via Agent SDK) | Recommended |
+| `codex` | Codex CLI (via Codex SDK) | Recommended |
+| `gemini` | Gemini Code Assist API | Experimental |
+
+> **Core rule:** One bot = one process = one independent agent. Run as many as you need.
+
+---
+
+## Telegram Commands
+
+Sessions are sticky: messages continue the current session until you explicitly change it.
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show all commands with descriptions |
+| `/new` | Start a new session |
+| `/cancel` | Abort the currently running task |
+| `/sessions` | List recent sessions |
+| `/peek <id>` | Read-only preview a session |
+| `/resume <id>` | Rebind current chat to an owned session |
+| `/model` | Pick a model for the current bot |
+| `/status` | Show backend, model, cwd, and session |
+| `/dir` | Switch working directory |
+| `/tasks` | Show recent task history |
+| `/verbose 0\|1\|2` | Change progress verbosity |
+| `/cron` | Manage scheduled tasks |
+| `/doctor` | Run health check |
+| `/a2a` | Show A2A bus status, peer health, and loop guard stats |
+
+---
+
+## How It Compares
 
 Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-control) (Feb 2026) and a [Telegram channel plugin](https://code.claude.com/docs/en/channels) (Mar 2026). Both let you talk to Claude from your phone. Neither gives you session management, multi-backend support, or agent-to-agent collaboration.
 
@@ -52,7 +196,8 @@ Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-co
 
 **What official tools do better:** Remote Control streams full terminal output. Channels relay tool-approval dialogs natively. Claude Code on the web provides cloud compute without local setup. This project optimizes for a different job: **persistent, multi-agent session management entirely from Telegram.**
 
-### Replacing OpenClaw? Here's your checklist
+<details>
+<summary><strong>Migrating from OpenClaw?</strong></summary>
 
 Every OpenClaw feature has a direct equivalent — most of them are just CC running natively behind the bridge:
 
@@ -72,143 +217,7 @@ Every OpenClaw feature has a direct equivalent — most of them are just CC runn
 
 **The difference:** OpenClaw reimplements these features on top of an API. This project runs **actual Claude Code** — every feature CC has, you get for free.
 
-> **How they differ:** Remote Control = your phone *watches* the terminal. Channels = the terminal *receives* phone messages. This project = your phone **IS** the terminal.
-
-Supported backends:
-
-| Backend | SDK | Status |
-|---------|-----|--------|
-| `claude` | Claude Code (via Agent SDK) | Recommended |
-| `codex` | Codex CLI (via Codex SDK) | Recommended |
-| `gemini` | Gemini Code Assist API | Experimental |
-
-> **Core rule:** One bot = one process = one independent agent. Run as many as you need.
-
----
-
-## Quick Start
-
-```bash
-git clone https://github.com/AliceLJY/telegram-ai-bridge.git
-cd telegram-ai-bridge
-bun install
-bun run bootstrap --backend claude
-bun run setup --backend claude
-bun run check --backend claude
-bun run start --backend claude
-```
-
-### Recommended Deployment
-
-Run multiple bots for parallel workflows:
-
-- `@cc-alpha` → Claude Code instance 1 (primary)
-- `@cc-beta` → Claude Code instance 2 (parallel tasks)
-- `@cc-gamma` → Claude Code instance 3 (parallel tasks)
-- `@your-codex-bot` → Codex (different backend)
-
-Each Claude instance shares memory automatically. No configuration needed — CC's memory lives in `~/.claude/`, not in the bot.
-
----
-
-## What This Unlocks
-
-### Parallel Sessions — Your Phone is a Multi-Window Terminal
-
-On your desktop you run 4-5 Claude Code windows simultaneously. Now do the same from your phone:
-
-```
-TG Bot 1 (🟣) ──→ CC Instance 1 ──┐
-TG Bot 2 (🔵) ──→ CC Instance 2 ──┤── Shared: CLAUDE.md + MCP memory + ~/.claude/
-TG Bot 3 (🟢) ──→ CC Instance 3 ──┤
-TG Bot 4 (🟡) ──→ CC Instance 4 ──┘
-```
-
-Each bot runs an independent CC process with its own session. All instances share the same memory layer (CLAUDE.md, RecallNest, project settings) — what you tell one, the others already know. No memory fragmentation, no sync overhead.
-
-Setup takes 30 seconds per instance: create a bot with @BotFather, copy a config, start a process. See [Multi-Instance Deployment](#multi-instance-deployment) below.
-
-**Want different personalities?** Point each bot's `cwd` to a directory with its own `CLAUDE.md`. CC loads global rules from `~/.claude/CLAUDE.md` + per-bot persona from the workspace — just like OpenClaw's SOUL.md, but with CC's full skill/hook/MCP stack behind it.
-
-```
-~/.claude/CLAUDE.md              ← shared rules (memory, safety, workflow)
-~/bots/researcher/CLAUDE.md      ← "You are a deep research analyst..."
-~/bots/reviewer/CLAUDE.md        ← "You are a senior code reviewer..."
-~/bots/writer/CLAUDE.md          ← "You are a content strategist..."
-```
-
-> **Why this matters:** OpenClaw gives you one bot = one session, isolated memory. Claude's official tools give you one session, period. This project gives you N parallel sessions with shared memory and optional per-bot personas — the same workflow that makes desktop CC productive, now on your phone.
-
-### Phone-First Agent Control
-
-Walk away from your desk. Open Telegram. `/new` starts a fresh session. `/resume 3` picks up where you left off. `/peek 5` reads a session without touching it. `/model` switches models on the fly. Full session lifecycle from your phone — no terminal required.
-
-### Bidirectional Media — Screenshots & Files Flow Back
-
-Input has always been bidirectional: text, photos, documents, voice all flow to CC. Now **output is too**:
-
-- **Screenshots**: CC takes a screenshot → image appears in your TG chat automatically
-- **Files**: CC creates or references a file → bridge detects the path and sends it as a TG attachment
-- **Long code**: Output >4000 chars with >60% code → sent as a file attachment with preview summary
-
-The bridge captures images from SDK tool results (base64 data from Read/peekaboo/screenshot tools) and scans CC's response text for file paths. No manual copy-paste, no "where did you save it?" — files just appear in the chat.
-
-> **Reply to cancel**: Task taking too long? Send `/cancel` to abort. Need context from a previous message? Reply to it — the quoted text is automatically included as context.
-
-### Multi-Agent Collaboration
-
-Put `@claude-bot` and `@codex-bot` in the same Telegram group. Ask Claude to review code — Codex reads the reply via shared context and offers its own take automatically. Built-in loop guards and circuit breakers prevent runaway bot-to-bot conversations. For DM cross-checking, bots communicate directly via MCP/CLI — no relay needed.
-
-### War Room — Multi-CC Command Center
-
-Put all 4 CC bots in one Telegram group. Each bot stays silent until @mentioned — no crosstalk, no chaos. But every bot can read what the others said via shared context (Redis-backed). You orchestrate:
-
-```
-You:      @cc-alpha Analyze this API design
-Alpha:    [deep analysis, writes to shared context]
-
-You:      @cc-beta Write integration tests based on Alpha's analysis
-Beta:     [reads Alpha's analysis from shared context, writes tests]
-
-You:      @cc-gamma Review both — any gaps?
-Gamma:    [reads everything, reviews]
-
-You:      @cc-delta Ship it — commit and push
-Delta:    [reads full context, commits]
-```
-
-**4 agents, 1 group, shared memory, zero noise.** Each bot only speaks when called. All context flows through Redis — no copy-pasting, no re-explaining. This is how a human manages a team: delegate, review, ship.
-
-Two collaboration modes in one project:
-- **A2A mode** (CC + Codex group): bots auto-respond to each other with loop guards — for brainstorming and debate
-- **War Room mode** (multi-CC group): @mention only — for coordinated parallel execution
-
-### Always-On, Self-Hosted
-
-macOS LaunchAgent or Docker keeps the bridge running in the background. Sessions persist in SQLite across restarts and reboots. Code and credentials never leave your machine. Owner-only access by default.
-
----
-
-## Telegram Commands
-
-Sessions are sticky: messages continue the current session until you explicitly change it.
-
-| Command | Description |
-|---------|-------------|
-| `/help` | Show all commands with descriptions |
-| `/new` | Start a new session |
-| `/cancel` | Abort the currently running task |
-| `/sessions` | List recent sessions |
-| `/peek <id>` | Read-only preview a session |
-| `/resume <id>` | Rebind current chat to an owned session |
-| `/model` | Pick a model for the current bot |
-| `/status` | Show backend, model, cwd, and session |
-| `/dir` | Switch working directory |
-| `/tasks` | Show recent task history |
-| `/verbose 0\|1\|2` | Change progress verbosity |
-| `/cron` | Manage scheduled tasks |
-| `/doctor` | Run health check |
-| `/a2a` | Show A2A bus status, peer health, and loop guard stats |
+</details>
 
 ---
 
