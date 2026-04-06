@@ -382,6 +382,7 @@ const flushGate = createFlushGate({
 const verboseSettings = new Map(); // chatId -> verboseLevel
 const pendingPermissions = new Map(); // permId -> { resolve, cleanup, toolName, chatId, ... }
 const chatPermState = new Map(); // chatId -> { alwaysAllowed: Set, yolo: boolean }
+const chatAbortControllers = new Map(); // chatId -> AbortController
 let permIdCounter = 0;
 
 // A2A 追踪：当前是否在处理 A2A 消息，以及相关元数据
@@ -993,7 +994,10 @@ async function processPrompt(ctx, prompt) {
     const capturedImages = [];  // { data, mediaType, toolUseId }
     const capturedFiles = [];   // { filePath, source }
 
-    // 软看门狗：只打日志，不 abort（TG 发出去的消息无法撤回）
+    // AbortController: 支持 /cancel 中断
+    const abortController = new AbortController();
+    chatAbortControllers.set(chatId, abortController);
+
     const startTime = Date.now();
     const watchdogHandle = setTimeout(() => {
       console.warn(`[watchdog] chatId=${chatId} 已运行 ${Math.round(WATCHDOG_WARN_MS / 60000)} 分钟，仍在处理`);
@@ -1017,7 +1021,7 @@ async function processPrompt(ctx, prompt) {
         backendName,
         prompt: fullPrompt,
         sessionId,
-      }, undefined, streamOverrides)) {
+      }, abortController.signal, streamOverrides)) {
         if (event.type === "session_init") {
           capturedSessionId = event.sessionId;
         }
@@ -1078,6 +1082,7 @@ async function processPrompt(ctx, prompt) {
     } finally {
       clearTimeout(watchdogHandle);
       idleMonitor.stopProcessing(chatId);
+      chatAbortControllers.delete(chatId);
     }
 
     // 存 session
@@ -1266,6 +1271,7 @@ bot.command("help", async (ctx) => {
     "",
     "📋 *会话管理*",
     "/new — 开启新会话",
+    "/cancel — 中断当前任务",
     "/sessions — 查看/切换会话",
     "/resume <id> — 恢复指定会话",
     "/peek \\[n] — 查看会话最后 n 条",
@@ -1292,6 +1298,19 @@ bot.command("help", async (ctx) => {
   await ctx.reply(text, { parse_mode: "Markdown" }).catch(() => {
     ctx.reply(text.replace(/[*\\]/g, "")).catch(() => {});
   });
+});
+
+// ── /cancel 命令：中断当前任务 ──
+bot.command("cancel", async (ctx) => {
+  const chatId = ctx.chat.id;
+  const controller = chatAbortControllers.get(chatId);
+  if (controller) {
+    controller.abort();
+    chatAbortControllers.delete(chatId);
+    await ctx.reply("⏹ 已发送中断信号，任务将尽快停止。");
+  } else {
+    await ctx.reply("当前没有正在执行的任务。");
+  }
 });
 
 // ── /new 命令：重置会话 ──
@@ -1892,7 +1911,8 @@ bot.on("message:photo", async (ctx) => {
 
   try {
     const localPath = await downloadFile(ctx, largest.file_id, "photo.jpg");
-    await submitAndWait(ctx, `${caption}\n\n[图片文件: ${localPath}]`);
+    const replyCtx = getReplyContext(ctx);
+    await submitAndWait(ctx, `${replyCtx}${caption}\n\n[图片文件: ${localPath}]`);
   } catch (e) {
     await ctx.reply(`图片下载失败: ${e.message}`);
   }
@@ -1910,7 +1930,8 @@ bot.on("message:document", async (ctx) => {
 
   try {
     const localPath = await downloadFile(ctx, doc.file_id, doc.file_name || "file");
-    await submitAndWait(ctx, `${caption}\n\n[文件: ${localPath}]`);
+    const replyCtx = getReplyContext(ctx);
+    await submitAndWait(ctx, `${replyCtx}${caption}\n\n[文件: ${localPath}]`);
   } catch (e) {
     await ctx.reply(`文件下载失败: ${e.message}`);
   }
@@ -1920,11 +1941,23 @@ bot.on("message:document", async (ctx) => {
 bot.on("message:voice", async (ctx) => {
   try {
     const localPath = await downloadFile(ctx, ctx.message.voice.file_id, "voice.ogg");
-    await submitAndWait(ctx, `请听这段语音并回复\n\n[语音文件: ${localPath}]`);
+    const replyCtx = getReplyContext(ctx);
+    await submitAndWait(ctx, `${replyCtx}请听这段语音并回复\n\n[语音文件: ${localPath}]`);
   } catch (e) {
     await ctx.reply(`语音下载失败: ${e.message}`);
   }
 });
+
+// ── 提取引用消息上下文 ──
+function getReplyContext(ctx) {
+  const reply = ctx.message?.reply_to_message;
+  if (!reply) return "";
+  const replyText = reply.text || reply.caption || "";
+  if (!replyText) return "";
+  // 截取前 500 字符，避免上下文过长
+  const snippet = replyText.length > 500 ? replyText.slice(0, 500) + "..." : replyText;
+  return `[引用消息: ${snippet}]\n\n`;
+}
 
 // ── 处理视频 ──
 bot.on("message:video", async (ctx) => {
@@ -1937,7 +1970,8 @@ bot.on("message:text", async (ctx) => {
   const botUsername = bot.botInfo?.username;
   if (botUsername) text = text.replace(new RegExp(`@${botUsername}\\s*`, "g"), "").trim();
   if (!text) return;
-  await submitAndWait(ctx, text);
+  const replyCtx = getReplyContext(ctx);
+  await submitAndWait(ctx, replyCtx + text);
 });
 
 // ── 自动清理下载文件（24h）──
@@ -2003,6 +2037,7 @@ async function startBotPolling() {
 // ── 注册 TG 命令菜单 ──
 await bot.api.setMyCommands([
   { command: "help", description: "查看所有命令" },
+  { command: "cancel", description: "中断当前任务" },
   { command: "new", description: "开启新会话" },
   { command: "sessions", description: "查看/切换会话" },
   { command: "model", description: "切换模型" },
