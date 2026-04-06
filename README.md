@@ -72,6 +72,8 @@ Setup takes 30 seconds per instance: create a bot with @BotFather, copy a config
 
 Walk away from your desk. Open Telegram. `/new` starts a fresh session. `/resume 3` picks up where you left off. `/peek 5` reads a session without touching it. `/model` switches models on the fly. Full session lifecycle from your phone — no terminal required.
 
+<img src="assets/sessions-demo.png" alt="Session picker — topic-first, click to resume" width="600">
+
 ### Bidirectional Media — Screenshots & Files Flow Back
 
 Input has always been bidirectional: text, photos, documents, voice all flow to CC. Now **output is too**:
@@ -81,6 +83,10 @@ Input has always been bidirectional: text, photos, documents, voice all flow to 
 - **Long code**: Output >4000 chars with >60% code → sent as a file attachment with preview summary
 
 The bridge captures images from SDK tool results (base64 data from Read/peekaboo/screenshot tools) and scans CC's response text for file paths. No manual copy-paste, no "where did you save it?" — files just appear in the chat.
+
+<img src="assets/screenshot-relay-demo.png" alt="Screenshot relay — CC takes a screenshot, image appears in TG" width="600">
+
+<img src="assets/file-relay-demo.png" alt="File relay — ask CC for a file, it appears as a download" width="600">
 
 > **Reply to cancel**: Task taking too long? Send `/cancel` to abort. Need context from a previous message? Reply to it — the quoted text is automatically included as context.
 
