@@ -563,6 +563,31 @@ async function sendLong(ctx, text) {
   }
 }
 
+// 从文本中提取文件路径（图片/文档）
+const SENDABLE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".docx", ".xlsx", ".csv", ".html", ".svg"]);
+
+function extractFilePathsFromText(text, fileList) {
+  const HOME = process.env.HOME || "/Users/anxianjingya";
+  const existing = new Set(fileList.map(f => f.filePath));
+  const extGroup = "png|jpg|jpeg|gif|webp|pdf|docx|xlsx|csv|html|svg";
+
+  // 1. 绝对路径（/开头）
+  const absPattern = new RegExp(`(\\/(?:[\\w.\\-]+\\/)*[\\w.\\-\\u4e00-\\u9fff\\u3000-\\u303f\\uff00-\\uffef ]+\\.(?:${extGroup}))`, "gi");
+  // 2. 波浪线路径（~/Desktop/foo.png）
+  const tildePattern = new RegExp(`(~\\/(?:[\\w.\\-]+\\/)*[\\w.\\-\\u4e00-\\u9fff\\u3000-\\u303f\\uff00-\\uffef ]+\\.(?:${extGroup}))`, "gi");
+
+  function addPath(p) {
+    const resolved = p.startsWith("~/") ? p.replace("~", HOME) : p.trim();
+    if (!existing.has(resolved)) {
+      existing.add(resolved);
+      fileList.push({ filePath: resolved, source: "text_scan" });
+    }
+  }
+
+  for (const m of text.match(absPattern) || []) addPath(m);
+  for (const m of text.match(tildePattern) || []) addPath(m);
+}
+
 function estimateCodeRatio(text) {
   const codeBlocks = text.match(/```[\s\S]*?```/g) || [];
   const codeLen = codeBlocks.reduce((sum, b) => sum + b.length, 0);
@@ -994,6 +1019,10 @@ async function processPrompt(ctx, prompt) {
         if (event.type === "file_written") {
           capturedFiles.push({ filePath: event.filePath, source: event.tool });
         }
+        // 从中间文本中扫描文件路径
+        if (event.type === "text" && event.text) {
+          extractFilePathsFromText(event.text, capturedFiles);
+        }
 
         // 实时进度（progress + text 事件）
         idleMonitor.heartbeat(chatId);
@@ -1003,6 +1032,8 @@ async function processPrompt(ctx, prompt) {
         if (event.type === "result") {
           resultSuccess = event.success;
           resultText = event.text || "";
+          // 从最终结果文本中也扫描文件路径
+          extractFilePathsFromText(resultText, capturedFiles);
           const costStr = event.cost != null ? ` 花费 $${event.cost.toFixed(4)}` : "";
           const durStr = event.duration != null ? ` 耗时 ${event.duration}ms` : "";
           console.log(`[${adapter.label}] 结果: ${resultSuccess ? "success" : "error"}${durStr}${costStr}`);
@@ -1032,10 +1063,11 @@ async function processPrompt(ctx, prompt) {
 
     // 发送捕获的图片（在文字结果之前）
     if (resultSuccess && capturedImages.length > 0) {
+      console.log(`[Bridge] 回传 ${capturedImages.length} 张图片`);
       for (const img of capturedImages) {
         try {
           const buf = Buffer.from(img.data, "base64");
-          if (buf.length > 10 * 1024 * 1024) continue; // TG sendPhoto 限 10MB
+          if (buf.length > 10 * 1024 * 1024) continue;
           const ext = (img.mediaType || "image/png").split("/")[1] || "png";
           await ctx.replyWithPhoto(new InputFile(buf, `output.${ext}`));
         } catch (e) {
@@ -1048,21 +1080,26 @@ async function processPrompt(ctx, prompt) {
     if (resultSuccess && capturedFiles.length > 0) {
       const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
       const DOC_EXTS = new Set([".pdf", ".docx", ".xlsx", ".csv", ".html"]);
+      const HOME = process.env.HOME || "";
       const sentPaths = new Set();
       for (const f of capturedFiles) {
-        if (!f.filePath || sentPaths.has(f.filePath)) continue;
-        const ext = f.filePath.slice(f.filePath.lastIndexOf(".")).toLowerCase();
+        if (!f.filePath) continue;
+        // 解析波浪线路径
+        const resolved = f.filePath.startsWith("~/") ? f.filePath.replace("~", HOME) : f.filePath;
+        if (sentPaths.has(resolved)) continue;
+        const ext = resolved.slice(resolved.lastIndexOf(".")).toLowerCase();
         if (!IMAGE_EXTS.has(ext) && !DOC_EXTS.has(ext)) continue;
-        if (!existsSync(f.filePath)) continue;
-        sentPaths.add(f.filePath);
+        if (!existsSync(resolved)) continue;
+        sentPaths.add(resolved);
+        console.log(`[Bridge] 发送文件: ${basename(resolved)} (来源: ${f.source})`);
         try {
           if (IMAGE_EXTS.has(ext)) {
-            await ctx.replyWithPhoto(new InputFile(f.filePath));
+            await ctx.replyWithPhoto(new InputFile(resolved));
           } else {
-            await ctx.replyWithDocument(new InputFile(f.filePath));
+            await ctx.replyWithDocument(new InputFile(resolved));
           }
         } catch (e) {
-          console.error(`[Bridge] sendFile failed (${basename(f.filePath)}): ${e.message}`);
+          console.error(`[Bridge] sendFile failed (${basename(resolved)}): ${e.message}`);
         }
       }
     }

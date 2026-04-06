@@ -209,6 +209,7 @@ export function createAdapter(config = {}) {
         prompt,
         options: { ...options, abortController },
       })) {
+
         if (msg.type === "system" && msg.subtype === "init") {
           yield { type: "session_init", sessionId: msg.session_id };
         }
@@ -230,9 +231,31 @@ export function createAdapter(config = {}) {
                   };
                 }
               }
+
               // 从 Write/Edit 输入提取文件路径
               if ((block.name === "Write" || block.name === "Edit") && block.input?.file_path) {
                 yield { type: "file_written", filePath: block.input.file_path, tool: block.name };
+              }
+              // 从 Bash 命令中提取输出文件路径
+              if (block.name === "Bash" && block.input?.command) {
+                const cmd = block.input.command;
+                const fileExts = "png|jpg|jpeg|gif|webp|pdf|docx|xlsx|svg";
+                // cp/mv 目标路径
+                const destRe = new RegExp(`(?:cp|mv)\\s+.*?((?:\\/|~\\/)[^\\s"']+\\.(?:${fileExts}))`, "gi");
+                let dm;
+                while ((dm = destRe.exec(cmd)) !== null) {
+                  yield { type: "file_written", filePath: dm[1], tool: "Bash" };
+                }
+                // screencapture 输出路径（macOS）
+                const scRe = new RegExp(`screencapture\\s+[^\\s]*\\s*((?:\\/|~\\/)[^\\s"']+\\.(?:${fileExts}))`, "gi");
+                while ((dm = scRe.exec(cmd)) !== null) {
+                  yield { type: "file_written", filePath: dm[1], tool: "Bash" };
+                }
+                // 通用：命令末尾的文件路径参数（兜底）
+                const tailRe = new RegExp(`((?:\\/|~\\/)(?:[\\w.\\-]+\\/)*[\\w.\\-\\u4e00-\\u9fff]+\\.(?:${fileExts}))\\s*$`, "gi");
+                while ((dm = tailRe.exec(cmd)) !== null) {
+                  yield { type: "file_written", filePath: dm[1], tool: "Bash" };
+                }
               }
               yield {
                 type: "progress",
@@ -246,7 +269,7 @@ export function createAdapter(config = {}) {
         }
 
         // 捕获工具结果中的图片（SDKUserMessage）
-        if (msg.type === "user" && msg.parent_tool_use_id) {
+        if (msg.type === "user") {
           const content = msg.message?.content;
           if (Array.isArray(content)) {
             for (const block of content) {
