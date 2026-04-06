@@ -1162,6 +1162,12 @@ async function processPrompt(ctx, prompt) {
         await tgSendDocument(chatId, Buffer.from(resultText, "utf-8"), `output.${ext}`);
         const preview = resultText.slice(0, 300).replace(/```\w*\n?/, "");
         await ctx.reply(`${preview}\n\n📎 完整输出 (${resultText.length} 字符) 见附件`);
+      } else if (resultText.length > 4000) {
+        // 长纯文本 → 摘要预览 + .md 文件附件
+        const cutAt = resultText.lastIndexOf("\n", 500);
+        const preview = resultText.slice(0, cutAt > 200 ? cutAt : 500);
+        await ctx.reply(`${preview}\n\n…\n\n📎 完整内容 (${resultText.length} 字符) 见附件`);
+        await tgSendDocument(chatId, Buffer.from(resultText, "utf-8"), "response.md");
       } else {
         await sendLong(ctx, resultText);
       }
