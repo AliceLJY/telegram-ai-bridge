@@ -1299,6 +1299,7 @@ bot.command("help", async (ctx) => {
     "/doctor — 健康检查",
     "/tasks — 任务队列",
     "/a2a — A2A 跨 bot 状态",
+    "/export — 导出群聊上下文为 Markdown 文件",
     "",
     "⏰ *定时*",
     "/cron — 定时任务管理",
@@ -1768,6 +1769,29 @@ bot.command("cron", async (ctx) => {
   await ctx.reply("❌ 未知子命令。可用: list / add / remove / pause / resume");
 });
 
+// ── /export 命令：导出群聊共享上下文为 Markdown ──
+bot.command("export", async (ctx) => {
+  try {
+    const chatId = ctx.chat.id;
+    const messages = await readSharedMessages(chatId, { limit: 200 });
+    if (!messages || messages.length === 0) {
+      await ctx.reply("当前聊天没有共享上下文记录。");
+      return;
+    }
+    const lines = messages.map((m) => {
+      const time = new Date(m.ts).toISOString().slice(0, 19).replace("T", " ");
+      const who = m.source || m.backend || "unknown";
+      const text = (m.text || "").trim();
+      return `### ${who}  \`${time}\`\n\n${text}\n`;
+    });
+    const md = `# War Room Export\n\n**Chat:** ${chatId}  \n**Exported:** ${new Date().toISOString().slice(0, 19).replace("T", " ")}  \n**Messages:** ${messages.length}\n\n---\n\n${lines.join("\n---\n\n")}`;
+    await tgSendDocument(chatId, Buffer.from(md, "utf-8"), `war-room-${Date.now()}.md`);
+    await ctx.reply(`📎 已导出 ${messages.length} 条共享上下文记录。`);
+  } catch (e) {
+    await ctx.reply(`导出失败: ${e.message}`);
+  }
+});
+
 // ── /doctor 命令：健康检查 ──
 bot.command("doctor", async (ctx) => {
   const chatId = ctx.chat.id;
@@ -2051,6 +2075,7 @@ await bot.api.setMyCommands([
   { command: "verbose", description: "调整输出详细度" },
   { command: "tasks", description: "查看任务队列" },
   { command: "cron", description: "定时任务管理" },
+  { command: "export", description: "导出群聊上下文为 Markdown" },
   { command: "doctor", description: "健康检查" },
   { command: "peek", description: "查看会话最后几条" },
   { command: "resume", description: "恢复指定会话" },
