@@ -555,10 +555,29 @@ async function sendLong(ctx, text) {
   if (text.length <= maxLen) {
     return await ctx.reply(text);
   }
+
   const chunks = [];
-  for (let i = 0; i < text.length; i += maxLen) {
-    chunks.push(text.slice(i, i + maxLen));
+  let remaining = text;
+
+  while (remaining.length > maxLen) {
+    let cut = remaining.lastIndexOf("\n\n", maxLen); // 优先段落
+    if (cut < maxLen * 0.3) {
+      cut = remaining.lastIndexOf("\n", maxLen);     // 其次换行
+    }
+    if (cut < maxLen * 0.3) {
+      cut = maxLen;                                   // 兜底硬切
+    }
+    let chunk = remaining.slice(0, cut);
+
+    // 代码块修补：奇数个 ``` → 补一个闭合
+    const fenceCount = (chunk.match(/^```/gm) || []).length;
+    if (fenceCount % 2 !== 0) chunk += "\n```";
+
+    chunks.push(chunk);
+    remaining = remaining.slice(cut).replace(/^\n+/, "");
   }
+  if (remaining) chunks.push(remaining);
+
   for (const chunk of chunks) {
     await ctx.reply(chunk);
   }
@@ -599,7 +618,7 @@ async function tgSendDocument(chatId, buffer, filename) {
 const SENDABLE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".docx", ".xlsx", ".csv", ".html", ".svg"]);
 
 function extractFilePathsFromText(text, fileList) {
-  const HOME = process.env.HOME || "/Users/anxianjingya";
+  const HOME = process.env.HOME || "";
   const existing = new Set(fileList.map(f => f.filePath));
   const extGroup = "png|jpg|jpeg|gif|webp|pdf|docx|xlsx|csv|html|svg|txt|md|json|js|ts|py|sh|yaml|yml|xml|log|zip|tar|gz";
 
@@ -2091,3 +2110,31 @@ console.log(`  限流: ${RATE_LIMIT_MAX_REQUESTS}/${Math.round(RATE_LIMIT_WINDOW
 console.log(`  Idle: timeout=${IDLE_TIMEOUT_MS > 0 ? Math.round(IDLE_TIMEOUT_MS / 60000) + "min" : "off"}, reset=${RESET_ON_IDLE_MS > 0 ? Math.round(RESET_ON_IDLE_MS / 60000) + "min" : "off"}`);
 console.log(`  Cron: ${CRON_ENABLED ? "enabled" : "disabled"}`);
 await startBotPolling();
+
+// ── Graceful Shutdown ──
+async function shutdown(signal) {
+  console.log(`[bridge] ${signal} received, shutting down...`);
+
+  // 1. 停止接收新消息
+  await bot.stop().catch(() => {});
+
+  // 2. 取消所有正在运行的 AI query
+  for (const [, ac] of chatAbortControllers) {
+    ac.abort();
+  }
+
+  // 3. 关闭 A2A 总线
+  if (a2aBus) await a2aBus.stop().catch(() => {});
+
+  // 4. 停止 Cron
+  if (cronManager) cronManager.shutdown();
+
+  // 5. 关闭 idle monitor
+  idleMonitor.shutdown?.();
+
+  console.log("[bridge] clean shutdown complete");
+  process.exit(0);
+}
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
