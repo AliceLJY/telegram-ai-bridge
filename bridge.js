@@ -1817,14 +1817,6 @@ bot.callbackQuery(/^resume:/, async (ctx) => {
     backend = "claude";
   }
 
-  if (!sessionBelongsToChat(ctx.chat.id, sessionId, backend, "owned")) {
-    await ctx.answerCallbackQuery({ text: "外部会话已禁用" });
-    await ctx.editMessageText(
-      `这个会话不属于当前 TG chat，已禁止直接恢复。\n如需查看，请在终端单独接续。`,
-    ).catch(() => {});
-    return;
-  }
-
   const adapter = adapters[backend];
   const icon = adapter?.icon || "🟣";
   const adapterInfo = adapter ? adapter.statusInfo(getChatModel(ctx.chat.id)) : { cwd: CC_CWD };
