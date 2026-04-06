@@ -1121,6 +1121,43 @@ bot.use((ctx, next) => {
   return next();
 });
 
+// ── /help 命令 ──
+bot.command("help", async (ctx) => {
+  const adapter = getAdapter(ctx.chat.id);
+  const backendName = getBackendName(ctx.chat.id);
+  const text = [
+    `*Telegram AI Bridge* — ${adapter.icon} ${adapter.label}`,
+    "",
+    "📋 *会话管理*",
+    "/new — 开启新会话",
+    "/sessions — 查看/切换会话",
+    "/resume <id> — 恢复指定会话",
+    "/peek \\[n] — 查看会话最后 n 条",
+    "",
+    "⚙️ *设置*",
+    "/model — 切换模型",
+    "/dir — 切换工作目录",
+    "/verbose \\[0-2] — 输出详细度",
+    "",
+    "📊 *状态*",
+    "/status — 当前状态",
+    "/doctor — 健康检查",
+    "/tasks — 任务队列",
+    "/a2a — A2A 跨 bot 状态",
+    "",
+    "⏰ *定时*",
+    "/cron — 定时任务管理",
+    "",
+    "💡 *使用技巧*",
+    "• 直接发文字/图片/文件/语音，自动转发给 AI",
+    "• 回复 bot 消息可追加上下文",
+    `• 当前后端: ${backendName}`,
+  ].join("\n");
+  await ctx.reply(text, { parse_mode: "Markdown" }).catch(() => {
+    ctx.reply(text.replace(/[*\\]/g, "")).catch(() => {});
+  });
+});
+
 // ── /new 命令：重置会话 ──
 bot.command("new", async (ctx) => {
   deleteSession(ctx.chat.id);
@@ -1826,6 +1863,23 @@ async function startBotPolling() {
     }
   }
 }
+
+// ── 注册 TG 命令菜单 ──
+await bot.api.setMyCommands([
+  { command: "help", description: "查看所有命令" },
+  { command: "new", description: "开启新会话" },
+  { command: "sessions", description: "查看/切换会话" },
+  { command: "model", description: "切换模型" },
+  { command: "status", description: "当前状态" },
+  { command: "dir", description: "切换工作目录" },
+  { command: "verbose", description: "调整输出详细度" },
+  { command: "tasks", description: "查看任务队列" },
+  { command: "cron", description: "定时任务管理" },
+  { command: "doctor", description: "健康检查" },
+  { command: "peek", description: "查看会话最后几条" },
+  { command: "resume", description: "恢复指定会话" },
+  { command: "a2a", description: "A2A 跨 bot 状态" },
+]).catch((e) => console.error("[TG] setMyCommands failed:", e.message));
 
 // ── 启动 ──
 console.log("Telegram-AI-Bridge 启动中...");
