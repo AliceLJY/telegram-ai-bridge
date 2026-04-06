@@ -19,6 +19,11 @@ const TOOL_ICONS = {
   TaskList: "📋",
   TaskGet: "📋",
   AskUserQuestion: "❓",
+  take_screenshot: "📸",
+  "mcp__computer-use__screenshot": "📸",
+  "mcp__peekaboo__see": "👁️",
+  "mcp__chrome-devtools__take_screenshot": "📸",
+  "mcp__chrome-devtools__take_snapshot": "📸",
 };
 
 const SILENT_TOOLS = new Set([
