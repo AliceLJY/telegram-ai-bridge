@@ -3,7 +3,7 @@
 
 import { Bot, InlineKeyboard, InputFile, GrammyError } from "grammy";
 import { HttpsProxyAgent } from "https-proxy-agent";
-import { mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync, existsSync } from "fs";
+import { mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, unlinkSync, existsSync } from "fs";
 import { basename, join } from "path";
 import {
   getSession,
@@ -563,6 +563,37 @@ async function sendLong(ctx, text) {
   }
 }
 
+// ── 原生 TG API 发送（绕过 grammy multipart 兼容性问题）──
+async function tgSendPhoto(chatId, buffer, filename) {
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append("photo", new Blob([buffer]), filename);
+  const url = `https://api.telegram.org/bot${TOKEN}/sendPhoto`;
+  const resp = PROXY
+    ? await fetch(url, { method: "POST", body: form, agent: new HttpsProxyAgent(PROXY) })
+    : await fetch(url, { method: "POST", body: form });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    throw new Error(`sendPhoto ${resp.status}: ${body.slice(0, 200)}`);
+  }
+  return resp.json();
+}
+
+async function tgSendDocument(chatId, buffer, filename) {
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append("document", new Blob([buffer]), filename);
+  const url = `https://api.telegram.org/bot${TOKEN}/sendDocument`;
+  const resp = PROXY
+    ? await fetch(url, { method: "POST", body: form, agent: new HttpsProxyAgent(PROXY) })
+    : await fetch(url, { method: "POST", body: form });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    throw new Error(`sendDocument ${resp.status}: ${body.slice(0, 200)}`);
+  }
+  return resp.json();
+}
+
 // 从文本中提取文件路径（图片/文档）
 const SENDABLE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".docx", ".xlsx", ".csv", ".html", ".svg"]);
 
@@ -1061,22 +1092,23 @@ async function processPrompt(ctx, prompt) {
       durationMs: Date.now() - startTime,
     });
 
-    // 发送捕获的图片（在文字结果之前）
+    // 发送捕获的图片/文件（用原生 fetch，绕过 grammy multipart 兼容性问题）
+    if (capturedImages.length > 0 || capturedFiles.length > 0) {
+      console.log(`[Bridge] 输出回传: ${capturedImages.length} 张图片, ${capturedFiles.length} 个文件`);
+    }
     if (resultSuccess && capturedImages.length > 0) {
-      console.log(`[Bridge] 回传 ${capturedImages.length} 张图片`);
       for (const img of capturedImages) {
         try {
           const buf = Buffer.from(img.data, "base64");
           if (buf.length > 10 * 1024 * 1024) continue;
           const ext = (img.mediaType || "image/png").split("/")[1] || "png";
-          await ctx.replyWithPhoto(new InputFile(buf, `output.${ext}`));
+          await tgSendPhoto(chatId, buf, `output.${ext}`);
         } catch (e) {
           console.error(`[Bridge] sendPhoto failed: ${e.message}`);
         }
       }
     }
 
-    // 发送捕获的文件（图片/文档类）
     if (resultSuccess && capturedFiles.length > 0) {
       const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
       const DOC_EXTS = new Set([".pdf", ".docx", ".xlsx", ".csv", ".html"]);
@@ -1084,7 +1116,6 @@ async function processPrompt(ctx, prompt) {
       const sentPaths = new Set();
       for (const f of capturedFiles) {
         if (!f.filePath) continue;
-        // 解析波浪线路径
         const resolved = f.filePath.startsWith("~/") ? f.filePath.replace("~", HOME) : f.filePath;
         if (sentPaths.has(resolved)) continue;
         const ext = resolved.slice(resolved.lastIndexOf(".")).toLowerCase();
@@ -1094,9 +1125,9 @@ async function processPrompt(ctx, prompt) {
         console.log(`[Bridge] 发送文件: ${basename(resolved)} (来源: ${f.source})`);
         try {
           if (IMAGE_EXTS.has(ext)) {
-            await ctx.replyWithPhoto(new InputFile(resolved));
+            await tgSendPhoto(chatId, readFileSync(resolved), basename(resolved));
           } else {
-            await ctx.replyWithDocument(new InputFile(resolved));
+            await tgSendDocument(chatId, readFileSync(resolved), basename(resolved));
           }
         } catch (e) {
           console.error(`[Bridge] sendFile failed (${basename(resolved)}): ${e.message}`);
@@ -1121,7 +1152,7 @@ async function processPrompt(ctx, prompt) {
       } else if (resultText.length > 4000 && estimateCodeRatio(resultText) > 0.6) {
         // 长代码输出 → 文件附件 + 摘要
         const ext = detectCodeLang(resultText) || "txt";
-        await ctx.replyWithDocument(new InputFile(Buffer.from(resultText, "utf-8"), `output.${ext}`));
+        await tgSendDocument(chatId, Buffer.from(resultText, "utf-8"), `output.${ext}`);
         const preview = resultText.slice(0, 300).replace(/```\w*\n?/, "");
         await ctx.reply(`${preview}\n\n📎 完整输出 (${resultText.length} 字符) 见附件`);
       } else {
