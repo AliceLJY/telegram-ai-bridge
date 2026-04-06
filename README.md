@@ -141,6 +141,8 @@ Supported backends:
 
 > **Core rule:** One bot = one process = one independent agent. Run as many as you need.
 
+> **The bridge is transparent.** Your TG bot inherits whatever skills, MCP servers, and hooks your local CC has. If CC can browse the web, generate images, or query databases in terminal — it can do the same through Telegram. The bridge adds session management; the capabilities come from CC itself.
+
 ---
 
 ## Telegram Commands
