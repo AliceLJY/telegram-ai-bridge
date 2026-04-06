@@ -983,7 +983,9 @@ async function processPrompt(ctx, prompt) {
     idleMonitor.startProcessing(chatId);
     await progress.start();
 
-    const fullPrompt = await buildPromptWithContext(ctx, prompt);
+    // 注入 bridge 行为指令：禁止 CC 自己调 TG API，图片/文件由 bridge 自动回传
+    const bridgeHint = "[系统提示: 你通过 Telegram Bridge 与用户对话。不要自己调用 Telegram Bot API（如 curl sendPhoto/sendDocument）来发送图片或文件给用户。如果用户要求截图或生成文件，正常执行即可，bridge 会自动检测并回传给用户。]\n\n";
+    const fullPrompt = await buildPromptWithContext(ctx, bridgeHint + prompt);
     const session = getSession(chatId);
     // 只复用同后端的 session
     const sessionId = (session && session.backend === backendName) ? session.session_id : null;
