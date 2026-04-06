@@ -9,8 +9,10 @@
 A self-hosted Telegram bridge that runs **actual Claude Code** — not an API wrapper — with full session management, multi-backend support (Claude + Codex + Gemini), and agent-to-agent collaboration.
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-3.0.0-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
 [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)
 [![Telegram](https://img.shields.io/badge/Interface-Telegram-26A5E4?logo=telegram)](https://telegram.org/)
+[![GitHub stars](https://img.shields.io/github/stars/AliceLJY/telegram-ai-bridge)](https://github.com/AliceLJY/telegram-ai-bridge)
 
 **English** | [简体中文](README_CN.md)
 
@@ -41,14 +43,6 @@ Delta:    [reads full context, commits]
 ---
 
 ## What This Unlocks
-
-### War Room — Multi-CC Command Center
-
-Put all 4 CC bots in one Telegram group. Each bot stays silent until @mentioned — no crosstalk, no chaos. But every bot can read what the others said via shared context (Redis-backed). You orchestrate — they execute.
-
-Two collaboration modes in one project:
-- **A2A mode** (CC + Codex group): bots auto-respond to each other with loop guards — for brainstorming and debate
-- **War Room mode** (multi-CC group): @mention only — for coordinated parallel execution
 
 ### Parallel Sessions — Desktop Power, Phone Form Factor
 
@@ -94,6 +88,14 @@ The bridge captures images from SDK tool results (base64 data from Read/peekaboo
 
 Put `@claude-bot` and `@codex-bot` in the same Telegram group. Ask Claude to review code — Codex reads the reply via shared context and offers its own take automatically. Built-in loop guards and circuit breakers prevent runaway bot-to-bot conversations. For DM cross-checking, bots communicate directly via MCP/CLI — no relay needed.
 
+### War Room — Multi-CC Command Center
+
+Put all 4 CC bots in one Telegram group. Each bot stays silent until @mentioned — no crosstalk, no chaos. But every bot can read what the others said via shared context (Redis-backed). You orchestrate — they execute.
+
+Two collaboration modes in one project:
+- **A2A mode** (CC + Codex group): bots auto-respond to each other with loop guards — for brainstorming and debate
+- **War Room mode** (multi-CC group): @mention only — for coordinated parallel execution
+
 ### Always-On, Self-Hosted
 
 macOS LaunchAgent or Docker keeps the bridge running in the background. Sessions persist in SQLite across restarts and reboots — pick up where you left off after a reboot, a network drop, or a flight. Code and credentials never leave your machine. Owner-only access by default.
@@ -103,6 +105,8 @@ macOS LaunchAgent or Docker keeps the bridge running in the background. Sessions
 ---
 
 ## Quick Start
+
+**Prerequisites:** [Bun](https://bun.sh) runtime, a Telegram bot token (from [@BotFather](https://t.me/BotFather)), and at least one backend CLI: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://openai.com/index/codex/), or [Gemini CLI](https://ai.google.dev/gemini-api/docs/ai-studio-quickstart).
 
 ```bash
 git clone https://github.com/AliceLJY/telegram-ai-bridge.git
@@ -192,7 +196,7 @@ Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-co
 | Shared context backend                | N/A | N/A | N/A | SQLite / JSON / Redis (pluggable) |
 | Task audit trail                      | &mdash; | &mdash; | &mdash; | SQLite: status, cost, duration, approval log |
 | Loop guard for bot-to-bot             | N/A | N/A | N/A | 5-layer: generation + cooldown + rate + dedup + AI |
-| Stable release                        | Yes | Research preview | Yes | Yes (v2.2) |
+| Stable release                        | Yes | Research preview | Yes | Yes (v3.0) |
 
 **What official tools do better:** Remote Control streams full terminal output. Channels relay tool-approval dialogs natively. Claude Code on the web provides cloud compute without local setup. This project optimizes for a different job: **persistent, multi-agent session management entirely from Telegram.**
 
