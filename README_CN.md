@@ -70,6 +70,8 @@ TG Bot 4 (🟡) ──→ CC 实例 4 ──┘
 
 离开工位，打开 Telegram。`/new` 建新会话，`/resume 3` 恢复之前的进度，`/peek 5` 只读浏览某个会话，`/model` 随时切模型。完整的会话生命周期管理——不需要终端。
 
+会话列表以**你说的最后一句话**为标题——不是截断的 UUID。点按钮或输 `/resume 3`。所有来源的会话（本 bot、终端 CLI、其他 bridge）统一显示。
+
 <img src="assets/sessions-demo.png" alt="会话选择器——内容优先，点击直接接续" width="600">
 
 ### 双向媒体——截图和文件自动回传
@@ -164,7 +166,7 @@ bun run start --backend claude
 | `/cancel` | 中断当前正在执行的任务 |
 | `/sessions` | 查看最近会话 |
 | `/peek <id>` | 只读预览某个会话 |
-| `/resume <id>` | 把当前聊天重新绑定到已拥有会话 |
+| `/resume <序号\|id>` | 按序号或 ID 恢复会话 |
 | `/model` | 切换当前 bot 的模型 |
 | `/status` | 查看后端、模型、工作目录和会话 |
 | `/dir` | 切换工作目录 |
