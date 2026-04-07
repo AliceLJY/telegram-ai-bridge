@@ -13,6 +13,9 @@ import {
   getChatModel,
   setChatModel,
   deleteChatModel,
+  getChatEffort,
+  setChatEffort,
+  deleteChatEffort,
   sessionBelongsToChat,
 } from "./sessions.js";
 import {
@@ -1030,9 +1033,11 @@ async function processPrompt(ctx, prompt) {
     }, WATCHDOG_WARN_MS);
 
     const modelOverride = getChatModel(chatId);
+    const effortOverride = getChatEffort(chatId);
     const chatCwd = dirManager.current(chatId);
     const streamOverrides = {
       ...(modelOverride ? { model: modelOverride } : {}),
+      ...(effortOverride ? { effort: effortOverride } : {}),
       ...(chatCwd !== CC_CWD ? { cwd: chatCwd } : {}),
     };
 
@@ -1310,6 +1315,7 @@ bot.command("help", async (ctx) => {
     "",
     "⚙️ *设置*",
     "/model — 切换模型",
+    "/effort — 切换思考深度",
     "/dir — 切换工作目录",
     "/verbose \\[0-2] — 输出详细度",
     "",
@@ -1365,7 +1371,7 @@ bot.command("resume", async (ctx) => {
 
   const backend = getBackendName(ctx.chat.id);
   const adapter = getAdapter(ctx.chat.id);
-  const adapterInfo = adapter.statusInfo(getChatModel(ctx.chat.id));
+  const adapterInfo = adapter.statusInfo(getChatModel(ctx.chat.id), getChatEffort(ctx.chat.id));
   const sessionMeta = adapter.resolveSession ? await adapter.resolveSession(sessionId) : null;
   const project = getSessionProjectLabel(sessionMeta, adapterInfo.cwd);
   const source = getSessionSourceLabel(sessionMeta);
@@ -1414,7 +1420,7 @@ bot.command("sessions", async (ctx) => {
   try {
     const adapter = getAdapter(ctx.chat.id);
     const backendName = getBackendName(ctx.chat.id);
-    const adapterInfo = adapter.statusInfo(getChatModel(ctx.chat.id));
+    const adapterInfo = adapter.statusInfo(getChatModel(ctx.chat.id), getChatEffort(ctx.chat.id));
     const ownedSessions = await getOwnedSessionsForChat(
       ctx.chat.id,
       backendName,
@@ -1483,7 +1489,8 @@ bot.command("status", async (ctx) => {
   const session = getSession(ctx.chat.id);
   const verbose = verboseSettings.get(ctx.chat.id) ?? DEFAULT_VERBOSE;
   const modelOverride = getChatModel(ctx.chat.id);
-  const info = adapter.statusInfo(modelOverride);
+  const effortOverride = getChatEffort(ctx.chat.id);
+  const info = adapter.statusInfo(modelOverride, effortOverride);
   const activeTask = getActiveTask(ctx.chat.id);
 
   let sessionLine = "当前会话: 无（下条消息开新会话）";
@@ -1511,6 +1518,7 @@ bot.command("status", async (ctx) => {
     `执行器: ${executor.label} (${executor.name})\n` +
     `模式: ${info.mode}\n` +
     `模型: ${info.model}\n` +
+    `思考深度: ${info.effort || "默认 (high)"}\n` +
     `工作目录: ${dirManager.current(ctx.chat.id)}\n` +
     `${sessionLine}${sessionMetaLine}${resumeHint}\n` +
     `进度详细度: ${verbose}（0=关/1=工具名/2=详细）` +
@@ -1644,6 +1652,47 @@ bot.command("model", async (ctx) => {
   }
   setChatModel(ctx.chat.id, arg);
   await ctx.reply(`${adapter.icon} 模型已切换为: ${arg}`);
+});
+
+// ── /effort 命令：切换思考深度 ──
+const EFFORT_LEVELS = [
+  { id: "__default__", label: "默认 (high)", description: "标准思考深度" },
+  { id: "low", label: "Low", description: "最快速，轻量思考" },
+  { id: "medium", label: "Medium", description: "中等思考深度" },
+  { id: "high", label: "High", description: "标准深度思考" },
+  { id: "max", label: "Max", description: "最深度思考（仅 Opus）" },
+];
+
+bot.command("effort", async (ctx) => {
+  const adapter = getAdapter(ctx.chat.id);
+  const currentEffort = getChatEffort(ctx.chat.id);
+  const arg = ctx.match?.trim();
+
+  if (!arg) {
+    const kb = new InlineKeyboard();
+    for (const e of EFFORT_LEVELS) {
+      const isCurrent = (e.id === "__default__" && !currentEffort) || (e.id === currentEffort);
+      const mark = isCurrent ? " ✦" : "";
+      kb.text(`${e.label}${mark}`, `effort:${e.id}`).row();
+    }
+    const displayEffort = currentEffort || "默认 (high)";
+    await ctx.reply(`${adapter.icon} 当前思考深度: ${displayEffort}\n选择深度：`, { reply_markup: kb });
+    return;
+  }
+
+  if (arg === "default" || arg === "__default__") {
+    deleteChatEffort(ctx.chat.id);
+    await ctx.reply(`${adapter.icon} 已恢复默认思考深度。`);
+    return;
+  }
+  const found = EFFORT_LEVELS.find(e => e.id === arg);
+  if (!found) {
+    const list = EFFORT_LEVELS.map(e => `  ${e.id} — ${e.description}`).join("\n");
+    await ctx.reply(`未知深度: ${arg}\n\n可用级别:\n${list}`);
+    return;
+  }
+  setChatEffort(ctx.chat.id, arg);
+  await ctx.reply(`${adapter.icon} 思考深度已切换为: ${found.label}`);
 });
 
 // ── /dir 命令：切换工作目录 ──
@@ -1846,6 +1895,21 @@ bot.callbackQuery(/^model:/, async (ctx) => {
   }
 });
 
+// ── 按钮回调：effort 选择 ──
+bot.callbackQuery(/^effort:/, async (ctx) => {
+  const effortId = ctx.callbackQuery.data.replace("effort:", "");
+  const adapter = getAdapter(ctx.chat.id);
+  if (effortId === "__default__") {
+    deleteChatEffort(ctx.chat.id);
+    await ctx.answerCallbackQuery({ text: "已恢复默认 ✓" });
+    await ctx.editMessageText(`${adapter.icon} 已恢复默认思考深度。`);
+  } else {
+    setChatEffort(ctx.chat.id, effortId);
+    await ctx.answerCallbackQuery({ text: `已切换 ✓` });
+    await ctx.editMessageText(`${adapter.icon} 思考深度已切换为: ${effortId}`);
+  }
+});
+
 // ── 按钮回调：恢复会话 ──
 bot.callbackQuery(/^resume:/, async (ctx) => {
   const data = ctx.callbackQuery.data.replace("resume:", "");
@@ -1862,7 +1926,7 @@ bot.callbackQuery(/^resume:/, async (ctx) => {
 
   const adapter = adapters[backend];
   const icon = adapter?.icon || "🟣";
-  const adapterInfo = adapter ? adapter.statusInfo(getChatModel(ctx.chat.id)) : { cwd: CC_CWD };
+  const adapterInfo = adapter ? adapter.statusInfo(getChatModel(ctx.chat.id), getChatEffort(ctx.chat.id)) : { cwd: CC_CWD };
   const sessionMeta = adapter?.resolveSession ? await adapter.resolveSession(sessionId) : null;
   setSession(
     ctx.chat.id,
@@ -2089,6 +2153,7 @@ await bot.api.setMyCommands([
   { command: "new", description: "开启新会话" },
   { command: "sessions", description: "查看/切换会话" },
   { command: "model", description: "切换模型" },
+  { command: "effort", description: "切换思考深度" },
   { command: "status", description: "当前状态" },
   { command: "dir", description: "切换工作目录" },
   { command: "verbose", description: "调整输出详细度" },
