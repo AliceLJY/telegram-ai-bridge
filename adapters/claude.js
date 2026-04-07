@@ -121,6 +121,16 @@ export function createAdapter(config = {}) {
       ];
     },
 
+    availableEfforts() {
+      return [
+        { id: "__default__", label: "默认 (high)", description: "标准思考深度" },
+        { id: "low", label: "Low", description: "最快速，轻量思考" },
+        { id: "medium", label: "Medium", description: "中等思考深度" },
+        { id: "high", label: "High ✦", description: "标准深度思考" },
+        { id: "max", label: "Max", description: "最深度思考（仅 Opus）" },
+      ];
+    },
+
     async *streamQuery(prompt, sessionId, abortSignal, overrides = {}) {
       // 排队等前一个 query 完成（Claude SDK 不支持并发子进程）
       let releaseLock;

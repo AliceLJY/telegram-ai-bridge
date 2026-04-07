@@ -1106,10 +1106,17 @@ async function processPrompt(ctx, prompt) {
         }
       }
     } catch (err) {
-      resultText = `SDK 错误: ${err.message}`;
-      resultSuccess = false;
-      console.error(`[${adapter.label}] SDK 异常: ${err.message}\n${err.stack}`);
-      finalizeFailure(summarizeText(resultText, 240), "EXECUTOR_ERROR");
+      if (err.name === "AbortError" || (err.message && err.message.includes("aborted"))) {
+        // 用户主动 /cancel，不算错误
+        resultText = "";
+        resultSuccess = true;
+        console.log(`[${adapter.label}] 任务已被用户取消`);
+      } else {
+        resultText = `SDK 错误: ${err.message}`;
+        resultSuccess = false;
+        console.error(`[${adapter.label}] SDK 异常: ${err.message}\n${err.stack}`);
+        finalizeFailure(summarizeText(resultText, 240), "EXECUTOR_ERROR");
+      }
     } finally {
       clearTimeout(watchdogHandle);
       idleMonitor.stopProcessing(chatId);
@@ -1655,28 +1662,28 @@ bot.command("model", async (ctx) => {
   await ctx.reply(`${adapter.icon} 模型已切换为: ${arg}`);
 });
 
-// ── /effort 命令：切换思考深度 ──
-const EFFORT_LEVELS = [
-  { id: "__default__", label: "默认 (high)", description: "标准思考深度" },
-  { id: "low", label: "Low", description: "最快速，轻量思考" },
-  { id: "medium", label: "Medium", description: "中等思考深度" },
-  { id: "high", label: "High", description: "标准深度思考" },
-  { id: "max", label: "Max", description: "最深度思考（仅 Opus）" },
-];
-
+// ── /effort 命令：切换思考深度（从 adapter 读取可用级别）──
 bot.command("effort", async (ctx) => {
   const adapter = getAdapter(ctx.chat.id);
+  const effortLevels = typeof adapter.availableEfforts === "function"
+    ? adapter.availableEfforts()
+    : [
+        { id: "__default__", label: "默认", description: "标准思考深度" },
+        { id: "low", label: "Low", description: "轻量思考" },
+        { id: "medium", label: "Medium", description: "中等思考深度" },
+        { id: "high", label: "High", description: "深度思考" },
+      ];
   const currentEffort = getChatEffort(ctx.chat.id);
   const arg = ctx.match?.trim();
 
   if (!arg) {
     const kb = new InlineKeyboard();
-    for (const e of EFFORT_LEVELS) {
+    for (const e of effortLevels) {
       const isCurrent = (e.id === "__default__" && !currentEffort) || (e.id === currentEffort);
       const mark = isCurrent ? " ✦" : "";
       kb.text(`${e.label}${mark}`, `effort:${e.id}`).row();
     }
-    const displayEffort = currentEffort || "默认 (high)";
+    const displayEffort = currentEffort || effortLevels[0]?.label || "默认";
     await ctx.reply(`${adapter.icon} 当前思考深度: ${displayEffort}\n选择深度：`, { reply_markup: kb });
     return;
   }
@@ -1686,9 +1693,9 @@ bot.command("effort", async (ctx) => {
     await ctx.reply(`${adapter.icon} 已恢复默认思考深度。`);
     return;
   }
-  const found = EFFORT_LEVELS.find(e => e.id === arg);
+  const found = effortLevels.find(e => e.id === arg);
   if (!found) {
-    const list = EFFORT_LEVELS.map(e => `  ${e.id} — ${e.description}`).join("\n");
+    const list = effortLevels.map(e => `  ${e.id} — ${e.description}`).join("\n");
     await ctx.reply(`未知深度: ${arg}\n\n可用级别:\n${list}`);
     return;
   }
@@ -1900,14 +1907,19 @@ bot.callbackQuery(/^model:/, async (ctx) => {
 bot.callbackQuery(/^effort:/, async (ctx) => {
   const effortId = ctx.callbackQuery.data.replace("effort:", "");
   const adapter = getAdapter(ctx.chat.id);
+  const effortLevels = typeof adapter.availableEfforts === "function"
+    ? adapter.availableEfforts()
+    : [];
   if (effortId === "__default__") {
     deleteChatEffort(ctx.chat.id);
     await ctx.answerCallbackQuery({ text: "已恢复默认 ✓" });
     await ctx.editMessageText(`${adapter.icon} 已恢复默认思考深度。`);
   } else {
+    const found = effortLevels.find(e => e.id === effortId);
+    const label = found ? found.label : effortId;
     setChatEffort(ctx.chat.id, effortId);
     await ctx.answerCallbackQuery({ text: `已切换 ✓` });
-    await ctx.editMessageText(`${adapter.icon} 思考深度已切换为: ${effortId}`);
+    await ctx.editMessageText(`${adapter.icon} 思考深度已切换为: ${label}`);
   }
 });
 
