@@ -135,6 +135,7 @@ export function createAdapter(config = {}) {
         permissionMode: overridePermMode,
         persistSession: overridePersistSession,
         maxTurns: overrideMaxTurns,
+        effort: overrideEffort,
         ...restOverrides
       } = overrides;
       const model = (restOverrides.model && restOverrides.model !== "__default__") ? restOverrides.model : defaultModel;
@@ -145,6 +146,7 @@ export function createAdapter(config = {}) {
         permissionMode: effectivePermMode,
         ...(effectivePermMode === "bypassPermissions" && { allowDangerouslySkipPermissions: true }),
         cwd: effectiveCwd,
+        ...(overrideEffort ? { effort: overrideEffort } : {}),
       };
 
       // A2A overrides: allowedTools, persistSession, maxTurns
@@ -178,6 +180,7 @@ export function createAdapter(config = {}) {
         model: options.model,
         permissionMode: options.permissionMode,
         cwd: options.cwd,
+        effort: options.effort || null,
         resume: options.resume || null,
         settingSources: options.settingSources || null,
         allowedTools: options.allowedTools || null,
@@ -326,8 +329,13 @@ export function createAdapter(config = {}) {
       }
     },
 
-    statusInfo(overrideModel) {
-      return { model: overrideModel || defaultModel, cwd, mode: "Agent SDK direct" };
+    statusInfo(overrideModel, overrideEffort) {
+      return {
+        model: overrideModel || defaultModel,
+        effort: overrideEffort || null,
+        cwd,
+        mode: "Agent SDK direct",
+      };
     },
 
     async listSessions(limit = 10) {
