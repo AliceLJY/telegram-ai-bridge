@@ -1512,7 +1512,7 @@ bot.command("status", async (ctx) => {
     if (resumeCmd) resumeHint = `\n终端接续: \`${resumeCmd}\``;
   }
 
-  await ctx.reply(
+  const statusText =
     `${adapter.icon} 实例后端: ${adapter.label} (${backendName})\n` +
     `${getBackendStatusNote(backendName)}` +
     `执行器: ${executor.label} (${executor.name})\n` +
@@ -1523,8 +1523,9 @@ bot.command("status", async (ctx) => {
     `${sessionLine}${sessionMetaLine}${resumeHint}\n` +
     `进度详细度: ${verbose}（0=关/1=工具名/2=详细）` +
     `${cronManager ? `\nCron: ${cronManager.count(ctx.chat.id)} 个任务` : ""}` +
-    `${activeTask ? `\n活动任务: ${formatTaskStatus(activeTask)}` : ""}`,
-    { parse_mode: "Markdown" }
+    `${activeTask ? `\n活动任务: ${formatTaskStatus(activeTask)}` : ""}`;
+  await ctx.reply(statusText, { parse_mode: "Markdown" }).catch(() =>
+    ctx.reply(statusText.replace(/[`*_\[\]]/g, "")).catch(() => {})
   );
 });
 
