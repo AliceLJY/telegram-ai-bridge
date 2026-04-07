@@ -236,14 +236,29 @@ export function createAdapter(config = {}) {
       ];
     },
 
+    availableEfforts() {
+      return [
+        { id: "__default__", label: "默认 (medium)", description: "标准思考深度" },
+        { id: "minimal", label: "Minimal", description: "最快速，极简思考" },
+        { id: "low", label: "Low", description: "轻量思考" },
+        { id: "medium", label: "Medium ✦", description: "标准思考深度" },
+        { id: "high", label: "High", description: "深度思考" },
+        { id: "xhigh", label: "XHigh", description: "最深度思考" },
+      ];
+    },
+
     async *streamQuery(prompt, sessionId, abortSignal, overrides = {}) {
       const effectiveModel = (overrides.model && overrides.model !== "__default__") ? overrides.model : defaultModel;
       const sdk = ensureSDK(effectiveModel);
 
       const effectiveCwd = overrides.cwd || cwd;
+      const threadOpts = { workingDirectory: effectiveCwd, skipGitRepoCheck: true };
+      if (overrides.effort) {
+        threadOpts.modelReasoningEffort = overrides.effort;
+      }
       const thread = sessionId
-        ? sdk.resumeThread(sessionId)
-        : sdk.startThread({ workingDirectory: effectiveCwd, skipGitRepoCheck: true });
+        ? sdk.resumeThread(sessionId, threadOpts)
+        : sdk.startThread(threadOpts);
 
       // runStreamed 支持 signal 取消
       const turnOpts = abortSignal ? { signal: abortSignal } : {};
