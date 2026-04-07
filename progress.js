@@ -119,7 +119,25 @@ export function createProgressTracker(ctx, chatId, verboseLevel = 1, backendLabe
     ctx.api.editMessageText(chatId, progressMsgId, text).catch(() => {});
   }
 
-  async function finish({ keepAsSummary = false, durationMs = 0 } = {}) {
+  /**
+   * 交出消息所有权给 streaming preview
+   * 停止 progress 的编辑，但不删除消息，返回消息 ID
+   * @returns {number|null}
+   */
+  function surrender() {
+    finished = true;
+    if (editTimer) { clearTimeout(editTimer); editTimer = null; }
+    // 不清 typingInterval — typing 心跳继续跑，对用户有益
+    const id = progressMsgId;
+    progressMsgId = null;  // 释放所有权
+    return id;
+  }
+
+  function getMessageId() {
+    return progressMsgId;
+  }
+
+  async function finish({ keepAsSummary = false, durationMs = 0, skipMessage = false } = {}) {
     finished = true;
 
     if (editTimer) {
@@ -131,7 +149,8 @@ export function createProgressTracker(ctx, chatId, verboseLevel = 1, backendLabe
       typingInterval = null;
     }
 
-    if (!progressMsgId) return;
+    // skipMessage: 消息已被 streaming preview 接管，只做清理
+    if (skipMessage || !progressMsgId) return;
 
     if (keepAsSummary && entries.length > 0) {
       // 统计各工具调用次数
@@ -155,5 +174,5 @@ export function createProgressTracker(ctx, chatId, verboseLevel = 1, backendLabe
     progressMsgId = null;
   }
 
-  return { start, processEvent, finish };
+  return { start, processEvent, finish, surrender, getMessageId };
 }
