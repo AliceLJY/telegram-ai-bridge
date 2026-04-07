@@ -23,7 +23,12 @@
     "a2aMaxResponsesPerWindow": 3,
     "a2aWindowMs": 300000,
     "a2aCircuitBreakerThreshold": 3,
-    "a2aCircuitBreakerResetMs": 30000
+    "a2aCircuitBreakerResetMs": 30000,
+    "streamPreviewEnabled": true,
+    "streamPreviewIntervalMs": 700,
+    "streamPreviewMinDeltaChars": 20,
+    "streamPreviewMaxChars": 3900,
+    "streamPreviewActivationChars": 50
   },
   "backends": {
     "claude": {
