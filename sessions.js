@@ -150,6 +150,20 @@ const stmtSetModelPref = db.prepare(`
 `);
 const stmtDeleteModelPref = db.prepare("DELETE FROM chat_model WHERE chat_id = ?");
 
+// Effort 偏好表（每个 chat 独立选 effort，跨重启持久化）
+db.exec(`
+  CREATE TABLE IF NOT EXISTS chat_effort (
+    chat_id INTEGER PRIMARY KEY,
+    effort TEXT NOT NULL
+  )
+`);
+const stmtGetEffortPref = db.prepare("SELECT effort FROM chat_effort WHERE chat_id = ?");
+const stmtSetEffortPref = db.prepare(`
+  INSERT INTO chat_effort (chat_id, effort) VALUES (?, ?)
+  ON CONFLICT(chat_id) DO UPDATE SET effort = excluded.effort
+`);
+const stmtDeleteEffortPref = db.prepare("DELETE FROM chat_effort WHERE chat_id = ?");
+
 export function getSession(chatId) {
   const row = stmtGet.get(chatId);
   if (!row) return null;
@@ -242,6 +256,19 @@ export function setChatModel(chatId, model) {
 
 export function deleteChatModel(chatId) {
   stmtDeleteModelPref.run(chatId);
+}
+
+export function getChatEffort(chatId) {
+  const row = stmtGetEffortPref.get(chatId);
+  return row?.effort || null;
+}
+
+export function setChatEffort(chatId, effort) {
+  stmtSetEffortPref.run(chatId, effort);
+}
+
+export function deleteChatEffort(chatId) {
+  stmtDeleteEffortPref.run(chatId);
 }
 
 // 每 30 分钟自动清理过期会话
