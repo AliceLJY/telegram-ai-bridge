@@ -41,6 +41,9 @@ import { createDirManager } from "./dir-manager.js";
 import { createIdleMonitor } from "./idle-monitor.js";
 import { createCronManager } from "./cron.js";
 import { runHealthCheck } from "./doctor.js";
+import { withRetry, classifyError } from "./send-retry.js";
+import { protectFileReferences } from "./file-ref-protect.js";
+import { createStreamingPreview } from "./streaming-preview.js";
 import { Database } from "bun:sqlite";
 
 // 防止嵌套检测（从 CC 内部启动时需要）
@@ -555,6 +558,7 @@ async function buildPromptWithContext(ctx, userPrompt) {
 }
 
 async function sendLong(ctx, text) {
+  text = protectFileReferences(text);
   const maxLen = 4000;
   if (text.length <= maxLen) {
     return await ctx.reply(text);
@@ -589,33 +593,41 @@ async function sendLong(ctx, text) {
 
 // ── 原生 TG API 发送（绕过 grammy multipart 兼容性问题）──
 async function tgSendPhoto(chatId, buffer, filename) {
-  const form = new FormData();
-  form.append("chat_id", String(chatId));
-  form.append("photo", new Blob([buffer]), filename);
-  const url = `https://api.telegram.org/bot${TOKEN}/sendPhoto`;
-  const resp = PROXY
-    ? await fetch(url, { method: "POST", body: form, agent: new HttpsProxyAgent(PROXY) })
-    : await fetch(url, { method: "POST", body: form });
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => "");
-    throw new Error(`sendPhoto ${resp.status}: ${body.slice(0, 200)}`);
-  }
-  return resp.json();
+  return withRetry(async () => {
+    const form = new FormData();
+    form.append("chat_id", String(chatId));
+    form.append("photo", new Blob([buffer]), filename);
+    const url = `https://api.telegram.org/bot${TOKEN}/sendPhoto`;
+    const resp = PROXY
+      ? await fetch(url, { method: "POST", body: form, agent: new HttpsProxyAgent(PROXY) })
+      : await fetch(url, { method: "POST", body: form });
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => "");
+      const err = new Error(`sendPhoto ${resp.status}: ${body.slice(0, 200)}`);
+      err.status = resp.status;
+      throw err;
+    }
+    return resp.json();
+  });
 }
 
 async function tgSendDocument(chatId, buffer, filename) {
-  const form = new FormData();
-  form.append("chat_id", String(chatId));
-  form.append("document", new Blob([buffer]), filename);
-  const url = `https://api.telegram.org/bot${TOKEN}/sendDocument`;
-  const resp = PROXY
-    ? await fetch(url, { method: "POST", body: form, agent: new HttpsProxyAgent(PROXY) })
-    : await fetch(url, { method: "POST", body: form });
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => "");
-    throw new Error(`sendDocument ${resp.status}: ${body.slice(0, 200)}`);
-  }
-  return resp.json();
+  return withRetry(async () => {
+    const form = new FormData();
+    form.append("chat_id", String(chatId));
+    form.append("document", new Blob([buffer]), filename);
+    const url = `https://api.telegram.org/bot${TOKEN}/sendDocument`;
+    const resp = PROXY
+      ? await fetch(url, { method: "POST", body: form, agent: new HttpsProxyAgent(PROXY) })
+      : await fetch(url, { method: "POST", body: form });
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => "");
+      const err = new Error(`sendDocument ${resp.status}: ${body.slice(0, 200)}`);
+      err.status = resp.status;
+      throw err;
+    }
+    return resp.json();
+  });
 }
 
 // 从文本中提取文件路径（图片/文档）
@@ -1025,6 +1037,19 @@ async function processPrompt(ctx, prompt) {
     const capturedImages = [];  // { data, mediaType, toolUseId }
     const capturedFiles = [];   // { filePath, source }
 
+    // Streaming preview: 实时显示 AI 文本输出
+    const streamPreviewEnabled = process.env.STREAM_PREVIEW_ENABLED !== "false";
+    const streamPreview = streamPreviewEnabled
+      ? createStreamingPreview(ctx, chatId, {
+          intervalMs: Number(process.env.STREAM_PREVIEW_INTERVAL_MS) || 700,
+          minDeltaChars: Number(process.env.STREAM_PREVIEW_MIN_DELTA_CHARS) || 20,
+          maxChars: Number(process.env.STREAM_PREVIEW_MAX_CHARS) || 3900,
+          activationChars: Number(process.env.STREAM_PREVIEW_ACTIVATION_CHARS) || 50,
+        })
+      : null;
+    let previewActivated = false;
+    let accumulatedText = "";
+
     // AbortController: 支持 /cancel 中断
     const abortController = new AbortController();
     chatAbortControllers.set(chatId, abortController);
@@ -1071,9 +1096,8 @@ async function processPrompt(ctx, prompt) {
             // callback data 限 64 字节，用 ask:序号:简短标签
             kb.text(`${i + 1}. ${opt.label}`, `ask:${i}:${opt.label.slice(0, 40)}`).row();
           }
-          await ctx.reply(text, { parse_mode: "Markdown", reply_markup: kb }).catch(() => {
-            // Markdown 失败时 fallback 纯文本
-            ctx.reply(text.replace(/\*/g, ""), { reply_markup: kb }).catch(() => {});
+          await withRetry(() => ctx.reply(text, { parse_mode: "Markdown", reply_markup: kb }), {
+            onParseFallback: () => ctx.reply(text.replace(/\*/g, ""), { reply_markup: kb }),
           });
         }
 
@@ -1090,6 +1114,23 @@ async function processPrompt(ctx, prompt) {
         // 从中间文本中扫描文件路径
         if (event.type === "text" && event.text) {
           extractFilePathsFromText(event.text, capturedFiles);
+        }
+
+        // Streaming preview: 累积文本，达到阈值后接管 progress 消息
+        if (streamPreview && event.type === "text" && event.text) {
+          accumulatedText += event.text;
+          if (!previewActivated && accumulatedText.length >= (Number(process.env.STREAM_PREVIEW_ACTIVATION_CHARS) || 50)) {
+            const progressMsgId = progress.surrender();
+            if (progressMsgId) {
+              await streamPreview.start(progressMsgId);
+            } else {
+              await streamPreview.start();
+            }
+            previewActivated = true;
+          }
+          if (previewActivated) {
+            streamPreview.onText(accumulatedText);
+          }
         }
 
         // 实时进度（progress + text 事件）
@@ -1131,11 +1172,22 @@ async function processPrompt(ctx, prompt) {
       setSession(chatId, capturedSessionId, displayName, backendName, "owned");
     }
 
-    // 进度消息 → 摘要（verbose >= 1 时保留，否则删除）
-    await progress.finish({
-      keepAsSummary: verboseLevel >= 1 && resultSuccess,
-      durationMs: Date.now() - startTime,
-    });
+    // 清理 streaming preview / progress 消息
+    if (previewActivated) {
+      const previewMsgId = streamPreview.finish();
+      // 删除预览消息 — 最终结果会作为新消息发送
+      if (previewMsgId) {
+        ctx.api.deleteMessage(chatId, previewMsgId).catch(() => {});
+      }
+      // progress 已 surrender，只清 typing 心跳
+      await progress.finish({ skipMessage: true });
+    } else {
+      // 预览未激活，progress 正常处理
+      await progress.finish({
+        keepAsSummary: verboseLevel >= 1 && resultSuccess,
+        durationMs: Date.now() - startTime,
+      });
+    }
     activeProgressTrackers.delete(chatId);
 
     // 发送捕获的图片/文件（用原生 fetch，绕过 grammy multipart 兼容性问题）
@@ -1181,7 +1233,8 @@ async function processPrompt(ctx, prompt) {
       }
     }
 
-    // 发最终结果
+    // 发最终结果（文件引用保护：防止 TG 把 .md/.go/.py 当域名链接）
+    if (resultText) resultText = protectFileReferences(resultText);
     if (!resultSuccess) {
       finalizeFailure(summarizeText(resultText, 240), "RESULT_ERROR");
       await sendLong(ctx, `${adapter.label} 错误: ${resultText}`);
