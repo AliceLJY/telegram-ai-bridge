@@ -693,7 +693,7 @@ function getCompactSourceLabel(sessionMeta, backend) {
 function getTopicSnippet(sessionMeta, maxLen = 30) {
   let topic = (sessionMeta?.display_name || "").replace(/\s+/g, " ").trim();
   if (!topic || topic === "(空)") return "";
-  // 过滤掉 bridge hint 和内部命令前缀
+  // adapter 已剥离 bridge hint，这里做二次兜底
   topic = topic.replace(/^\[系统提示:.*?\]\s*/s, "").replace(/^<local-command-.*$/s, "").trim();
   if (!topic) return "";
   return topic.length > maxLen ? `${topic.slice(0, maxLen)}…` : topic;
@@ -1314,6 +1314,8 @@ async function processPrompt(ctx, prompt) {
     finalizeFailure(summarizeText(e.message, 240), "BRIDGE_ERROR");
     await progress.finish();
     await ctx.reply(`桥接错误: ${e.message}`);
+  } finally {
+    activeProgressTrackers.delete(chatId);
   }
 }
 
