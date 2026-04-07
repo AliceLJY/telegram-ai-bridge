@@ -192,7 +192,7 @@ Claude Code 先后上线了 [Remote Control](https://code.claude.com/docs/en/rem
 | 手机审批工具调用 | 部分（UI 有限） | 支持 | 支持 | 按钮：允许 / 拒绝 / 始终允许 / YOLO |
 | 多 Agent 群聊协作 | &mdash; | &mdash; | &mdash; | A2A 总线 + 共享上下文 |
 | 跨 Agent 协作 | &mdash; | &mdash; | Gateway 频道 | A2A 广播（群聊）+ MCP/CLI（私聊） |
-| 实时进度流式展示 | 终端输出 | &mdash; | 支持 | 工具图标 + 3 级详细度 + 完成摘要 |
+| 实时进度流式展示 | 终端输出 | &mdash; | 支持 | **实时文本预览**（editMessage 流式更新）+ 工具图标 + 3 级详细度 |
 | 连续消息合并发送 | N/A | &mdash; | &mdash; | FlushGate：800ms 窗口自动合并 |
 | 图片 / 文件 / 语音输入 | &mdash; | 仅文字 | 支持 | 自动下载 + 注入 prompt |
 | **图片 / 文件输出回传** | 仅终端 | &mdash; | &mdash; | **截图和文件自动发送到 TG 对话** |
@@ -339,7 +339,8 @@ Telegram bot
     "tasksDb": "tasks.db",
     "sharedContextBackend": "sqlite",
     "sharedContextDb": "shared-context.db",
-    "redisUrl": ""
+    "redisUrl": "",
+    "streamPreviewEnabled": true
   },
   "backends": {
     "claude": {
@@ -498,6 +499,9 @@ docker run -d \
 - `config.js` — 配置加载与 setup wizard
 - `bridge.js` — Telegram bot 运行时
 - `sessions.js` — SQLite 会话持久化
+- `streaming-preview.js` — 实时文本预览（editMessage 流式更新，带节流和降级）
+- `send-retry.js` — 发送重试（错误分类 + 指数退避 + HTML 降级）
+- `file-ref-protect.js` — 文件引用保护（防止 TG 把 .md/.go/.py 自动识别为域名链接）
 - `shared-context.js` — 跨 bot 共享上下文入口
 - `shared-context/` — 可插拔后端（SQLite / JSON / Redis）
 - `a2a/` — Bot 间通信总线、防死循环、节点健康检测
