@@ -159,6 +159,12 @@ export function createDefaultConfig() {
       a2aWindowMs: 300000,
       a2aCircuitBreakerThreshold: 3,
       a2aCircuitBreakerResetMs: 30000,
+      // Streaming Preview 配置
+      streamPreviewEnabled: true,
+      streamPreviewIntervalMs: 700,
+      streamPreviewMinDeltaChars: 20,
+      streamPreviewMaxChars: 3900,
+      streamPreviewActivationChars: 50,
       // 限流配置
       rateLimitMaxRequests: 10,
       rateLimitWindowMs: 60000,
@@ -306,6 +312,12 @@ function buildEnvFromConfig(config, backend, configPath) {
     A2A_MAX_RESPONSES_PER_WINDOW: String(shared.a2aMaxResponsesPerWindow ?? 3),
     A2A_WINDOW_MS: String(shared.a2aWindowMs ?? 300000),
 
+    // Streaming Preview
+    STREAM_PREVIEW_ENABLED: String(shared.streamPreviewEnabled ?? true),
+    STREAM_PREVIEW_INTERVAL_MS: String(shared.streamPreviewIntervalMs ?? 700),
+    STREAM_PREVIEW_MIN_DELTA_CHARS: String(shared.streamPreviewMinDeltaChars ?? 20),
+    STREAM_PREVIEW_MAX_CHARS: String(shared.streamPreviewMaxChars ?? 3900),
+    STREAM_PREVIEW_ACTIVATION_CHARS: String(shared.streamPreviewActivationChars ?? 50),
     // 限流
     RATE_LIMIT_MAX_REQUESTS: String(shared.rateLimitMaxRequests ?? 10),
     RATE_LIMIT_WINDOW_MS: String(shared.rateLimitWindowMs ?? 60000),
