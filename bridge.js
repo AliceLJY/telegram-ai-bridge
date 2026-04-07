@@ -390,6 +390,7 @@ const pendingPermissions = new Map(); // permId -> { resolve, cleanup, toolName,
 const chatPermState = new Map(); // chatId -> { alwaysAllowed: Set, yolo: boolean }
 const chatAbortControllers = new Map(); // chatId -> AbortController
 const activeProgressTrackers = new Map(); // chatId -> progress tracker (for shutdown cleanup)
+const lastSessionList = new Map(); // chatId -> [{session_id, ...}] — /sessions 缓存，供 /resume <序号> 使用
 let permIdCounter = 0;
 
 // A2A 追踪：当前是否在处理 A2A 消息，以及相关元数据
@@ -1427,11 +1428,23 @@ bot.command("new", async (ctx) => {
 
 // ── /resume 命令：显式绑定已有 session id（适合终端/TG 手动接续） ──
 bot.command("resume", async (ctx) => {
-  const sessionId = ctx.match?.trim();
+  let sessionId = ctx.match?.trim();
   if (!sessionId) {
     const backendName = getBackendName(ctx.chat.id);
-    await ctx.reply(`用法: /resume <session-id>\n当前后端: ${backendName}\n也可以先用 /sessions 直接点选。`);
+    await ctx.reply(`用法: /resume <序号或ID>\n先 /sessions 查看列表，再 /resume 3 恢复第3条。`);
     return;
+  }
+
+  // 支持序号：/resume 3 → 从上次 /sessions 列表取第3条
+  const num = parseInt(sessionId, 10);
+  if (!isNaN(num) && num >= 1 && String(num) === sessionId) {
+    const cached = lastSessionList.get(ctx.chat.id);
+    if (cached && num <= cached.length) {
+      sessionId = cached[num - 1].session_id;
+    } else {
+      await ctx.reply(`序号 ${num} 无效，请先 /sessions 查看列表。`);
+      return;
+    }
   }
 
   const backend = getBackendName(ctx.chat.id);
@@ -1508,6 +1521,9 @@ bot.command("sessions", async (ctx) => {
       return;
     }
 
+    // 缓存列表供 /resume <序号> 使用
+    lastSessionList.set(ctx.chat.id, sortedSessions);
+
     const kb = new InlineKeyboard();
     for (const s of sortedSessions) {
       const backend = s.backend || backendName;
@@ -1516,7 +1532,7 @@ bot.command("sessions", async (ctx) => {
     }
     kb.text("🆕 开新会话", "action:new").row();
     await ctx.reply(
-      "选择会话：点一下直接接续。",
+      "选择会话：点按钮接续，或 /resume <序号>（如 /resume 3）",
       { reply_markup: kb },
     );
   } catch (e) {
