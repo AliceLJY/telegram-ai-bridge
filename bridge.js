@@ -1197,6 +1197,11 @@ async function processPrompt(ctx, prompt) {
     }
     if (resultSuccess && capturedImages.length > 0) {
       for (const img of capturedImages) {
+        // 跳过工具结果图片（如 Read 读用户发的图），只发 AI 主动生成的图
+        if (img.source === "tool_result") {
+          console.log(`[Bridge] 跳过工具结果图片 (toolUseId: ${img.toolUseId || "?"})`);
+          continue;
+        }
         try {
           const buf = Buffer.from(img.data, "base64");
           if (buf.length > 10 * 1024 * 1024) continue;
