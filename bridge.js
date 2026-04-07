@@ -2254,9 +2254,23 @@ async function shutdown(signal) {
   // 1. 停止接收新消息
   await bot.stop().catch(() => {});
 
-  // 2. 取消所有正在运行的 AI query
-  for (const [, ac] of chatAbortControllers) {
-    ac.abort();
+  // 2. Drain: 等待正在运行的 query 完成（最长 25s，留余量给 launchd 的 ExitTimeOut）
+  const DRAIN_TIMEOUT_MS = 25000;
+  if (chatAbortControllers.size > 0) {
+    console.log(`[bridge] draining ${chatAbortControllers.size} active query(ies)...`);
+    const drainStart = Date.now();
+    while (chatAbortControllers.size > 0 && (Date.now() - drainStart) < DRAIN_TIMEOUT_MS) {
+      await new Promise(r => setTimeout(r, 500));
+    }
+    if (chatAbortControllers.size > 0) {
+      console.log(`[bridge] drain timeout (${DRAIN_TIMEOUT_MS}ms), force-aborting ${chatAbortControllers.size} query(ies)`);
+      for (const [, ac] of chatAbortControllers) {
+        ac.abort();
+      }
+      await new Promise(r => setTimeout(r, 1000));
+    } else {
+      console.log("[bridge] all queries drained successfully");
+    }
   }
 
   // 3. 清理所有活跃的进度消息（避免孤儿进度卡在聊天里）
