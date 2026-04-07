@@ -72,6 +72,8 @@ Setup takes 30 seconds per instance: create a bot with @BotFather, copy a config
 
 Walk away from your desk. Open Telegram. `/new` starts a fresh session. `/resume 3` picks up where you left off. `/peek 5` reads a session without touching it. `/model` switches models on the fly. Full session lifecycle from your phone — no terminal required.
 
+The session picker shows **the last thing you said** as the title — not a truncated UUID. Tap a button or type `/resume 3`. Sessions from all sources (this bot, terminal CLI, other bridges) appear in one unified list.
+
 <img src="assets/sessions-demo.png" alt="Session picker — topic-first, click to resume" width="600">
 
 ### Bidirectional Media — Screenshots & Files Flow Back
@@ -166,7 +168,7 @@ Sessions are sticky: messages continue the current session until you explicitly 
 | `/cancel` | Abort the currently running task |
 | `/sessions` | List recent sessions |
 | `/peek <id>` | Read-only preview a session |
-| `/resume <id>` | Rebind current chat to an owned session |
+| `/resume <#\|id>` | Resume by sequence number or session ID |
 | `/model` | Pick a model for the current bot |
 | `/status` | Show backend, model, cwd, and session |
 | `/dir` | Switch working directory |
