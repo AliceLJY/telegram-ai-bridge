@@ -76,7 +76,16 @@ export function createProgressTracker(ctx, chatId, verboseLevel = 1, backendLabe
       } else if (verboseLevel >= 2 && event.detail) {
         entries.push(`${icon} ${toolName}: ${event.detail.slice(0, 60)}`);
       } else {
-        entries.push(`${icon} ${toolName}`);
+        // verboseLevel 1: 同名工具合并计数，避免一堆 "Bash / Bash / Bash"
+        const lastEntry = entries[entries.length - 1] || "";
+        const counterRe = new RegExp(`^${icon.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} ${toolName}(?: x(\\d+))?$`);
+        const m = lastEntry.match(counterRe);
+        if (m) {
+          const count = (parseInt(m[1]) || 1) + 1;
+          entries[entries.length - 1] = `${icon} ${toolName} x${count}`;
+        } else {
+          entries.push(`${icon} ${toolName}`);
+        }
       }
     } else if (event.type === "text" && event.text && verboseLevel >= 2) {
       const snippet = event.text.slice(0, 80).replace(/\n/g, " ");
