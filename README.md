@@ -194,7 +194,7 @@ Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-co
 | War Room (multi-agent command center) | &mdash; | &mdash; | &mdash; | @mention dispatch + Redis shared context |
 | Multi-agent group collaboration       | &mdash; | &mdash; | &mdash; | A2A bus + shared context |
 | Cross-agent collaboration             | &mdash; | &mdash; | Gateway channels | A2A broadcast (groups) + MCP/CLI (DMs) |
-| Real-time progress streaming          | Terminal output only | &mdash; | Yes | Tool icons + 3 verbosity levels + summary |
+| Real-time progress streaming          | Terminal output only | &mdash; | Yes | **Live text preview** (editMessage streaming) + tool icons + 3 verbosity levels |
 | Rapid message batching                | N/A | &mdash; | &mdash; | FlushGate: 800ms window, auto-merge |
 | Photo / document / voice input        | &mdash; | Text only | Yes | Auto-download + reference in prompt |
 | **Image / file output relay**         | Terminal only | &mdash; | &mdash; | **Screenshots & files auto-sent to TG chat** |
@@ -341,7 +341,8 @@ Each bot instance keeps its own Telegram token, SQLite DBs, credential directory
     "tasksDb": "tasks.db",
     "sharedContextBackend": "sqlite",
     "sharedContextDb": "shared-context.db",
-    "redisUrl": ""
+    "redisUrl": "",
+    "streamPreviewEnabled": true
   },
   "backends": {
     "claude": {
@@ -500,6 +501,9 @@ Swap credential mount and `--backend` for other backends. See `docker-compose.ex
 - `config.js` — Config loader and setup wizard
 - `bridge.js` — Telegram bot runtime
 - `sessions.js` — SQLite session persistence
+- `streaming-preview.js` — Live text preview via editMessage (throttled, with degradation)
+- `send-retry.js` — Outbound delivery retry with error classification and HTML fallback
+- `file-ref-protect.js` — Prevents Telegram auto-linking filenames as domains (.md, .go, .py etc.)
 - `shared-context.js` — Cross-bot shared context entry point
 - `shared-context/` — Pluggable backends (SQLite / JSON / Redis)
 - `a2a/` — Agent-to-agent communication bus, loop guard, peer health
