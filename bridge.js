@@ -386,6 +386,7 @@ const verboseSettings = new Map(); // chatId -> verboseLevel
 const pendingPermissions = new Map(); // permId -> { resolve, cleanup, toolName, chatId, ... }
 const chatPermState = new Map(); // chatId -> { alwaysAllowed: Set, yolo: boolean }
 const chatAbortControllers = new Map(); // chatId -> AbortController
+const activeProgressTrackers = new Map(); // chatId -> progress tracker (for shutdown cleanup)
 let permIdCounter = 0;
 
 // A2A 追踪：当前是否在处理 A2A 消息，以及相关元数据
@@ -1009,6 +1010,7 @@ async function processPrompt(ctx, prompt) {
     markTaskStarted(taskId);
     idleMonitor.startProcessing(chatId);
     await progress.start();
+    activeProgressTrackers.set(chatId, progress);
 
     // 注入 bridge 行为指令
     const bridgeHint = "[系统提示: 你通过 Telegram Bridge 与用户对话。当用户要求发送文件、截图或查看图片时：1) 用工具找到/生成文件 2) 在回复中包含文件的完整绝对路径（如 /Users/xxx/file.png），bridge 会自动检测路径并发送给用户。用户不需要知道路径，你来找。绝对不要自己调用 curl/Telegram Bot API。]\n\n";
@@ -1134,6 +1136,7 @@ async function processPrompt(ctx, prompt) {
       keepAsSummary: verboseLevel >= 1 && resultSuccess,
       durationMs: Date.now() - startTime,
     });
+    activeProgressTrackers.delete(chatId);
 
     // 发送捕获的图片/文件（用原生 fetch，绕过 grammy multipart 兼容性问题）
     if (capturedImages.length > 0 || capturedFiles.length > 0) {
@@ -2201,13 +2204,24 @@ async function shutdown(signal) {
     ac.abort();
   }
 
-  // 3. 关闭 A2A 总线
+  // 3. 清理所有活跃的进度消息（避免孤儿进度卡在聊天里）
+  const cleanups = [];
+  for (const [cid, tracker] of activeProgressTrackers) {
+    cleanups.push(tracker.finish().catch(() => {}));
+  }
+  if (cleanups.length > 0) {
+    console.log(`[bridge] cleaning up ${cleanups.length} progress message(s)...`);
+    await Promise.allSettled(cleanups);
+  }
+  activeProgressTrackers.clear();
+
+  // 4. 关闭 A2A 总线
   if (a2aBus) await a2aBus.stop().catch(() => {});
 
-  // 4. 停止 Cron
+  // 5. 停止 Cron
   if (cronManager) cronManager.shutdown();
 
-  // 5. 关闭 idle monitor
+  // 6. 关闭 idle monitor
   idleMonitor.shutdown?.();
 
   console.log("[bridge] clean shutdown complete");
