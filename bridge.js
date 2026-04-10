@@ -1144,8 +1144,12 @@ async function processPrompt(ctx, prompt) {
             const opt = event.options[i];
             text += `\n${i + 1}. *${opt.label}*`;
             if (opt.description) text += `\n   ${opt.description}`;
-            // callback data 限 64 字节，用 ask:序号:简短标签
-            kb.text(`${i + 1}. ${opt.label}`, `ask:${i}:${opt.label.slice(0, 40)}`).row();
+            // callback data 限 64 字节（非字符），中文 3 字节/字
+            let askLabel = opt.label;
+            while (Buffer.byteLength(`ask:${i}:${askLabel}`, "utf-8") > 64) {
+              askLabel = askLabel.slice(0, -1);
+            }
+            kb.text(`${i + 1}. ${opt.label}`, `ask:${i}:${askLabel}`).row();
           }
           await withRetry(() => ctx.reply(text, { parse_mode: "Markdown", reply_markup: kb }), {
             onParseFallback: () => ctx.reply(text.replace(/\*/g, ""), { reply_markup: kb }),
@@ -1302,7 +1306,12 @@ async function processPrompt(ctx, prompt) {
       if (replies && resultText.length <= 4000) {
         const kb = new InlineKeyboard();
         for (const r of replies) {
-          const cbData = `reply:${r.slice(0, 58)}`;
+          // TG callback_data 限 64 字节（非字符），中文 3 字节/字
+          let cbSuffix = r;
+          while (Buffer.byteLength(`reply:${cbSuffix}`, "utf-8") > 64) {
+            cbSuffix = cbSuffix.slice(0, -1);
+          }
+          const cbData = `reply:${cbSuffix}`;
           kb.text(r, cbData);
         }
         await ctx.reply(resultText, { reply_markup: kb });
