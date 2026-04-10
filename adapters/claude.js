@@ -228,7 +228,8 @@ export function createAdapter(config = {}) {
           console.log(`[Claude SDK] resume failed (${err.message.slice(0, 80)}), retrying as new session`);
           const freshOptions = { ...options };
           delete freshOptions.resume;
-          freshOptions.settingSources = ["user", "project"];
+          // 继承本次请求的 settingSources（A2A 传 [] 就保持 []，普通聊天没传就用默认值）
+          freshOptions.settingSources = overrideSettingSources ?? ["user", "project"];
           yield* this._runQuery(prompt, freshOptions, abortController);
         } else {
           throw err;
