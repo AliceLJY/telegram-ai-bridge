@@ -161,6 +161,7 @@ export function createAdapter(config = {}) {
         persistSession: overridePersistSession,
         maxTurns: overrideMaxTurns,
         effort: overrideEffort,
+        settingSources: overrideSettingSources,
         ...restOverrides
       } = overrides;
       const model = (restOverrides.model && restOverrides.model !== "__default__") ? restOverrides.model : defaultModel;
@@ -189,7 +190,7 @@ export function createAdapter(config = {}) {
       if (sessionId) {
         options.resume = sessionId;
       } else {
-        options.settingSources = ["user", "project"];
+        options.settingSources = overrideSettingSources || ["user", "project"];
       }
 
       // Claude SDK 需要 AbortController 对象，bridge 传来的是 AbortSignal
