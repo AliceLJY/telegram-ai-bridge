@@ -265,7 +265,7 @@ ${meta.originalPrompt ? `\n用户的原始问题：${meta.originalPrompt}` : ""}
 
       if (responseText.trim()) {
         // 发送到 TG
-        const sent = await bot.api.sendMessage(meta.chatId, responseText);
+        await bot.api.sendMessage(meta.chatId, responseText);
 
         // 写入共享上下文
         await writeSharedMessage(meta.chatId, {
@@ -275,16 +275,9 @@ ${meta.originalPrompt ? `\n用户的原始问题：${meta.originalPrompt}` : ""}
           text: responseText,
         });
 
-        // 广播给其他 bot
-        await a2aBus.broadcast({
-          chatId: meta.chatId,
-          generation: meta.generation + 1,
-          content: responseText,
-          originalPrompt: meta.originalPrompt || meta.content.slice(0, 500),
-          telegramMessageId: sent.message_id,
-        });
-
-        console.log(`[A2A] ${DEFAULT_BACKEND} responded to ${meta.sender}`);
+        // 不再广播回 A2A — 避免 CC↔Codex 乒乓死循环
+        // 其他 bot 如需看到回复，可通过 shared context 获取
+        console.log(`[A2A] ${DEFAULT_BACKEND} responded to ${meta.sender} (no re-broadcast)`);
       }
     } catch (err) {
       console.error(`[A2A] Handler error: ${err.message}`);
