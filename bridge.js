@@ -181,11 +181,14 @@ ${meta.originalPrompt ? `\n用户的原始问题：${meta.originalPrompt}` : ""}
 如果没有，只回复 [NO_RESPONSE]，不要发送任何其他内容。`;
 
       // Claude SDK 需要显式权限配置，否则子进程会卡在 TTY 权限确认
+      // settingSources: [] — A2A 不加载任何 user/project settings（含 skills），
+      // 避免 superpowers 等 skill 内容被当作回复文本发到群里
       const a2aOverrides = DEFAULT_BACKEND === "claude" ? {
         permissionMode: "dontAsk",
         allowedTools: ["Read", "Grep", "Glob", "Bash", "WebFetch", "WebSearch"],
         persistSession: false,
         maxTurns: 1,
+        settingSources: [],
       } : {};
 
       let responseText = "";
