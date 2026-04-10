@@ -6,6 +6,24 @@ import { LoopGuard } from "./loop-guard.js";
 import { PeerHealthManager } from "./peer-health.js";
 
 /**
+ * Proxy-free fetch for localhost A2A calls.
+ * Temporarily strips HTTP(S)_PROXY env vars so Bun's fetch
+ * doesn't route localhost traffic through ClashX / other proxies.
+ */
+async function fetchDirect(url, opts) {
+  const keys = ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"];
+  const saved = {};
+  for (const k of keys) {
+    if (k in process.env) { saved[k] = process.env[k]; delete process.env[k]; }
+  }
+  try {
+    return await fetch(url, opts);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { process.env[k] = v; }
+  }
+}
+
+/**
  * 创建 A2A 总线
  * @param {object} config
  * @param {string} config.selfName - 当前 bot 名称 (claude/codex/gemini)
@@ -141,7 +159,7 @@ export function createA2ABus(config) {
         }
 
         try {
-          const res = await fetch(`${url}/a2a/message`, {
+          const res = await fetchDirect(`${url}/a2a/message`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(envelope),
