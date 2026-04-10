@@ -90,6 +90,30 @@ const A2A_COOLDOWN_MS = Number(process.env.A2A_COOLDOWN_MS) || 60000;
 const A2A_MAX_RESPONSES_PER_WINDOW = Number(process.env.A2A_MAX_RESPONSES_PER_WINDOW) || 3;
 const A2A_WINDOW_MS = Number(process.env.A2A_WINDOW_MS) || 300000;
 
+// A2A 会话复用：per-chatId 维护 session，idle 超时回收
+const A2A_SESSION_TTL_MS = Number(process.env.A2A_SESSION_TTL_MS) || 30 * 60 * 1000; // 默认 30 分钟
+const a2aSessions = new Map(); // chatId → { sessionId, lastUsed, backend }
+
+function getA2ASession(chatId, backend) {
+  const entry = a2aSessions.get(chatId);
+  if (!entry || entry.backend !== backend) return null;
+  if (Date.now() - entry.lastUsed > A2A_SESSION_TTL_MS) {
+    a2aSessions.delete(chatId);
+    console.log(`[A2A] Session expired for chatId=${chatId}`);
+    return null;
+  }
+  return entry.sessionId;
+}
+
+function setA2ASession(chatId, sessionId, backend) {
+  a2aSessions.set(chatId, { sessionId, lastUsed: Date.now(), backend });
+}
+
+function touchA2ASession(chatId) {
+  const entry = a2aSessions.get(chatId);
+  if (entry) entry.lastUsed = Date.now();
+}
+
 // 解析 A2A peers
 const A2A_PEERS = {};
 if (process.env.A2A_PEERS) {
@@ -180,21 +204,34 @@ ${meta.originalPrompt ? `\n用户的原始问题：${meta.originalPrompt}` : ""}
 如果有有价值的内容要补充，直接回复你的观点。
 如果没有，只回复 [NO_RESPONSE]，不要发送任何其他内容。`;
 
-      // Claude SDK 需要显式权限配置，否则子进程会卡在 TTY 权限确认
+      // Claude SDK: 最小权限 + 会话复用
       // settingSources: [] — A2A 不加载任何 user/project settings（含 skills），
-      // 避免 superpowers 等 skill 内容被当作回复文本发到群里
+      //   防止 superpowers 等 skill 内容泄漏到群聊（仅新会话生效，resume 时不需要）
+      // persistSession: true — 启用会话复用，同一群聊保持上下文连续性
+      const a2aSessionId = DEFAULT_BACKEND === "claude"
+        ? getA2ASession(meta.chatId, DEFAULT_BACKEND)
+        : null;
+
       const a2aOverrides = DEFAULT_BACKEND === "claude" ? {
         permissionMode: "dontAsk",
         allowedTools: ["Read", "Grep", "Glob", "Bash", "WebFetch", "WebSearch"],
-        persistSession: false,
+        persistSession: true,
         maxTurns: 1,
         settingSources: [],
       } : {};
 
+      if (a2aSessionId) {
+        console.log(`[A2A] Reusing session ${a2aSessionId.slice(0, 8)}... for chatId=${meta.chatId}`);
+      }
+
       let responseText = "";
+      let capturedSessionId = a2aSessionId || null;
       try {
         console.log(`[A2A] Calling ${DEFAULT_BACKEND} adapter with prompt length: ${prompt.length}`);
-        for await (const event of adapter.streamQuery(prompt, null, undefined, a2aOverrides)) {
+        for await (const event of adapter.streamQuery(prompt, a2aSessionId, undefined, a2aOverrides)) {
+          if (event.type === "session_init") {
+            capturedSessionId = event.sessionId;
+          }
           if (event.type === "text") {
             responseText += event.text;
           }
@@ -204,7 +241,17 @@ ${meta.originalPrompt ? `\n用户的原始问题：${meta.originalPrompt}` : ""}
           }
         }
         console.log(`[A2A] Got response, length: ${responseText.length}`);
+
+        // 保存/更新 A2A 会话
+        if (capturedSessionId && DEFAULT_BACKEND === "claude") {
+          setA2ASession(meta.chatId, capturedSessionId, DEFAULT_BACKEND);
+        }
       } catch (err) {
+        // resume 失败时清除缓存的 session，下次重建
+        if (a2aSessionId) {
+          console.log(`[A2A] Session resume failed, clearing cached session`);
+          a2aSessions.delete(meta.chatId);
+        }
         console.error(`[A2A] streamQuery error: ${err.message}`);
         console.error(`[A2A] stack: ${err.stack}`);
         return;
