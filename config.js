@@ -282,6 +282,7 @@ function buildEnvFromConfig(config, backend, configPath) {
     OWNER_TELEGRAM_ID: shared.ownerTelegramId != null ? String(shared.ownerTelegramId) : "",
     TELEGRAM_BOT_TOKEN: backendConfig.telegramBotToken || "",
     HTTPS_PROXY: shared.httpProxy || "",
+    NO_PROXY: shared.httpProxy ? "localhost,127.0.0.1" : "",
     CC_CWD: resolvePathMaybe(baseDir, shared.cwd || process.env.HOME || REPO_DIR),
     DEFAULT_VERBOSE_LEVEL: String(shared.defaultVerboseLevel ?? 1),
     BRIDGE_EXECUTOR: String(shared.executor || "direct"),
@@ -305,6 +306,7 @@ function buildEnvFromConfig(config, backend, configPath) {
     A2A_PORT: String(shared.a2aPorts?.[selectedBackend] ?? 0),
     A2A_PEERS: Object.entries(shared.a2aPorts || {})
       .filter(([name]) => name !== selectedBackend)
+      .filter(([name]) => config.backends?.[name]?.enabled !== false)
       .map(([name, port]) => `${name}:http://localhost:${port}`)
       .join(","),
     A2A_MAX_GENERATION: String(shared.a2aMaxGeneration ?? 2),
