@@ -190,7 +190,12 @@ export function createAdapter(config = {}) {
       if (sessionId) {
         options.resume = sessionId;
       } else {
-        options.settingSources = overrideSettingSources || ["user", "project"];
+        const effectiveSettings = overrideSettingSources || ["user", "project"];
+        options.settingSources = effectiveSettings;
+        // 防护：A2A 等轻量场景应使用空 settingSources，非空时打日志以便排查
+        if (overrideAllowedTools && effectiveSettings.length > 0) {
+          console.warn(`[Claude SDK] WARNING: new session with restricted tools but settingSources=${JSON.stringify(effectiveSettings)} — skills may leak`);
+        }
       }
 
       // Claude SDK 需要 AbortController 对象，bridge 传来的是 AbortSignal
