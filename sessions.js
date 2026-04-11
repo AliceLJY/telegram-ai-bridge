@@ -21,16 +21,22 @@ db.exec(`
   )
 `);
 
-// 迁移：旧表没有 backend 列时自动加
+// 迁移：旧表没有 backend 列时自动加（只忽略"列已存在"，其他错误抛出）
 try {
   db.exec("ALTER TABLE sessions ADD COLUMN backend TEXT DEFAULT 'claude'");
-} catch {
-  // 列已存在，忽略
+} catch (e) {
+  if (!/duplicate column|already exists/i.test(e.message)) {
+    console.error("[DB] Migration error (backend column):", e.message);
+    throw e;
+  }
 }
 try {
   db.exec("ALTER TABLE sessions ADD COLUMN ownership TEXT DEFAULT 'owned'");
-} catch {
-  // 列已存在，忽略
+} catch (e) {
+  if (!/duplicate column|already exists/i.test(e.message)) {
+    console.error("[DB] Migration error (ownership column):", e.message);
+    throw e;
+  }
 }
 
 // 会话历史表（保留所有历史会话，不被 /new 或 upsert 覆盖）
@@ -47,8 +53,11 @@ db.exec(`
 `);
 try {
   db.exec("ALTER TABLE session_history ADD COLUMN ownership TEXT DEFAULT 'owned'");
-} catch {
-  // 列已存在，忽略
+} catch (e) {
+  if (!/duplicate column|already exists/i.test(e.message)) {
+    console.error("[DB] Migration error (session_history.ownership):", e.message);
+    throw e;
+  }
 }
 
 // 后端偏好表（每个 chat 独立选后端）
