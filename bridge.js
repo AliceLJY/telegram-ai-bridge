@@ -610,6 +610,7 @@ async function sendLong(ctx, text) {
 
   const chunks = [];
   let remaining = text;
+  let prevUnclosed = false; // 上一段是否有未闭合的代码块
 
   while (remaining.length > maxLen) {
     let cut = remaining.lastIndexOf("\n\n", maxLen); // 优先段落
@@ -621,14 +622,28 @@ async function sendLong(ctx, text) {
     }
     let chunk = remaining.slice(0, cut);
 
-    // 代码块修补：奇数个 ``` → 补一个闭合
+    // 如果上一段有未闭合的代码块，当前段开头补上 ```
+    if (prevUnclosed) {
+      chunk = "```\n" + chunk;
+    }
+
+    // 代码块修补：奇数个 ``` → 补一个闭合，标记下一段需要开头补
     const fenceCount = (chunk.match(/^```/gm) || []).length;
-    if (fenceCount % 2 !== 0) chunk += "\n```";
+    if (fenceCount % 2 !== 0) {
+      chunk += "\n```";
+      prevUnclosed = true;
+    } else {
+      prevUnclosed = false;
+    }
 
     chunks.push(chunk);
     remaining = remaining.slice(cut).replace(/^\n+/, "");
   }
-  if (remaining) chunks.push(remaining);
+  // 最后一段：如果上一段有未闭合的代码块，补上开头
+  if (remaining) {
+    if (prevUnclosed) remaining = "```\n" + remaining;
+    chunks.push(remaining);
+  }
 
   for (const chunk of chunks) {
     await ctx.reply(chunk);
@@ -689,7 +704,7 @@ function extractFilePathsFromText(text, fileList) {
 
   function addPath(p) {
     const resolved = p.startsWith("~/") ? p.replace("~", HOME) : p.trim();
-    if (!existing.has(resolved)) {
+    if (!existing.has(resolved) && existsSync(resolved)) {
       existing.add(resolved);
       fileList.push({ filePath: resolved, source: "text_scan" });
     }
@@ -1013,9 +1028,13 @@ function createPermissionHandler(ctx, taskId) {
 
     // Wait for user response (5 min timeout)
     return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
+      const timeout = setTimeout(async () => {
         pendingPermissions.delete(permId);
         if (taskId) markTaskRejected(taskId, toolName);
+        // 通知用户审批超时
+        await ctx.api.sendMessage(chatId, `⏰ 工具 *${toolName}* 审批超时（5分钟），已自动拒绝。`, {
+          parse_mode: "Markdown",
+        }).catch(() => {});
         resolve({ behavior: "deny", message: "审批超时（5分钟）", toolUseID: sdkOptions.toolUseID });
       }, 5 * 60 * 1000);
 
@@ -1138,10 +1157,12 @@ async function processPrompt(ctx, prompt) {
             text += `\n${i + 1}. *${opt.label}*`;
             if (opt.description) text += `\n   ${opt.description}`;
             // callback data 限 64 字节（非字符），中文 3 字节/字
-            let askLabel = opt.label;
-            while (Buffer.byteLength(`ask:${i}:${askLabel}`, "utf-8") > 64) {
-              askLabel = askLabel.slice(0, -1);
+            // 使用 spread 展开处理完整 Unicode 码点（含 emoji/surrogate pair）
+            let askChars = [...opt.label];
+            while (Buffer.byteLength(`ask:${i}:${askChars.join("")}`, "utf-8") > 64) {
+              askChars.pop();
             }
+            const askLabel = askChars.join("");
             kb.text(`${i + 1}. ${opt.label}`, `ask:${i}:${askLabel}`).row();
           }
           await withRetry(() => ctx.reply(text, { parse_mode: "Markdown", reply_markup: kb }), {
@@ -1350,7 +1371,10 @@ async function processPrompt(ctx, prompt) {
           content: resultText,
           originalPrompt,
           telegramMessageId: ctx.message?.message_id,
-        }).catch((err) => console.error("[A2A] broadcast error:", err.message));
+        }).catch((err) => {
+          console.error("[A2A] broadcast error:", err.message);
+          ctx.reply(`⚠️ A2A 广播失败: ${err.message.slice(0, 100)}`).catch(() => {});
+        });
       }
     }
 
@@ -1386,6 +1410,9 @@ async function submitAndWait(ctx, prompt) {
   // 闲置轮转：用户长时间没说话，自动开新 session
   if (idleMonitor.shouldAutoReset(chatId)) {
     deleteSession(chatId);
+    chatPermState.delete(chatId);
+    verboseSettings.delete(chatId);
+    lastSessionList.delete(chatId);
     await ctx.reply("🔄 检测到长时间未活跃，已自动开启新会话。").catch(() => {});
   }
 
