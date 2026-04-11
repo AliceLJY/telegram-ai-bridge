@@ -537,7 +537,7 @@ Three ways to make AI agents talk to each other — different protocols, differe
 | **Terminal** | MCP | Built-in `codex mcp-server` + `claude mcp serve`, zero code | CC ↔ Codex direct calls in your terminal |
 | **Telegram Group** | Custom A2A | This project's A2A bus, auto-broadcast | Multiple bots in one group, chiming in |
 | **Telegram DM** | MCP / CLI | Bots call each other directly via terminal config | Direct cross-bot communication, no bridge needed |
-| **Server** | Google A2A v0.3.0 | [openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway) | OpenClaw agents across servers |
+| **Server** | Google A2A v0.3.0 | [openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway) *(archived — A2A now built into OpenClaw)* | OpenClaw agents across servers |
 
 > **MCP vs A2A**: MCP is a tool-calling protocol (I invoke your capability). A2A is a peer communication protocol (I talk to you as an equal). CC calling Codex via MCP is using Codex as a tool — not two agents chatting.
 
@@ -560,9 +560,9 @@ args = ["mcp", "serve"]
 
 Groups use A2A auto-broadcast. DMs go through MCP/CLI direct communication. See sections above.
 
-### Server: openclaw-a2a-gateway
+### Server: openclaw-a2a-gateway *(archived)*
 
-For OpenClaw agents communicating across servers via the Google A2A v0.3.0 standard protocol. A different system entirely — see [openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway).
+For OpenClaw agents communicating across servers via the Google A2A v0.3.0 standard protocol. A2A is now built into OpenClaw as a native plugin — the standalone gateway has been archived. See [openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway) for historical reference.
 
 ## Development
 
