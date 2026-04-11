@@ -154,6 +154,9 @@ export function createAdapter(config = {}) {
       queryQueue = myLock;
       await waitForTurn;
 
+      // 整个 setup + query 包在 try/finally 里，确保 releaseLock 一定被调用
+      // 防止 setup 阶段抛异常或 generator 被 abandon 时锁死队列
+      try {
       const {
         requestPermission,
         allowedTools: overrideAllowedTools,
@@ -234,6 +237,8 @@ export function createAdapter(config = {}) {
         } else {
           throw err;
         }
+      }
+
       } finally {
         releaseLock();
       }
