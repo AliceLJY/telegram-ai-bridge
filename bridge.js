@@ -1118,7 +1118,7 @@ async function processPrompt(ctx, prompt) {
     let previewActivated = false;
     let accumulatedText = "";
 
-    // AbortController: 支持 /cancel 中断
+    // AbortController: 支持 Stop 按钮中断
     const abortController = new AbortController();
     chatAbortControllers.set(chatId, abortController);
 
@@ -1224,7 +1224,7 @@ async function processPrompt(ctx, prompt) {
       }
     } catch (err) {
       if (err.name === "AbortError" || (err.message && err.message.includes("aborted"))) {
-        // 用户主动 /cancel，不算错误
+        // 用户主动 Stop，不算错误
         resultText = "";
         resultSuccess = true;
         console.log(`[${adapter.label}] 任务已被用户取消`);
@@ -1465,7 +1465,6 @@ bot.command("help", async (ctx) => {
     "",
     "📋 *会话管理*",
     "/new — 开启新会话",
-    "/cancel — 中断当前任务",
     "/sessions — 查看/切换会话",
     "/resume <id> — 恢复指定会话",
     "/peek \\[n] — 查看会话最后 n 条",
@@ -1496,20 +1495,7 @@ bot.command("help", async (ctx) => {
   });
 });
 
-// ── /cancel 命令：中断当前任务 ──
-bot.command("cancel", async (ctx) => {
-  const chatId = ctx.chat.id;
-  const controller = chatAbortControllers.get(chatId);
-  if (controller) {
-    controller.abort();
-    chatAbortControllers.delete(chatId);
-    await ctx.reply("⏹ 已发送中断信号，任务将尽快停止。");
-  } else {
-    await ctx.reply("当前没有正在执行的任务。");
-  }
-});
-
-// ── 按钮回调：Stop（一键停止，替代 /cancel） ──
+// ── 按钮回调：Stop（一键停止） ──
 bot.callbackQuery("stop", async (ctx) => {
   const chatId = ctx.chat.id;
   const controller = chatAbortControllers.get(chatId);
@@ -2354,7 +2340,6 @@ async function startBotPolling() {
 // ── 注册 TG 命令菜单 ──
 await bot.api.setMyCommands([
   { command: "help", description: "查看所有命令" },
-  { command: "cancel", description: "中断当前任务" },
   { command: "new", description: "开启新会话" },
   { command: "sessions", description: "查看/切换会话" },
   { command: "model", description: "切换模型" },
