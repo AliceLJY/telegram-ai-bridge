@@ -33,7 +33,7 @@ const SILENT_TOOLS = new Set([
 const MAX_ENTRIES = 15;
 const EDIT_THROTTLE_MS = 2000;
 
-export function createProgressTracker(ctx, chatId, verboseLevel = 1, backendLabel = "CC") {
+export function createProgressTracker(ctx, chatId, verboseLevel = 1, backendLabel = "CC", { replyMarkup = null } = {}) {
   let progressMsgId = null;
   let typingInterval = null;
   let entries = [];
@@ -45,7 +45,8 @@ export function createProgressTracker(ctx, chatId, verboseLevel = 1, backendLabe
 
   async function start() {
     try {
-      const msg = await ctx.api.sendMessage(chatId, headerText);
+      const opts = replyMarkup ? { reply_markup: replyMarkup } : {};
+      const msg = await ctx.api.sendMessage(chatId, headerText, opts);
       progressMsgId = msg.message_id;
     } catch {
       // 发送失败不影响主流程
@@ -125,7 +126,8 @@ export function createProgressTracker(ctx, chatId, verboseLevel = 1, backendLabe
       ? `${headerText}\n\n${entries.join("\n")}`
       : headerText;
 
-    ctx.api.editMessageText(chatId, progressMsgId, text).catch(() => {});
+    const editOpts = replyMarkup ? { reply_markup: replyMarkup } : {};
+    ctx.api.editMessageText(chatId, progressMsgId, text, editOpts).catch(() => {});
   }
 
   /**

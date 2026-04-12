@@ -19,9 +19,11 @@ const DEFAULTS = {
  * @param {object} ctx - grammy context（需要 ctx.api）
  * @param {number} chatId
  * @param {object} config - 覆盖默认配置
+ * @param {object} config.replyMarkup - 可选的 InlineKeyboard（如 Stop 按钮）
  */
 export function createStreamingPreview(ctx, chatId, config = {}) {
   const cfg = { ...DEFAULTS, ...config };
+  const replyMarkup = config.replyMarkup || null;
 
   let previewMsgId = null;
   let lastSentText = "";
@@ -40,7 +42,8 @@ export function createStreamingPreview(ctx, chatId, config = {}) {
       previewMsgId = existingMsgId;
     } else {
       try {
-        const msg = await ctx.api.sendMessage(chatId, "⏳ 正在生成...");
+        const opts = replyMarkup ? { reply_markup: replyMarkup } : {};
+        const msg = await ctx.api.sendMessage(chatId, "⏳ 正在生成...", opts);
         previewMsgId = msg.message_id;
       } catch {
         degraded = true;
@@ -98,7 +101,8 @@ export function createStreamingPreview(ctx, chatId, config = {}) {
     if (pendingText === lastSentText) return;
 
     const textToSend = pendingText;
-    ctx.api.editMessageText(chatId, previewMsgId, textToSend)
+    const editOpts = replyMarkup ? { reply_markup: replyMarkup } : {};
+    ctx.api.editMessageText(chatId, previewMsgId, textToSend, editOpts)
       .then(() => {
         lastSentText = textToSend;
         lastSentAt = Date.now();
