@@ -1058,7 +1058,8 @@ async function processPrompt(ctx, prompt) {
   const adapter = getAdapter(chatId);
   const backendName = getBackendName(chatId);
   const verboseLevel = verboseSettings.get(chatId) ?? DEFAULT_VERBOSE;
-  const progress = createProgressTracker(ctx, chatId, verboseLevel, adapter.label);
+  const stopKeyboard = new InlineKeyboard().text("⏹ Stop", "stop");
+  const progress = createProgressTracker(ctx, chatId, verboseLevel, adapter.label, { replyMarkup: stopKeyboard });
   const taskId = createTask({
     chatId,
     backend: backendName,
@@ -1108,6 +1109,7 @@ async function processPrompt(ctx, prompt) {
           minDeltaChars: Number(process.env.STREAM_PREVIEW_MIN_DELTA_CHARS) || 20,
           maxChars: Number(process.env.STREAM_PREVIEW_MAX_CHARS) || 3900,
           activationChars: Number(process.env.STREAM_PREVIEW_ACTIVATION_CHARS) || 50,
+          replyMarkup: stopKeyboard,
         })
       : null;
     let previewActivated = false;
@@ -1501,6 +1503,21 @@ bot.command("cancel", async (ctx) => {
     await ctx.reply("⏹ 已发送中断信号，任务将尽快停止。");
   } else {
     await ctx.reply("当前没有正在执行的任务。");
+  }
+});
+
+// ── 按钮回调：Stop（一键停止，替代 /cancel） ──
+bot.callbackQuery("stop", async (ctx) => {
+  const chatId = ctx.chat.id;
+  const controller = chatAbortControllers.get(chatId);
+  if (controller) {
+    controller.abort();
+    chatAbortControllers.delete(chatId);
+    await ctx.answerCallbackQuery({ text: "⏹ 已停止" });
+    // 移除按钮，保留当前消息文本
+    await ctx.editMessageReplyMarkup({ reply_markup: undefined }).catch(() => {});
+  } else {
+    await ctx.answerCallbackQuery({ text: "没有运行中的任务" });
   }
 });
 
