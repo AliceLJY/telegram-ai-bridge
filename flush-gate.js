@@ -86,5 +86,18 @@ export function createFlushGate(options = {}) {
     return gates.get(chatId)?.buffer.length || 0;
   }
 
-  return { enqueue, isProcessing, getPendingCount };
+  /**
+   * 清空排队中的消息（不影响正在处理的任务）
+   * @param {number} chatId
+   * @returns {number} 被清除的消息数
+   */
+  function clearBuffer(chatId) {
+    const gate = gates.get(chatId);
+    if (!gate) return 0;
+    const count = gate.buffer.length;
+    gate.buffer.splice(0);
+    return count;
+  }
+
+  return { enqueue, isProcessing, getPendingCount, clearBuffer };
 }

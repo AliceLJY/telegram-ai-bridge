@@ -425,7 +425,10 @@ const flushGate = createFlushGate({
   batchDelayMs: 800,
   maxBufferSize: 5,
   onBuffered: async (chatId, ctx) => {
-    await ctx.reply("📥 已收到，会在当前任务完成后一起处理。").catch(() => {});
+    const kb = new InlineKeyboard()
+      .text("⏹ Stop", "stop")
+      .text("🗑 取消排队", "queue:clear");
+    await ctx.reply("📥 已收到，会在当前任务完成后一起处理。", { reply_markup: kb }).catch(() => {});
   },
 });
 const verboseSettings = new Map(); // chatId -> verboseLevel
@@ -1518,6 +1521,18 @@ bot.callbackQuery("stop", async (ctx) => {
     await ctx.editMessageReplyMarkup({ reply_markup: undefined }).catch(() => {});
   } else {
     await ctx.answerCallbackQuery({ text: "没有运行中的任务" });
+  }
+});
+
+// ── 按钮回调：取消排队消息 ──
+bot.callbackQuery("queue:clear", async (ctx) => {
+  const chatId = ctx.chat.id;
+  const cleared = flushGate.clearBuffer(chatId);
+  if (cleared > 0) {
+    await ctx.answerCallbackQuery({ text: `🗑 已取消 ${cleared} 条排队消息` });
+    await ctx.editMessageText(`🗑 已取消 ${cleared} 条排队消息。`).catch(() => {});
+  } else {
+    await ctx.answerCallbackQuery({ text: "队列已空" });
   }
 });
 
