@@ -947,6 +947,19 @@ function detectQuickReplies(text) {
     options.push(`${num}. ${label}`);
   }
   if (options.length >= 2 && options.length <= 6) {
+    // ── 过滤信息汇总类编号列表，只保留真正让用户选的 ──
+    // 选项含 bold/箭头/破折号 → 多半是汇总摘要不是选项
+    const hasSummaryMarker = options.some(o =>
+      /\*\*|→|——|—/.test(o)
+    );
+    if (hasSummaryMarker) return null;
+    // 编号列表前面没有问句/选择提示 → 大概率是汇总
+    const preBlock = breakIdx >= 0
+      ? text.slice(Math.max(0, breakIdx - 200), breakIdx)
+      : text.slice(-600, -300);
+    const choiceRe = /[？?]\s*$|选择|选哪|哪个|以下.*方案|你(?:想|要|觉得|看)|请(?:选|挑|决定)|pick|choose|which|prefer/i;
+    if (!choiceRe.test(preBlock)) return null;
+
     return options;
   }
   return null;
