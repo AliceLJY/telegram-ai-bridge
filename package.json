@@ -1,11 +1,11 @@
 {
   "name": "telegram-ai-bridge",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "Run one local AI coding agent behind one Telegram bot.",
   "type": "module",
   "main": "bridge.js",
   "bin": {
-    "telegram-ai-bridge": "./start.js"
+    "telegram-ai-bridge": "start.js"
   },
   "files": [
     "start.js",
