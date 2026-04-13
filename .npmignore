@@ -1,0 +1,23 @@
+# Dev / local files
+.env
+.env*
+!.env.example
+.DS_Store
+config.json
+config-*.json
+*.db
+*.db-wal
+*.db-shm
+*.log
+files/
+assets/
+shared-context.db
+shared-context.json
+plan.md
+plan-*.md
+research.md
+promo-post.md
+.claude/
+.github/
+node_modules/
+bun.lockb

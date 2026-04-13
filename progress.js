@@ -33,6 +33,44 @@ const SILENT_TOOLS = new Set([
 const MAX_ENTRIES = 15;
 const EDIT_THROTTLE_MS = 2000;
 
+/**
+ * 生成紧凑 inline diff 预览
+ * @param {object} input - Edit 工具的 input（含 old_string, new_string, file_path）
+ * @returns {string|null} 格式化的 diff 行，或 null
+ */
+function formatInlineDiff(input) {
+  if (!input?.old_string || !input?.new_string) return null;
+  const fileName = input.file_path ? input.file_path.split("/").pop() : "";
+  const oldLines = input.old_string.split("\n");
+  const newLines = input.new_string.split("\n");
+  const removed = oldLines.length;
+  const added = newLines.length;
+
+  // 取第一行有实际变化的内容做摘要
+  const oldSnippet = input.old_string.trim().split("\n")[0].slice(0, 40);
+  const newSnippet = input.new_string.trim().split("\n")[0].slice(0, 40);
+
+  let diff = `📄 ${fileName}  −${removed} +${added}`;
+  if (oldSnippet !== newSnippet) {
+    diff += `\n   − ${oldSnippet}`;
+    diff += `\n   + ${newSnippet}`;
+  }
+  return diff;
+}
+
+/**
+ * 格式化 Agent（子 agent）事件
+ * @param {object} input - Agent 工具的 input
+ * @returns {string} 显示文本
+ */
+function formatAgentEntry(input) {
+  const name = input?.name || input?.subagent_type || "";
+  const desc = input?.description || "";
+  const parts = [name, desc].filter(Boolean);
+  const label = parts.join(" — ").slice(0, 60);
+  return label || "subagent";
+}
+
 export function createProgressTracker(ctx, chatId, verboseLevel = 1, backendLabel = "CC", { replyMarkup = null } = {}) {
   let progressMsgId = null;
   let typingInterval = null;
@@ -40,13 +78,25 @@ export function createProgressTracker(ctx, chatId, verboseLevel = 1, backendLabe
   let lastEditTime = 0;
   let editTimer = null;
   let finished = false;
+  const startedAt = Date.now();
 
-  const headerText = `⏳ ${backendLabel} 正在处理...`;
+  function elapsedLabel() {
+    const sec = Math.round((Date.now() - startedAt) / 1000);
+    if (sec < 60) return `${sec}s`;
+    const min = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${min}m${s > 0 ? ` ${s}s` : ""}`;
+  }
+
+  const headerBase = `⏳ ${backendLabel} 正在处理`;
+  function headerText() {
+    return `${headerBase}... ⏱ ${elapsedLabel()}`;
+  }
 
   async function start() {
     try {
       const opts = replyMarkup ? { reply_markup: replyMarkup } : {};
-      const msg = await ctx.api.sendMessage(chatId, headerText, opts);
+      const msg = await ctx.api.sendMessage(chatId, headerText(), opts);
       progressMsgId = msg.message_id;
     } catch {
       // 发送失败不影响主流程
@@ -68,6 +118,24 @@ export function createProgressTracker(ctx, chatId, verboseLevel = 1, backendLabe
       const toolName = event.toolName || "action";
       if (SILENT_TOOLS.has(toolName)) return;
       const icon = TOOL_ICONS[toolName] || "🔧";
+
+      // ── 特殊工具：Edit → inline diff 预览 ──
+      if (toolName === "Edit" && event.input) {
+        const diff = formatInlineDiff(event.input);
+        if (diff) {
+          entries.push(`${icon} ${diff}`);
+          scheduleEdit();
+          return;
+        }
+      }
+
+      // ── 特殊工具：Agent → 子 agent 身份展示 ──
+      if (toolName === "Agent" && event.input) {
+        const label = formatAgentEntry(event.input);
+        entries.push(`${icon} Agent: ${label}`);
+        scheduleEdit();
+        return;
+      }
 
       if (verboseLevel >= 2 && event.input) {
         const input = typeof event.input === "object"
@@ -123,8 +191,8 @@ export function createProgressTracker(ctx, chatId, verboseLevel = 1, backendLabe
     lastEditTime = Date.now();
 
     const text = entries.length > 0
-      ? `${headerText}\n\n${entries.join("\n")}`
-      : headerText;
+      ? `${headerText()}\n\n${entries.join("\n")}`
+      : headerText();
 
     const editOpts = replyMarkup ? { reply_markup: replyMarkup } : {};
     ctx.api.editMessageText(chatId, progressMsgId, text, editOpts).catch(() => {});
