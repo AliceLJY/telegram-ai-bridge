@@ -2,11 +2,11 @@
 
 # telegram-ai-bridge
 
-**Full Claude Code. Everywhere. Anytime.**
+**Full Claude Code. On your phone. 4 agents in parallel.**
 
-*N parallel Claude Code sessions from your phone. Shared memory. War Room coordination. Always-on. Self-hosted.*
+*Run N independent Claude Code sessions from Telegram — shared memory, War Room coordination, screenshots & files flowing back. Always-on, self-hosted.*
 
-A self-hosted Telegram bridge that runs **actual Claude Code** — not an API wrapper — with full session management, multi-backend support (Claude + Codex + Gemini), and agent-to-agent collaboration.
+A self-hosted Telegram bridge that runs **actual Claude Code** — not an API wrapper — with persistent session management, multi-backend support (Claude + Codex + Gemini), and agent-to-agent collaboration.
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-3.0.0-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
@@ -112,6 +112,17 @@ Done discussing? `/export` dumps the entire cross-bot conversation as a Markdown
 
 macOS LaunchAgent or Docker keeps the bridge running in the background. Sessions persist in SQLite across restarts and reboots — pick up where you left off after a reboot, a network drop, or a flight. Code and credentials never leave your machine. Owner-only access by default.
 
+### Production-Grade Reliability
+
+Not a toy — built for all-day use:
+
+- **Send retry with backoff**: Exponential retry (3 attempts, 1s→2s→4s + jitter), auto-parse Telegram 429 rate limits, HTML→plaintext fallback on parse errors
+- **Sliding-window rate limiter**: Configurable per-chat throttle (default 10 req/60s), auto-cleanup of expired windows
+- **FlushGate message batching**: 800ms aggregation window (max 5 buffered), prevents rapid-fire messages from flooding the chat
+- **Graceful shutdown**: 25-second drain timeout for active queries, force-abort hung tasks, progress message cleanup
+- **Live streaming preview**: Real-time editMessage updates (2s throttle, 20-char min delta), tool call collapsing ("Bash x5" instead of 5 lines)
+- **Polling conflict recovery**: Automatic detection and backoff when multiple processes poll the same bot token
+
 > **Why this matters:** Claude's official tools give you one session, tied to a terminal. OpenClaw gives you one bot per session, isolated memory. This project gives you N parallel sessions with shared memory, persistent state, and full CC capabilities — the same productive workflow you have on desktop, now available everywhere you have Telegram.
 
 ---
@@ -185,8 +196,23 @@ Sessions are sticky: messages continue the current session until you explicitly 
 
 Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-control) (Feb 2026) and a [Telegram channel plugin](https://code.claude.com/docs/en/channels) (Mar 2026). Both let you talk to Claude from your phone. Neither gives you session management, multi-backend support, or agent-to-agent collaboration.
 
-| What you'd expect from phone control | [Remote Control](https://code.claude.com/docs/en/remote-control) | [Channels](https://code.claude.com/docs/en/channels) (TG plugin) | [OpenClaw](https://github.com/openclaw/openclaw) | This project |
-|---------------------------------------|:-:|:-:|:-:|:-:|
+| Key differentiator | Remote Control | Channels | OpenClaw | **This project** |
+|--------------------|:-:|:-:|:-:|:-:|
+| Parallel sessions | &mdash; | &mdash; | 1 bot = 1 session | **N bots, shared memory** |
+| Session management (new/resume/peek) | &mdash; | &mdash; | &mdash; | ✅ Full lifecycle |
+| Image & file output relay | Terminal only | &mdash; | &mdash; | ✅ Auto-sent to chat |
+| War Room (multi-agent) | &mdash; | &mdash; | &mdash; | ✅ @mention + shared context |
+| Multi-backend (Claude/Codex/Gemini) | Claude only | Claude only | Provider-locked | ✅ All three |
+| Always-on daemon | Terminal must stay open | Session-tied | Gateway | ✅ LaunchAgent / Docker |
+| Production reliability | &mdash; | &mdash; | &mdash; | ✅ Retry, rate-limit, drain |
+
+**What official tools do better:** Remote Control streams full terminal output. Channels relay tool-approval dialogs natively. This project optimizes for a different job: **persistent, multi-agent session management entirely from Telegram.**
+
+<details>
+<summary><strong>Full comparison (26 features)</strong></summary>
+
+| Feature | [Remote Control](https://code.claude.com/docs/en/remote-control) | [Channels](https://code.claude.com/docs/en/channels) (TG plugin) | [OpenClaw](https://github.com/openclaw/openclaw) | This project |
+|---------|:-:|:-:|:-:|:-:|
 | Parallel sessions (multi-instance)    | &mdash; | &mdash; | 1 bot = 1 session | **N bots, N parallel CC instances, shared memory** |
 | Create new sessions from phone        | &mdash; | &mdash; | &mdash; | `/new` |
 | Browse & resume past sessions         | &mdash; | &mdash; | &mdash; | `/sessions` `/resume` `/peek` |
@@ -211,9 +237,10 @@ Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-co
 | Shared context backend                | N/A | N/A | N/A | SQLite / JSON / Redis (pluggable) |
 | Task audit trail                      | &mdash; | &mdash; | &mdash; | SQLite: status, cost, duration, approval log |
 | Loop guard for bot-to-bot             | N/A | N/A | N/A | 5-layer: generation + cooldown + rate + dedup + AI |
+| Production reliability                | &mdash; | &mdash; | &mdash; | Exponential retry, rate-limit, FlushGate batching, graceful drain |
 | Stable release                        | Yes | Research preview | Yes | Yes (v3.0) |
 
-**What official tools do better:** Remote Control streams full terminal output. Channels relay tool-approval dialogs natively. Claude Code on the web provides cloud compute without local setup. This project optimizes for a different job: **persistent, multi-agent session management entirely from Telegram.**
+</details>
 
 <details>
 <summary><strong>Migrating from OpenClaw?</strong></summary>
