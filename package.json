@@ -4,6 +4,34 @@
   "description": "Run one local AI coding agent behind one Telegram bot.",
   "type": "module",
   "main": "bridge.js",
+  "bin": {
+    "telegram-ai-bridge": "./start.js"
+  },
+  "files": [
+    "start.js",
+    "bridge.js",
+    "config.js",
+    "sessions.js",
+    "progress.js",
+    "streaming-preview.js",
+    "send-retry.js",
+    "file-ref-protect.js",
+    "rate-limiter.js",
+    "shared-context.js",
+    "cron.js",
+    "adapters/",
+    "executor/",
+    "agent/",
+    "a2a/",
+    "shared-context/",
+    "scripts/",
+    "launchd/",
+    "config.example.json",
+    "README.md",
+    "README_CN.md",
+    "AGENTS.md",
+    "LICENSE"
+  ],
   "packageManager": "bun@1.3.9",
   "engines": {
     "bun": ">=1.3.9"
