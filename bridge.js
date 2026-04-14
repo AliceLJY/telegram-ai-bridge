@@ -44,6 +44,7 @@ import { runHealthCheck } from "./doctor.js";
 import { withRetry, classifyError } from "./send-retry.js";
 import { protectFileReferences } from "./file-ref-protect.js";
 import { createStreamingPreview } from "./streaming-preview.js";
+import { markdownToTelegramHTML, hasMarkdownFormatting } from "./markdown-to-tg.js";
 import { Database } from "bun:sqlite";
 
 // 防止嵌套检测（从 CC 内部启动时需要）
@@ -606,8 +607,15 @@ async function buildPromptWithContext(ctx, userPrompt) {
 
 async function sendLong(ctx, text) {
   text = protectFileReferences(text);
+  const useHTML = hasMarkdownFormatting(text);
   const maxLen = 4000;
   if (text.length <= maxLen) {
+    if (useHTML) {
+      return await withRetry(
+        () => ctx.reply(markdownToTelegramHTML(text), { parse_mode: "HTML" }),
+        { onParseFallback: () => ctx.reply(text) },
+      );
+    }
     return await ctx.reply(text);
   }
 
@@ -649,7 +657,14 @@ async function sendLong(ctx, text) {
   }
 
   for (const chunk of chunks) {
-    await ctx.reply(chunk);
+    if (useHTML) {
+      await withRetry(
+        () => ctx.reply(markdownToTelegramHTML(chunk), { parse_mode: "HTML" }),
+        { onParseFallback: () => ctx.reply(chunk) },
+      );
+    } else {
+      await ctx.reply(chunk);
+    }
   }
 }
 
@@ -1346,7 +1361,14 @@ async function processPrompt(ctx, prompt) {
           const cbData = `reply:${cbSuffix}`;
           kb.text(r, cbData);
         }
-        await ctx.reply(resultText, { reply_markup: kb });
+        if (hasMarkdownFormatting(resultText)) {
+          await withRetry(
+            () => ctx.reply(markdownToTelegramHTML(resultText), { reply_markup: kb, parse_mode: "HTML" }),
+            { onParseFallback: () => ctx.reply(resultText, { reply_markup: kb }) },
+          );
+        } else {
+          await ctx.reply(resultText, { reply_markup: kb });
+        }
       } else if (resultText.length > 4000 && estimateCodeRatio(resultText) > 0.6) {
         // 长代码输出 → 文件附件 + 摘要
         const ext = detectCodeLang(resultText) || "txt";
@@ -1354,11 +1376,8 @@ async function processPrompt(ctx, prompt) {
         const preview = resultText.slice(0, 300).replace(/```\w*\n?/, "");
         await ctx.reply(`${preview}\n\n📎 完整输出 (${resultText.length} 字符) 见附件`);
       } else if (resultText.length > 4000) {
-        // 长纯文本 → 摘要预览 + .md 文件附件
-        const cutAt = resultText.lastIndexOf("\n", 500);
-        const preview = resultText.slice(0, cutAt > 200 ? cutAt : 500);
-        await ctx.reply(`${preview}\n\n…\n\n📎 完整内容 (${resultText.length} 字符) 见附件`);
-        await tgSendDocument(chatId, Buffer.from(resultText, "utf-8"), "response.md");
+        // 长纯文本 → sendLong 分段发送，保持内联可读
+        await sendLong(ctx, resultText);
       } else {
         await sendLong(ctx, resultText);
       }
