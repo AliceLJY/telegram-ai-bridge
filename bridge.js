@@ -1125,6 +1125,9 @@ async function processPrompt(ctx, prompt) {
     const session = getSession(chatId);
     // 只复用同后端的 session
     const sessionId = (session && session.backend === backendName) ? session.session_id : null;
+    if (!sessionId) {
+      console.log(`[Session Debug] getSession(${chatId}) returned:`, JSON.stringify(session), `backendName=${backendName}`, session ? `backend match: ${session.backend === backendName}` : "no session");
+    }
 
     let capturedSessionId = sessionId || null;
     let resultText = "";
@@ -1271,7 +1274,10 @@ async function processPrompt(ctx, prompt) {
     // 存 session
     if (capturedSessionId) {
       const displayName = prompt.slice(0, 30);
+      console.log(`[Session Debug] Saving session: chatId=${chatId} sessionId=${capturedSessionId.slice(0, 8)}... backend=${backendName} (was=${sessionId?.slice(0, 8) || "null"})`);
       setSession(chatId, capturedSessionId, displayName, backendName, "owned");
+    } else {
+      console.log(`[Session Debug] NOT saving session: capturedSessionId is null/empty (original sessionId=${sessionId?.slice(0, 8) || "null"})`);
     }
 
     // 清理 streaming preview / progress 消息
