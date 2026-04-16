@@ -174,6 +174,7 @@ export function createAdapter(config = {}) {
         maxTurns: overrideMaxTurns,
         effort: overrideEffort,
         settingSources: overrideSettingSources,
+        systemAppend: overrideSystemAppend,
         ...restOverrides
       } = overrides;
       const model = (restOverrides.model && restOverrides.model !== "__default__") ? restOverrides.model : defaultModel;
@@ -201,12 +202,24 @@ export function createAdapter(config = {}) {
 
       if (sessionId) {
         options.resume = sessionId;
+        // 注意：systemAppend 不能注入 resume session，会被 SDK 忽略或覆盖首轮系统 prompt
+        // resume 沿用原 session 建立时的 system prompt；新 bridgeHint 更新不会即时生效
       } else {
         const effectiveSettings = overrideSettingSources || ["user", "project"];
         options.settingSources = effectiveSettings;
         // 防护：A2A 等轻量场景应使用空 settingSources，非空时打日志以便排查
         if (overrideAllowedTools && effectiveSettings.length > 0) {
           console.warn(`[Claude SDK] WARNING: new session with restricted tools but settingSources=${JSON.stringify(effectiveSettings)} — skills may leak`);
+        }
+        // Prompt Cache 稳定层：bridgeHint + 群聊 scaffold 注入到 system prompt append
+        // 走 Claude SDK preset 形式：claude_code 默认 system prompt + 我们的 append
+        // 跨轮不变 → Claude API 会命中 Prompt Cache（5min TTL）
+        if (overrideSystemAppend) {
+          options.systemPrompt = {
+            type: "preset",
+            preset: "claude_code",
+            append: overrideSystemAppend,
+          };
         }
       }
 
@@ -230,6 +243,7 @@ export function createAdapter(config = {}) {
         persistSession: options.persistSession,
         maxTurns: options.maxTurns,
         hasCanUseTool: !!options.canUseTool,
+        systemAppendLen: options.systemPrompt?.append?.length || 0,
       })}`);
 
       try {
@@ -242,6 +256,14 @@ export function createAdapter(config = {}) {
           delete freshOptions.resume;
           // 继承本次请求的 settingSources（A2A 传 [] 就保持 []，普通聊天没传就用默认值）
           freshOptions.settingSources = overrideSettingSources ?? ["user", "project"];
+          // resume 失败回退时也补上 systemAppend（此时是真正新 session，可以注入）
+          if (overrideSystemAppend) {
+            freshOptions.systemPrompt = {
+              type: "preset",
+              preset: "claude_code",
+              append: overrideSystemAppend,
+            };
+          }
           yield* this._runQuery(prompt, freshOptions, abortController);
         } else {
           throw err;
@@ -357,7 +379,11 @@ export function createAdapter(config = {}) {
 
         if (msg.type === "result") {
           const resultText = msg.subtype === "success" ? (msg.result || "") : (msg.errors || []).join("\n");
-          console.log(`[Claude SDK] result: subtype=${msg.subtype} cost=${msg.total_cost_usd} text=${resultText.slice(0, 200)}`);
+          // Prompt Cache 观测：cache_read_input_tokens > 0 = 命中，cache_creation_input_tokens > 0 = 建缓存
+          // 两层注入生效时，第二轮起稳定层（systemPrompt append）应出现 cache_read_input_tokens
+          const u = msg.usage || {};
+          const cacheInfo = `input=${u.input_tokens ?? 0} output=${u.output_tokens ?? 0} cacheRead=${u.cache_read_input_tokens ?? 0} cacheCreate=${u.cache_creation_input_tokens ?? 0}`;
+          console.log(`[Claude SDK] result: subtype=${msg.subtype} cost=${msg.total_cost_usd} ${cacheInfo} text=${resultText.slice(0, 200)}`);
 
           // SDK 把 API 400 错误当 "success" 返回，需要检测并抛出让上层重试
           if (resultText.startsWith("API Error:") && /invalid.*signature|invalid_request_error/i.test(resultText)) {
