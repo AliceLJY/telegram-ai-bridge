@@ -14,7 +14,7 @@ if (!process.env.CLAUDE_CODE_ENTRYPOINT) {
 }
 
 export function createAdapter(config = {}) {
-  const defaultModel = config.model || process.env.CC_MODEL || "claude-sonnet-4-6";
+  const defaultModel = config.model || process.env.CC_MODEL || "claude-sonnet-4-7";
   const cwd = config.cwd || process.env.CC_CWD || process.env.HOME;
   const permMode = process.env.CC_PERMISSION_MODE || "default";
 
@@ -139,6 +139,8 @@ export function createAdapter(config = {}) {
     availableModels() {
       return [
         { id: "__default__", label: `默认 (${defaultModel})` },
+        { id: "claude-sonnet-4-7", label: "Sonnet 4.7" },
+        { id: "claude-opus-4-7", label: "Opus 4.7" },
         { id: "claude-sonnet-4-6", label: "Sonnet 4.6" },
         { id: "claude-opus-4-6", label: "Opus 4.6" },
         { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5" },
@@ -147,10 +149,11 @@ export function createAdapter(config = {}) {
 
     availableEfforts() {
       return [
-        { id: "__default__", label: "默认 (high)", description: "标准思考深度" },
+        { id: "__default__", label: `默认 (${process.env.DEFAULT_EFFORT || "high"})`, description: "标准思考深度" },
         { id: "low", label: "Low", description: "最快速，轻量思考" },
         { id: "medium", label: "Medium", description: "中等思考深度" },
         { id: "high", label: "High ✦", description: "标准深度思考" },
+        { id: "xhigh", label: "XHigh", description: "超深度思考" },
         { id: "max", label: "Max", description: "最深度思考（仅 Opus）" },
       ];
     },
