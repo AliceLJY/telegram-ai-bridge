@@ -35,7 +35,7 @@
       "enabled": true,
       "telegramBotToken": "123456:replace-me",
       "sessionsDb": "sessions.db",
-      "model": "claude-sonnet-4-6",
+      "model": "claude-sonnet-4-7",
       "permissionMode": "default"
     },
     "codex": {
