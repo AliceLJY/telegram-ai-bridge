@@ -71,6 +71,7 @@ const GROUP_CONTEXT_MAX_TOKENS = Number(process.env.GROUP_CONTEXT_MAX_TOKENS || 
 const GROUP_CONTEXT_TTL_MS = Number(process.env.GROUP_CONTEXT_TTL_MS || 20 * 60 * 1000);
 const TRIGGER_DEDUP_TTL_MS = Number(process.env.TRIGGER_DEDUP_TTL_MS || 5 * 60 * 1000);
 const WATCHDOG_WARN_MS = 15 * 60 * 1000; // 15 分钟软日志（不 abort、不发 TG 消息）
+const DEFAULT_EFFORT = process.env.DEFAULT_EFFORT || "";
 const EXECUTOR_MODE = String(process.env.BRIDGE_EXECUTOR || "direct").trim().toLowerCase();
 // 共享上下文配置（可插拔后端）
 const sharedContextConfig = {
@@ -1174,7 +1175,7 @@ async function processPrompt(ctx, prompt) {
     }, WATCHDOG_WARN_MS);
 
     const modelOverride = getChatModel(chatId);
-    const effortOverride = getChatEffort(chatId);
+    const effortOverride = getChatEffort(chatId) || DEFAULT_EFFORT || null;
     const chatCwd = dirManager.current(chatId);
     const streamOverrides = {
       ...(modelOverride ? { model: modelOverride } : {}),
@@ -1730,7 +1731,7 @@ bot.command("status", async (ctx) => {
   const session = getSession(ctx.chat.id);
   const verbose = verboseSettings.get(ctx.chat.id) ?? DEFAULT_VERBOSE;
   const modelOverride = getChatModel(ctx.chat.id);
-  const effortOverride = getChatEffort(ctx.chat.id);
+  const effortOverride = getChatEffort(ctx.chat.id) || DEFAULT_EFFORT || null;
   const info = adapter.statusInfo(modelOverride, effortOverride);
   const activeTask = getActiveTask(ctx.chat.id);
 
@@ -1759,7 +1760,7 @@ bot.command("status", async (ctx) => {
     `执行器: ${executor.label} (${executor.name})\n` +
     `模式: ${info.mode}\n` +
     `模型: ${info.model}\n` +
-    `思考深度: ${info.effort || "默认 (high)"}\n` +
+    `思考深度: ${info.effort || DEFAULT_EFFORT || "默认 (high)"}\n` +
     `工作目录: ${dirManager.current(ctx.chat.id)}\n` +
     `${sessionLine}${sessionMetaLine}${resumeHint}\n` +
     `进度详细度: ${verbose}（0=关/1=工具名/2=详细）` +
@@ -1908,16 +1909,17 @@ bot.command("effort", async (ctx) => {
         { id: "high", label: "High", description: "深度思考" },
       ];
   const currentEffort = getChatEffort(ctx.chat.id);
+  const effectiveEffort = currentEffort || DEFAULT_EFFORT || null;
   const arg = ctx.match?.trim();
 
   if (!arg) {
     const kb = new InlineKeyboard();
     for (const e of effortLevels) {
-      const isCurrent = (e.id === "__default__" && !currentEffort) || (e.id === currentEffort);
+      const isCurrent = (e.id === "__default__" && !effectiveEffort) || (e.id === effectiveEffort);
       const mark = isCurrent ? " ✦" : "";
       kb.text(`${e.label}${mark}`, `effort:${e.id}`).row();
     }
-    const displayEffort = currentEffort || effortLevels[0]?.label || "默认";
+    const displayEffort = effectiveEffort || effortLevels[0]?.label || "默认";
     await ctx.reply(`${adapter.icon} 当前思考深度: ${displayEffort}\n选择深度：`, { reply_markup: kb });
     return;
   }
@@ -2173,7 +2175,7 @@ bot.callbackQuery(/^resume:/, async (ctx) => {
 
   const adapter = adapters[backend];
   const icon = adapter?.icon || "🟣";
-  const adapterInfo = adapter ? adapter.statusInfo(getChatModel(ctx.chat.id), getChatEffort(ctx.chat.id)) : { cwd: CC_CWD };
+  const adapterInfo = adapter ? adapter.statusInfo(getChatModel(ctx.chat.id), getChatEffort(ctx.chat.id) || DEFAULT_EFFORT || null) : { cwd: CC_CWD };
   const sessionMeta = adapter?.resolveSession ? await adapter.resolveSession(sessionId) : null;
   setSession(
     ctx.chat.id,
