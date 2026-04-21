@@ -3,6 +3,7 @@
 > **Status:** draft · 2026-04 · living document
 > **Scope:** the `a2a/` package inside [telegram-ai-bridge](https://github.com/AliceLJY/telegram-ai-bridge)
 > **Relation to official A2A:** inspired by, not compatible with. See [§7 Relation to official A2A](#7-relation-to-official-a2a).
+> **中文：** [a2a-tg-v1_CN.md](a2a-tg-v1_CN.md)
 
 ## 0. Why a separate protocol
 
