@@ -58,6 +58,37 @@ if (!Number.isInteger(OWNER_ID)) {
   process.exit(1);
 }
 const PROXY = process.env.HTTPS_PROXY;
+// [mini-patch] 全局 fetch monkey patch：bun 下强制走代理 + 打印调试
+if (typeof Bun !== "undefined" && PROXY) {
+  const orig = globalThis.fetch;
+  globalThis.fetch = (url, opts = {}) => {
+    const hasProxy = !!opts.proxy;
+    const u = typeof url === "string" ? url : (url?.url || String(url));
+    if (!hasProxy && /telegram\.org|twttr|api\./.test(u)) {
+      console.error("[fetch-patch] forcing proxy for", u);
+      return orig(url, { ...opts, proxy: PROXY });
+    }
+    return orig(url, opts);
+  };
+  console.error("[fetch-patch] bun + HTTPS_PROXY detected, global fetch wrapped");
+}
+// [mini-patch] codex 0.121 picker 过滤 source=exec 的 session。
+// bridge 用 SDK 创建的 session 默认被 picker 隐身，每次 save 后把 state DB 里的 exec 改成 cli。
+function patchCodexStateDb() {
+  try {
+    const dbPath = join(process.env.HOME, ".codex", "state_5.sqlite");
+    if (!existsSync(dbPath)) return;
+    const db = new Database(dbPath);
+    const r = db.prepare("UPDATE threads SET source = 'cli' WHERE source = 'exec'").run();
+    db.close();
+    if (r.changes > 0) {
+      console.log(`[codex-state-patch] reclassified ${r.changes} exec session(s) as cli`);
+    }
+  } catch (e) {
+    console.error("[codex-state-patch] failed:", e.message);
+  }
+}
+
 const CC_CWD = process.env.CC_CWD || process.env.HOME;
 const DEFAULT_VERBOSE = Number(process.env.DEFAULT_VERBOSE_LEVEL || 1);
 const DEFAULT_BACKEND = process.env.DEFAULT_BACKEND || "claude";
@@ -367,8 +398,10 @@ if (!TOKEN || TOKEN.includes("BotFather")) {
 }
 
 // ── 代理 ──
+// [mini-patch] bun fetch 用 proxy 字段，不用 agent；node 仍用 HttpsProxyAgent
+const IS_BUN = typeof Bun !== "undefined";
 const fetchOptions = PROXY
-  ? { agent: new HttpsProxyAgent(PROXY) }
+  ? (IS_BUN ? { proxy: PROXY } : { agent: new HttpsProxyAgent(PROXY) })
   : {};
 
 // ── Bot 初始化 ──
@@ -1295,6 +1328,9 @@ async function processPrompt(ctx, prompt) {
       const displayName = prompt.slice(0, 30);
       console.log(`[Session Debug] Saving session: chatId=${chatId} sessionId=${capturedSessionId.slice(0, 8)}... backend=${backendName} (was=${sessionId?.slice(0, 8) || "null"})`);
       setSession(chatId, capturedSessionId, displayName, backendName, "owned");
+      if (backendName === "codex") {
+        setTimeout(patchCodexStateDb, 1000);
+      }
     } else {
       console.log(`[Session Debug] NOT saving session: capturedSessionId is null/empty (original sessionId=${sessionId?.slice(0, 8) || "null"})`);
     }
