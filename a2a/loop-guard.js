@@ -1,9 +1,20 @@
-// A2A Loop Guard — 五层防死循环
-// 1. Generation 计数器（硬编码 >= 2 丢弃）
-// 2. Cooldown（响应 A2A 后冷却期）
-// 3. Rate limit（每 chat 每窗口最多 N 次）
-// 4. Idempotency（SHA-256 去重）
-// 5. AI 自主判断（在 prompt 层实现，不在这里）
+// A2A Loop Guard — 防死循环组件
+//
+// 当前实际生效的层（配合 envelope.js / bridge.js）：
+//   - Generation 计数器（硬编码 >= 2 丢弃）
+//   - Idempotency（SHA-256 指纹去重）
+//
+// 预留但未接入的层（recordResponse 未被调用者调用）：
+//   - Cooldown（响应 A2A 后冷却期）
+//   - Rate limit（每 chat 每窗口最多 N 次）
+//
+// 为什么预留不接入：bridge.js:311 采取"响应后不再回注 A2A 总线"的策略，
+//   已从源头切断 bot-to-bot 乒乓链，精细化 cooldown/rate-limit 不再需要。
+//   保留代码与 stats 字段作为未来重新启用 re-broadcast 场景时的 hook。
+//
+// 其他层在别处实现：
+//   - AI 自主判断（bridge.js 的 [NO_RESPONSE] prompt 约定）
+//   - Peer 熔断（peer-health.js）
 
 import { IdempotencyStore, createFingerprint } from "./idempotency.js";
 
