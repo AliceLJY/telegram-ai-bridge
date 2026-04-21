@@ -24,8 +24,8 @@ Forcing the official A2A shape onto this scenario would discard features we actu
 
 - **Protocol name:** A2A-TG
 - **Version:** 1 (this document)
-- **On-wire version tag:** `a2a/v1`
-  - *Historical note:* the current implementation emits `protocol_version: "a2a/v1"` on the envelope. A future v1.1 will migrate to `a2a-tg/v1` to avoid any visual confusion with official A2A payloads. Until then, readers should treat `a2a/v1` **on the `/a2a/message` transport defined below** as A2A-TG, not official A2A.
+- **On-wire version tag:** `a2a-tg/v1` (current, as of v1.1)
+  - *Historical note:* v1.0 shipped with `protocol_version: "a2a/v1"`. v1.1 bumps the on-wire tag to `a2a-tg/v1` so the protocol is self-identifying and cannot be visually confused with official A2A payloads. The validator still accepts the legacy `a2a/v1` tag during a compatibility window (at least two minor versions) and emits a one-time deprecation log per legacy tag — this prevents running bot instances from rejecting each other mid-rollout. Either way, treat envelopes on the `/a2a/message` transport defined below as A2A-TG, not official A2A.
 - **Package path:** `a2a/` inside telegram-ai-bridge
 
 ## 2. Envelope
@@ -34,7 +34,7 @@ One A2A-TG message is one JSON object with the following fields. Source of truth
 
 | Field                  | Type    | Required | Notes |
 |------------------------|---------|----------|-------|
-| `protocol_version`     | string  | yes      | `"a2a/v1"` (see §1) |
+| `protocol_version`     | string  | yes      | `"a2a-tg/v1"` on all outbound envelopes. The validator also accepts the legacy `"a2a/v1"` tag during the v1.0 → v1.1 compatibility window, logging a one-time deprecation warning per legacy tag. See §1. |
 | `message_id`           | string  | yes      | `{timestamp_hex}-{12 hex chars}`, time-ordered, globally unique per sender |
 | `idempotency_key`      | string  | yes      | Same format as `message_id`; consumers dedupe on this |
 | `correlation_id`       | string? | no       | Optional; groups related turns in one logical conversation |
@@ -52,7 +52,7 @@ One A2A-TG message is one JSON object with the following fields. Source of truth
 
 ```json
 {
-  "protocol_version": "a2a/v1",
+  "protocol_version": "a2a-tg/v1",
   "message_id": "18f3a1c9b24-a1b2c3d4e5f6",
   "idempotency_key": "18f3a1c9b24-7890abcdef12",
   "correlation_id": null,
@@ -178,5 +178,5 @@ Interop path if ever needed: write a separate `a2a-tg ↔ official-a2a` adapter.
 
 | Version | Date     | Notes |
 |---------|----------|-------|
-| v1      | 2026-04  | Initial draft. Matches the implementation in telegram-ai-bridge 3.1.0. |
-| v1.1    | planned  | Bump on-wire `protocol_version` from `a2a/v1` to `a2a-tg/v1` for clearer identity. No semantic changes. |
+| v1      | 2026-04  | Initial draft. Matches the implementation in telegram-ai-bridge 3.1.0. On-wire tag: `a2a/v1`. |
+| v1.1    | 2026-04-21 | On-wire `protocol_version` bumped from `a2a/v1` to `a2a-tg/v1` for self-identifying identity. No semantic / field-level changes. The validator accepts both tags during a compatibility window of at least two minor versions and logs a one-time deprecation warning per legacy tag, so running bot instances do not reject each other mid-rollout. |

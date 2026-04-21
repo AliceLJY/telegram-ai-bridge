@@ -3,6 +3,26 @@
 
 import crypto from "node:crypto";
 
+/**
+ * 协议版本标签。
+ * - CURRENT_PROTOCOL_VERSION：出站消息使用的当前 tag。
+ * - ACCEPTED_PROTOCOL_VERSIONS：入站 validateEnvelope 接受的 tag 集合。
+ *
+ * v1.1 把线上 tag 从 "a2a/v1" bump 到 "a2a-tg/v1"，让协议身份自证，
+ * 跟官方 A2A 视觉上不再混淆。过渡期（至少保留两个次版本号的兼容窗口）
+ * 内继续接受旧 tag，并在命中旧 tag 时打一次 deprecation 日志，以免所有
+ * 在跑的 bot 实例升级前互相拒收。语义/字段均无变化，仅字符串替换。
+ */
+export const CURRENT_PROTOCOL_VERSION = "a2a-tg/v1";
+export const LEGACY_PROTOCOL_VERSIONS = ["a2a/v1"];
+export const ACCEPTED_PROTOCOL_VERSIONS = [
+  CURRENT_PROTOCOL_VERSION,
+  ...LEGACY_PROTOCOL_VERSIONS,
+];
+
+// 已打过 deprecation 日志的旧 tag 集合，避免同一 tag 刷屏。
+const warnedLegacyVersions = new Set();
+
 /** 生成时间有序唯一 ID: {timestamp_hex}-{random12} */
 export function generateId() {
   const timestampHex = Date.now().toString(16);
@@ -25,7 +45,7 @@ export function generateId() {
  */
 export function createEnvelope(opts) {
   return {
-    protocol_version: "a2a/v1",
+    protocol_version: CURRENT_PROTOCOL_VERSION,
     message_id: generateId(),
     idempotency_key: generateId(),
     correlation_id: opts.correlationId || null,
@@ -48,9 +68,18 @@ export function validateEnvelope(envelope, config = {}) {
   const maxGeneration = config.maxGeneration ?? 2;
   const maxPayloadBytes = config.maxPayloadBytes ?? 2 * 1024 * 1024;
 
-  // 协议版本
-  if (envelope.protocol_version !== "a2a/v1") {
+  // 协议版本：接受当前 tag + 过渡期内的旧 tag。命中旧 tag 时每个 tag 打一次 deprecation 日志。
+  if (!ACCEPTED_PROTOCOL_VERSIONS.includes(envelope.protocol_version)) {
     return { code: "INVALID_VERSION", message: `Unsupported protocol: ${envelope.protocol_version}` };
+  }
+  if (
+    LEGACY_PROTOCOL_VERSIONS.includes(envelope.protocol_version) &&
+    !warnedLegacyVersions.has(envelope.protocol_version)
+  ) {
+    warnedLegacyVersions.add(envelope.protocol_version);
+    console.warn(
+      `[a2a] deprecation: protocol_version "${envelope.protocol_version}" is legacy, migrate to "${CURRENT_PROTOCOL_VERSION}"`,
+    );
   }
 
   // 必填字段
