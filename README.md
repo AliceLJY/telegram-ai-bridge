@@ -236,7 +236,7 @@ Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-co
 | Group context compression             | N/A | N/A | N/A | 3-tier: recent full / middle truncated / old keywords |
 | Shared context backend                | N/A | N/A | N/A | SQLite / JSON / Redis (pluggable) |
 | Task audit trail                      | &mdash; | &mdash; | &mdash; | SQLite: status, cost, duration, approval log |
-| Loop guard for bot-to-bot             | N/A | N/A | N/A | 5-layer: generation + cooldown + rate + dedup + AI |
+| Loop guard for bot-to-bot             | N/A | N/A | N/A | 5-layer: generation cap + AI self-decline + no-rebroadcast + idempotency + circuit breaker |
 | Production reliability                | &mdash; | &mdash; | &mdash; | Exponential retry, rate-limit, FlushGate batching, graceful drain |
 | Stable release                        | Yes | Research preview | Yes | Yes (v3.0) |
 
@@ -315,11 +315,14 @@ Claude: [responds with retry pattern advice]
 Codex:  [reads Claude's reply, adds: "I'd also suggest exponential backoff..."]
 ```
 
-Built-in safety:
-- **Loop guard**: Max 2 generations of bot-to-bot replies per conversation turn
-- **Cooldown**: 60s minimum between A2A responses per bot
-- **Circuit breaker**: Auto-disables unreachable peers after 3 failures
-- **Rate limit**: Max 3 A2A responses per 5-minute window
+Built-in safety — 5 layers of defense in depth:
+- **Generation cap**: Envelopes with `generation >= 2` are rejected at the validator — user prompts are gen 0, bot replies are gen 1, so any further rebroadcast gets dropped
+- **AI self-decline**: Each bot's prompt lets it reply `[NO_RESPONSE]` when it has nothing useful to add, skipping the turn on its own
+- **No-rebroadcast policy**: A2A responses write to shared context and send to TG directly — they don't re-enter the A2A bus, breaking the ping-pong chain at the source
+- **Idempotency dedup**: SHA-256 fingerprint of `{chat_id, sender, content}` with 300s TTL rejects duplicate envelopes
+- **Peer circuit breaker**: Peers that fail 3 times in a row are marked unavailable until health recovers
+
+> `loop-guard.js` also keeps cooldown and per-window rate-limit fields as reserved hooks — not currently wired, because the no-rebroadcast policy already covers loop prevention.
 
 > **Important:** A2A only works in group chats. Private/DM conversations are never broadcast — this prevents cross-bot message leaking between separate DM windows.
 

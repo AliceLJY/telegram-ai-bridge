@@ -234,7 +234,7 @@ Claude Code 先后上线了 [Remote Control](https://code.claude.com/docs/en/rem
 | 群聊上下文压缩 | N/A | N/A | N/A | 三级：近期原文 / 中期截断 / 远期关键词 |
 | 共享上下文后端 | N/A | N/A | N/A | SQLite / JSON / Redis（可插拔） |
 | 任务审计追踪 | &mdash; | &mdash; | &mdash; | SQLite：状态、费用、耗时、审批记录 |
-| bot 间对话防环 | N/A | N/A | N/A | 五层：代数 + 冷却 + 限速 + 去重 + AI 判断 |
+| bot 间对话防环 | N/A | N/A | N/A | 五层：代数上限 + AI 自我拒答 + 不再广播 + 指纹去重 + peer 熔断 |
 | 生产级可靠性 | &mdash; | &mdash; | &mdash; | 指数重试、滑动窗口限频、FlushGate 聚合、优雅排空 |
 | 稳定版本 | 是 | research preview | 是 | 是（v3.0） |
 
@@ -313,11 +313,14 @@ Claude: [给出重试建议]
 Codex:  [读到 Claude 的回复，补充："我建议再加个指数退避..."]
 ```
 
-内置安全机制：
-- **防死循环**：每轮对话最多 2 代 bot-to-bot 回复
-- **冷却期**：每个 bot 的 A2A 响应间隔至少 60 秒
-- **熔断器**：连续 3 次失败自动屏蔽不可达的 peer
-- **限流**：每 5 分钟窗口最多 3 次 A2A 响应
+内置安全机制——五层纵深防御：
+- **代数上限**：`generation >= 2` 的信封在验证器直接拒收——用户触发 = 0，bot 回复 = 1，再往上的 re-broadcast 直接被丢
+- **AI 自我拒答**：bot prompt 允许回 `[NO_RESPONSE]` 表示"没什么要说的"，自己跳过这一轮
+- **不再广播策略**：A2A 响应只写共享上下文 + 发 TG，不再回注 A2A 总线——从源头切断乒乓链
+- **指纹去重**：`{chat_id, sender, content}` 的 SHA-256 指纹 + 300 秒 TTL，拒收重复信封
+- **Peer 熔断**：连续 3 次失败的 peer 自动屏蔽，直到健康检查恢复
+
+> `loop-guard.js` 里还保留了 cooldown 和窗口限流两个预留 hook——当前不接入，因为"不再广播策略"已经覆盖了死循环防护需求。
 
 > **重要：A2A 仅在群聊中生效。** 私聊/DM 消息不会被广播——防止不同 DM 窗口之间的消息泄漏。
 
