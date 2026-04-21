@@ -7,7 +7,7 @@
 *Claude Code、Codex、Gemini 各自独立的全栈 bot，通过 IM 原生的封装协议（A2A-TG）协作，带硬性代际计数防死循环。常驻运行，自托管，只有你本人能触发。*
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-3.1.0-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
+[![Version](https://img.shields.io/badge/version-4.1.0-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
 [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)
 [![Telegram](https://img.shields.io/badge/Interface-Telegram-26A5E4?logo=telegram)](https://telegram.org/)
 [![A2A-TG spec](https://img.shields.io/badge/A2A--TG-v1-8a2be2)](docs/a2a-tg-v1.md)
@@ -252,7 +252,7 @@ Claude Code 先后上线了 [Remote Control](https://code.claude.com/docs/en/rem
 | 任务审计追踪 | &mdash; | &mdash; | &mdash; | SQLite：状态、费用、耗时、审批记录 |
 | bot 间对话防环 | N/A | N/A | N/A | 五层：代数上限 + AI 自我拒答 + 不再广播 + 指纹去重 + peer 熔断 |
 | 生产级可靠性 | &mdash; | &mdash; | &mdash; | 指数重试、滑动窗口限频、FlushGate 聚合、优雅排空 |
-| 稳定版本 | 是 | research preview | 是 | 是（v3.1） |
+| 稳定版本 | 是 | research preview | 是 | 是（v4.1） |
 
 </details>
 

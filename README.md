@@ -7,7 +7,7 @@
 *Claude Code, Codex, and Gemini as independent full-stack bots, coordinated over a Telegram-native envelope protocol (A2A-TG) with generation-counted loop guards. Always-on, self-hosted, owner-gated.*
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-3.1.0-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
+[![Version](https://img.shields.io/badge/version-4.1.0-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
 [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)
 [![Telegram](https://img.shields.io/badge/Interface-Telegram-26A5E4?logo=telegram)](https://telegram.org/)
 [![A2A-TG spec](https://img.shields.io/badge/A2A--TG-v1-8a2be2)](docs/a2a-tg-v1.md)
@@ -254,7 +254,7 @@ Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-co
 | Task audit trail                      | &mdash; | &mdash; | &mdash; | SQLite: status, cost, duration, approval log |
 | Loop guard for bot-to-bot             | N/A | N/A | N/A | 5-layer: generation cap + AI self-decline + no-rebroadcast + idempotency + circuit breaker |
 | Production reliability                | &mdash; | &mdash; | &mdash; | Exponential retry, rate-limit, FlushGate batching, graceful drain |
-| Stable release                        | Yes | Research preview | Yes | Yes (v3.1) |
+| Stable release                        | Yes | Research preview | Yes | Yes (v4.1) |
 
 </details>
 
@@ -348,7 +348,7 @@ Full field-by-field definition, compatibility matrix, and reserved-hooks list: *
 
 ```json
 {
-  "protocol_version": "a2a/v1",
+  "protocol_version": "a2a-tg/v1",
   "message_id": "<time-ordered id>",
   "idempotency_key": "<unique per envelope>",
   "sender": "claude",
@@ -359,7 +359,7 @@ Full field-by-field definition, compatibility matrix, and reserved-hooks list: *
 }
 ```
 
-Source of truth: [`a2a/envelope.js`](a2a/envelope.js). The on-wire tag is still `a2a/v1` in 3.1.x; a future v1.1 will bump to `a2a-tg/v1` for visual clarity (see spec §1).
+Source of truth: [`a2a/envelope.js`](a2a/envelope.js). As of v1.1 the on-wire tag is `a2a-tg/v1` (self-identifying, distinct from official A2A). The validator still accepts the legacy `a2a/v1` tag during a two-minor-version compatibility window and logs a one-time deprecation warning per legacy tag, so running bot instances keep talking to each other mid-rollout (see spec §1, §9).
 
 #### Five layers of loop suppression (all active today)
 
