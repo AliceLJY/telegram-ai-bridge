@@ -2,25 +2,26 @@
 
 # telegram-ai-bridge
 
-**Full Claude Code. On your phone. 4 agents in parallel.**
+**Heterogeneous AI agents talking to each other in a Telegram group — with real loop-suppression, not just "put two bots in a chat."**
 
-*Run N independent Claude Code sessions from Telegram — shared memory, War Room coordination, screenshots & files flowing back. Always-on, self-hosted.*
-
-A self-hosted Telegram bridge that runs **actual Claude Code** — not an API wrapper — with persistent session management, multi-backend support (Claude + Codex + Gemini), and agent-to-agent collaboration.
+*Claude Code, Codex, and Gemini as independent full-stack bots, coordinated over a Telegram-native envelope protocol (A2A-TG) with generation-counted loop guards. Always-on, self-hosted, owner-gated.*
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-3.0.0-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
+[![Version](https://img.shields.io/badge/version-3.1.0-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
 [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)
 [![Telegram](https://img.shields.io/badge/Interface-Telegram-26A5E4?logo=telegram)](https://telegram.org/)
+[![A2A-TG spec](https://img.shields.io/badge/A2A--TG-v1-8a2be2)](docs/a2a-tg-v1.md)
 [![GitHub stars](https://img.shields.io/github/stars/AliceLJY/telegram-ai-bridge)](https://github.com/AliceLJY/telegram-ai-bridge)
 
 **English** | [简体中文](README_CN.md)
 
 </div>
 
+> **On the A2A name.** The [A2A protocol](https://a2a-protocol.org) was originally proposed by Google and is now a Linux Foundation project. This repository ships **A2A-TG** — an IM-scenario envelope inspired by A2A with generation-based loop suppression and chat-scoped idempotency. A2A-TG is **not** compatible with official A2A and is not affiliated with the official project. See the [A2A-TG v1 spec](docs/a2a-tg-v1.md).
+
 > Remote Control = your phone *watches* the terminal.
 > Channels = the terminal *receives* phone messages.
-> **This project = your phone IS the terminal.**
+> **This project = heterogeneous agents collaborating in a group chat, and the chat IS the terminal.**
 
 ```
 You:      @cc-alpha Analyze this API design
@@ -39,6 +40,19 @@ Delta:    [reads full context, commits]
 **4 agents, 1 group, shared memory, zero noise.** The same workflow that takes 4 terminal windows on your desk — now fits in your pocket.
 
 <img src="assets/war-room-demo.png" alt="War Room — 4 CC bots processing in parallel" width="600">
+
+---
+
+## Pick your path
+
+Four different jobs this project does. Each entry point is independent — you do not need to read the whole README to use one mode.
+
+| If you want to…                                                        | Start here                                         | Core tech                         |
+|------------------------------------------------------------------------|----------------------------------------------------|-----------------------------------|
+| **Control one Claude Code from your phone**                            | [Quick Start](#quick-start)                        | Single bot, Agent SDK             |
+| **Run N parallel Claude sessions with shared memory (War Room)**       | [Parallel Sessions](#parallel-sessions--desktop-power-phone-form-factor) → [Multi-Instance Deployment](#multi-instance-deployment) | @mention dispatch + Redis shared context |
+| **Let Claude and Codex actively talk to each other in a group**        | [A2A-TG: Heterogeneous agents in one group chat](#a2a-tg-heterogeneous-agents-in-one-group-chat) | A2A-TG envelope + 5-layer loop guard |
+| **Read the protocol / embed A2A-TG in your own bot**                   | [A2A-TG v1 spec](docs/a2a-tg-v1.md)                | HTTP/JSON envelope, generation cap |
 
 ---
 
@@ -160,7 +174,9 @@ Supported backends:
 |---------|-----|--------|
 | `claude` | Claude Code (via Agent SDK) | Recommended |
 | `codex` | Codex CLI (via Codex SDK) | Recommended |
-| `gemini` | Gemini Code Assist API | Experimental |
+| `gemini` | Gemini Code Assist API | The "quiet scribe" — see note below |
+
+> **Gemini's niche in this setup.** The Gemini backend is best used as an overnight note-taker in a multi-agent group: let Claude and Codex brainstorm, and have Gemini read along and summarize the conversation on a schedule. It is the least chatty of the three backends, which turns out to be a fit for that role. *Nothing in the code enforces a read-only mode* — you shape the behavior through the per-bot `CLAUDE.md` / prompt. It runs through Gemini Code Assist API, not a full CLI terminal, so capabilities are narrower than Claude Code or Codex.
 
 > **Core rule:** One bot = one process = one independent agent. Run as many as you need.
 
@@ -238,7 +254,7 @@ Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-co
 | Task audit trail                      | &mdash; | &mdash; | &mdash; | SQLite: status, cost, duration, approval log |
 | Loop guard for bot-to-bot             | N/A | N/A | N/A | 5-layer: generation cap + AI self-decline + no-rebroadcast + idempotency + circuit breaker |
 | Production reliability                | &mdash; | &mdash; | &mdash; | Exponential retry, rate-limit, FlushGate batching, graceful drain |
-| Stable release                        | Yes | Research preview | Yes | Yes (v3.0) |
+| Stable release                        | Yes | Research preview | Yes | Yes (v3.1) |
 
 </details>
 
@@ -304,29 +320,62 @@ Set `sharedContextBackend` in `config.json`:
 
 > **Note:** Bots only respond when explicitly @mentioned or replied to. They don't auto-reply to each other.
 
-### A2A: Agent-to-Agent Communication
+### A2A-TG: Heterogeneous agents in one group chat
 
-Beyond passive shared context, A2A lets bots **actively respond** to each other in group chats. When one bot replies to a user, the A2A bus broadcasts the response to sibling bots. Each sibling independently decides whether to chime in.
+Beyond passive shared context, A2A-TG lets bots **actively respond** to each other. When one bot replies to a user, the A2A-TG bus broadcasts the envelope over loopback HTTP to sibling bots. Each sibling independently decides whether to chime in — and crucially, **it does not re-broadcast its own reply**, so the chain terminates by design.
 
 ```text
 You:    @claude What's the best way to handle retries?
 Claude: [responds with retry pattern advice]
-         ↓ A2A broadcast
+         ↓ A2A-TG broadcast (generation=1)
 Codex:  [reads Claude's reply, adds: "I'd also suggest exponential backoff..."]
+         ✗ Codex's reply is NOT broadcast further — chain ends here
 ```
 
-Built-in safety — 5 layers of defense in depth:
-- **Generation cap**: Envelopes with `generation >= 2` are rejected at the validator — user prompts are gen 0, bot replies are gen 1, so any further rebroadcast gets dropped
-- **AI self-decline**: Each bot's prompt lets it reply `[NO_RESPONSE]` when it has nothing useful to add, skipping the turn on its own
-- **No-rebroadcast policy**: A2A responses write to shared context and send to TG directly — they don't re-enter the A2A bus, breaking the ping-pong chain at the source
-- **Idempotency dedup**: SHA-256 fingerprint of `{chat_id, sender, content}` with 300s TTL rejects duplicate envelopes
-- **Peer circuit breaker**: Peers that fail 3 times in a row are marked unavailable until health recovers
+#### Why A2A-TG and not plain A2A
 
-> `loop-guard.js` also keeps cooldown and per-window rate-limit fields as reserved hooks — not currently wired, because the no-rebroadcast policy already covers loop prevention.
+The [official A2A protocol](https://a2a-protocol.org) is designed for web services discovering each other via Agent Cards and exchanging long-running Tasks over HTTPS. telegram-ai-bridge runs agents in group chats, where peers are few and pre-configured, turns are short and high-frequency, and the dominant failure mode is ping-pong loops.
 
-> **Important:** A2A only works in group chats. Private/DM conversations are never broadcast — this prevents cross-bot message leaking between separate DM windows.
+A2A-TG keeps the spirit (agent-to-agent peer communication, envelope with correlation/idempotency, TTL) but adds what IM actually needs:
 
-Enable in `config.json`:
+- **`generation`** — a turn counter with a hard cap (`>= 2` is rejected). Official A2A has no equivalent.
+- **Chat-scoped idempotency** — fingerprints are keyed on `(chat_id, sender, content)`, not on a web-service task ID.
+- **Loopback-only transport** — peers live on `127.0.0.1`; there is no internet-facing endpoint and no OAuth dance.
+
+Full field-by-field definition, compatibility matrix, and reserved-hooks list: **[A2A-TG v1 spec](docs/a2a-tg-v1.md)**.
+
+#### Envelope at a glance
+
+```json
+{
+  "protocol_version": "a2a/v1",
+  "message_id": "<time-ordered id>",
+  "idempotency_key": "<unique per envelope>",
+  "sender": "claude",
+  "chat_id": -1001234567890,
+  "generation": 1,
+  "content": "...",
+  "ttl_seconds": 300
+}
+```
+
+Source of truth: [`a2a/envelope.js`](a2a/envelope.js). The on-wire tag is still `a2a/v1` in 3.1.x; a future v1.1 will bump to `a2a-tg/v1` for visual clarity (see spec §1).
+
+#### Five layers of loop suppression (all active today)
+
+1. **Generation cap** — `validateEnvelope()` rejects `generation >= 2`. User prompts are generation 0, a bot's first reply is generation 1, any further rebroadcast is blocked at the wire.
+2. **AI self-decline** — each bot's prompt allows returning `[NO_RESPONSE]` when it has nothing useful to add; the bridge skips the TG send.
+3. **No-rebroadcast policy** — A2A-triggered replies are written to shared context and sent to Telegram, but are **not** re-broadcast through the A2A-TG bus. This breaks the ping-pong chain at the source. Reference: [`bridge.js:311`](bridge.js).
+4. **Idempotency dedup** — SHA-256 fingerprint of `(chat_id, sender, content)` with 300s TTL rejects duplicate envelopes.
+5. **Peer circuit breaker** — a peer that fails 3 times in a row is marked unavailable; a half-open probe resets it on recovery.
+
+> `loop-guard.js` also keeps `cooldownMs` / `maxResponsesPerWindow` / `windowMs` as **reserved hooks** (not currently wired). The no-rebroadcast policy already covers loop prevention for the current architecture — the fields are preserved as extension points if a future mode ever re-enables chain replies.
+
+#### Safety boundary
+
+> **A2A-TG only works in group chats.** Private/DM conversations are never broadcast — this is enforced at both the inbound filter and the outbound broadcaster. Two people DMing two different bots on the same account cannot leak into each other's context.
+
+#### Enable
 
 ```json
 {
@@ -337,7 +386,32 @@ Enable in `config.json`:
 }
 ```
 
-Each bot instance listens on its assigned port. Peers are auto-discovered from `a2aPorts` (excluding self).
+Each bot instance listens on its assigned loopback port. Peers are auto-discovered from `a2aPorts` (excluding self). `/a2a` from Telegram shows live stats — bus status, peer health, loop-guard counters.
+
+#### Where A2A-TG sits in the multi-agent landscape
+
+Several projects solve *some* part of "make multiple AI agents work together." They tend to pick one axis and specialize. The table below is scoped to the multi-agent orchestration lane (not CC-remote-control, which is a different lane covered earlier).
+
+| Project                                                                                   | Heterogeneous agents | Dedicated protocol layer       | IM as primary UI | Self-hosted |
+|-------------------------------------------------------------------------------------------|:--------------------:|--------------------------------|:----------------:|:-----------:|
+| [golutra](https://github.com/golutra/golutra)                                             | Yes (manual)         | GUI pipe, human-in-the-loop    | Desktop GUI      | Yes         |
+| [claude-code-studio](https://github.com/AliceLJY/claude-code-studio)                      | CC only (homogeneous) | Redis + filesystem watcher    | Web UI           | Yes         |
+| **telegram-ai-bridge** (this project)                                                     | Yes (CC + Codex + Gemini) | A2A-TG envelope + loop guards | Telegram         | Yes         |
+
+The point is not that the others are worse — they are built for different tasks. golutra's strength is precise human routing; claude-code-studio's is deep homogeneous CC choreography. This project's strength is heterogeneous auto-coordination inside an IM surface you already carry in your pocket.
+
+---
+
+## Security & trust model
+
+This bridge runs full Claude Code / Codex with your local credentials, so it is worth being explicit about what it does and does not protect against.
+
+- **Owner gating protects the trigger, not the content.** `ownerTelegramId` controls who can invoke a bot. It does **not** sanitize the content of replies, shared context, or A2A-TG envelopes. Anyone already in an authorized group chat can see whatever the bots say.
+- **Group chats write to shared storage.** Every bot reply in a group is written to the shared-context store (SQLite / JSON / Redis). Do not add the bots to a group you do not control — conversations persist on your disk, and any bot in the group can read them when next @mentioned.
+- **A2A-TG broadcasts are loopback-only and group-scoped.** Envelopes never leave `127.0.0.1`, and the inbound/outbound filters reject `chat_id > 0` (DMs). Two people DMing two bots cannot leak into each other's context.
+- **`bypassPermissions` disables tool approval prompts.** With this mode enabled, the bot executes Bash / Write / Edit tools without asking. That is convenient for personal use on your own machine; it is dangerous if anyone else can reach the bot. Keep it off unless you understand the blast radius.
+- **Secrets in config.** `config.json` is `.gitignore`'d. `bun run config` redacts secrets when printing. Do not share bridge logs raw — they can contain tool outputs with sensitive paths.
+- **Upstream trust.** The bridge inherits whatever your local Claude Code / Codex / Gemini can do — MCP servers, hooks, skills. If you install an untrusted skill or MCP, the bot inherits the risk.
 
 ---
 
@@ -421,10 +495,10 @@ Inspect resolved config: `bun run config --backend claude` (secrets redacted).
 - Optional `model` override; empty string uses Codex defaults
 
 **Gemini:**
-- Experimental compatibility backend, not primary
+- Positioned as the "quiet scribe" in a multi-agent group — a good role for overnight summarization, not for front-line coding
 - Requires `~/.gemini/oauth_creds.json`, `oauthClientId`, `oauthClientSecret`
 - Uses Gemini Code Assist API mode, not full CLI terminal control
-- Recommended only when you intentionally need Gemini support
+- Behavior is shaped through prompt/workspace `CLAUDE.md`, not a code-level read-only switch
 
 </details>
 
@@ -565,11 +639,13 @@ Three ways to make AI agents talk to each other — different protocols, differe
 | Layer | Protocol | How | Scenario |
 |-------|----------|-----|----------|
 | **Terminal** | MCP | Built-in `codex mcp-server` + `claude mcp serve`, zero code | CC ↔ Codex direct calls in your terminal |
-| **Telegram Group** | Custom A2A | This project's A2A bus, auto-broadcast | Multiple bots in one group, chiming in |
+| **Telegram Group** | **A2A-TG** v1 (this project) | Loopback HTTP envelope bus with generation-based loop guards | Multiple heterogeneous bots in one group, chiming in |
 | **Telegram DM** | MCP / CLI | Bots call each other directly via terminal config | Direct cross-bot communication, no bridge needed |
-| **Server** | Google A2A v0.3.0 | [openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway) *(archived — A2A now built into OpenClaw)* | OpenClaw agents across servers |
+| **Server** | [Official A2A](https://a2a-protocol.org) v0.3.0 | [openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway) *(archived — A2A now built into OpenClaw)* | Web-service agents across servers |
 
 > **MCP vs A2A**: MCP is a tool-calling protocol (I invoke your capability). A2A is a peer communication protocol (I talk to you as an equal). CC calling Codex via MCP is using Codex as a tool — not two agents chatting.
+>
+> **Official A2A vs A2A-TG**: Official A2A is a Linux Foundation project (originally proposed by Google) for web-service-to-web-service interop. A2A-TG is this repository's IM-scenario envelope inspired by A2A — different scope, different transport, different loop model. Not interchangeable. See [A2A-TG v1 spec §7](docs/a2a-tg-v1.md#7-relation-to-official-a2a).
 
 ### Terminal: CLI-to-CLI via MCP (No Telegram Needed)
 
@@ -592,7 +668,9 @@ Groups use A2A auto-broadcast. DMs go through MCP/CLI direct communication. See 
 
 ### Server: openclaw-a2a-gateway *(archived)*
 
-For OpenClaw agents communicating across servers via the Google A2A v0.3.0 standard protocol. A2A is now built into OpenClaw as a native plugin — the standalone gateway has been archived. See [openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway) for historical reference.
+For OpenClaw agents communicating across servers via the official A2A v0.3.0 protocol (Linux Foundation project, originally proposed by Google). A2A is now built into OpenClaw as a native plugin — the standalone gateway has been archived. See [openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway) for historical reference.
+
+Code attribution: the `a2a/` directory in this repository (envelope, idempotency store, peer-health manager) started as a simplified port of openclaw-a2a-gateway (MIT license) and has since diverged into the A2A-TG shape. Original copyright and license text are preserved.
 
 ## Development
 

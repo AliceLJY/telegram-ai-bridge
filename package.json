@@ -1,7 +1,7 @@
 {
   "name": "telegram-ai-bridge",
   "version": "3.1.0",
-  "description": "Run one local AI coding agent behind one Telegram bot.",
+  "description": "Self-hosted Telegram bridge for heterogeneous AI coding agents (Claude Code, Codex, Gemini) with the A2A-TG envelope protocol for safe multi-agent collaboration in group chats.",
   "type": "module",
   "main": "bridge.js",
   "bin": {
@@ -26,6 +26,7 @@
     "shared-context/",
     "scripts/",
     "launchd/",
+    "docs/",
     "config.example.json",
     "README.md",
     "README_CN.md",
@@ -47,9 +48,17 @@
   "keywords": [
     "telegram",
     "claude",
+    "claude-code",
     "codex",
     "gemini",
     "ai-agent",
+    "multi-agent",
+    "agent-to-agent",
+    "a2a",
+    "a2a-tg",
+    "war-room",
+    "self-hosted",
+    "grammy",
     "cli",
     "remote-control",
     "bun"

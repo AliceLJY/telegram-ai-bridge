@@ -2,23 +2,24 @@
 
 # telegram-ai-bridge
 
-**完整的 Claude Code，在手机上，4 个 Agent 并行跑**
+**异构 AI agent 在 Telegram 群里真正接话——带代际防环，不是把两个 bot 扔一块那种。**
 
-*手机上同时开 N 个 Claude Code 窗口——共享记忆，截图文件自动回传，War Room 协同指挥。常驻运行，自托管。*
-
-一个自托管的 Telegram 桥接工具，跑的是**真正的 Claude Code**——不是 API 套壳——支持持久化会话管理、多后端（Claude + Codex + Gemini）和 Agent 间协作。
+*Claude Code、Codex、Gemini 各自独立的全栈 bot，通过 IM 原生的封装协议（A2A-TG）协作，带硬性代际计数防死循环。常驻运行，自托管，只有你本人能触发。*
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-3.0.0-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
+[![Version](https://img.shields.io/badge/version-3.1.0-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
 [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)
 [![Telegram](https://img.shields.io/badge/Interface-Telegram-26A5E4?logo=telegram)](https://telegram.org/)
+[![A2A-TG spec](https://img.shields.io/badge/A2A--TG-v1-8a2be2)](docs/a2a-tg-v1.md)
 [![GitHub stars](https://img.shields.io/github/stars/AliceLJY/telegram-ai-bridge)](https://github.com/AliceLJY/telegram-ai-bridge)
 
 [English](README.md) | **简体中文**
 
 </div>
 
-> Remote Control = 手机*看着*终端。Channels = 终端*收着*手机消息。**本项目 = 手机就是终端。**
+> **关于 "A2A" 这个名字。** [A2A 协议](https://a2a-protocol.org)最早由 Google 提出，现在是 Linux Foundation 的开源项目。本仓库实现的是 **A2A-TG**——一个专为 IM 场景设计的封装协议，借鉴 A2A 的思路，加了代际防环（generation）和群聊级别的指纹去重。A2A-TG **不兼容**官方 A2A，也跟官方项目没有从属关系。完整规范见 [A2A-TG v1 spec](docs/a2a-tg-v1.md)。
+
+> Remote Control = 手机*看着*终端。Channels = 终端*收着*手机消息。**本项目 = 异构 agent 在群里协作，群聊就是终端。**
 
 ```
 你:       @cc-alpha 分析这个 API 设计
@@ -37,6 +38,19 @@ Delta:    [读取完整上下文，commit and push]
 **4 个 agent，1 个群，共享记忆，零噪音。** 桌面上要开 4 个终端窗口的工作流，现在装进口袋。
 
 <img src="assets/war-room-demo.png" alt="War Room — 4 个 CC bot 同时处理" width="600">
+
+---
+
+## 挑一条路径用
+
+项目有四种不同用法，互相独立，不必全读完才能用其中一种。
+
+| 你想做的事                                                 | 从哪里开始                                           | 核心技术                         |
+|------------------------------------------------------------|------------------------------------------------------|----------------------------------|
+| **手机控制一个 Claude Code**                               | [快速开始](#快速开始)                                | 单 bot，Agent SDK                |
+| **N 个 Claude 会话并行，共享记忆（War Room）**             | [多窗口并行](#多窗口并行手机就是多窗口终端) → [多实例部署](#多实例部署) | @点名派活 + Redis 共享上下文     |
+| **让 Claude 和 Codex 在群里主动互相接话**                  | [A2A-TG：异构 agent 的群聊协作](#a2a-tg异构-agent-的群聊协作) | A2A-TG 封装 + 五层防环           |
+| **读协议规范 / 把 A2A-TG 嵌到你自己的 bot**                | [A2A-TG v1 规范](docs/a2a-tg-v1.md)                  | HTTP/JSON 封装，代际上限         |
 
 ---
 
@@ -158,7 +172,9 @@ bun run start --backend claude
 |------|-----|------|
 | `claude` | Claude Code（通过 Agent SDK） | 主推荐 |
 | `codex` | Codex CLI（通过 Codex SDK） | 主推荐 |
-| `gemini` | Gemini Code Assist API | 实验兼容 |
+| `gemini` | Gemini Code Assist API | "旁听书记员"——见下方说明 |
+
+> **Gemini 在这套体系里的位置。** 适合当多 agent 群里的"书记员"——让 Claude 和 Codex 头脑风暴，Gemini 在旁边读完，按时段（比如深夜）做纪要。三个后端里它最少主动发言，这种"克制"刚好匹配书记员的角色。*代码里并没有强制的只读开关*——这种行为是通过 per-bot `CLAUDE.md` / prompt 约束出来的。它走 Gemini Code Assist API，不是完整 CLI 终端控制，能力比 Claude Code / Codex 窄。
 
 > **核心规则：** 一个 bot = 一个独立进程 = 一个独立 Agent。想开几个开几个。
 
@@ -236,7 +252,7 @@ Claude Code 先后上线了 [Remote Control](https://code.claude.com/docs/en/rem
 | 任务审计追踪 | &mdash; | &mdash; | &mdash; | SQLite：状态、费用、耗时、审批记录 |
 | bot 间对话防环 | N/A | N/A | N/A | 五层：代数上限 + AI 自我拒答 + 不再广播 + 指纹去重 + peer 熔断 |
 | 生产级可靠性 | &mdash; | &mdash; | &mdash; | 指数重试、滑动窗口限频、FlushGate 聚合、优雅排空 |
-| 稳定版本 | 是 | research preview | 是 | 是（v3.0） |
+| 稳定版本 | 是 | research preview | 是 | 是（v3.1） |
 
 </details>
 
@@ -302,29 +318,62 @@ Codex:  [从共享存储读到 CC 的回复，给出自己的意见]
 
 > **注意：** bot 只在被 @ 或被回复时才响应，不会自动互相接话。
 
-### A2A：Bot 间主动对话
+### A2A-TG：异构 agent 的群聊协作
 
-共享上下文是被动的（被 @ 时才读取）。A2A 让 bot **主动接话**——群聊中一个 bot 回复用户后，A2A 总线把回复广播给兄弟 bot，每个兄弟独立判断要不要补充。
+共享上下文是被动的（被 @ 时才读取）。A2A-TG 让 bot **主动接话**——群聊中一个 bot 回复用户后，A2A-TG 总线通过 loopback HTTP 把信封发给兄弟 bot，每个兄弟独立判断要不要补充。关键一点：**兄弟 bot 自己的回复不会再被广播出去**，链条在设计层面就会终止。
 
 ```text
 你:     @claude 重试策略怎么写比较好？
 Claude: [给出重试建议]
-         ↓ A2A 广播
+         ↓ A2A-TG 广播（generation=1）
 Codex:  [读到 Claude 的回复，补充："我建议再加个指数退避..."]
+         ✗ Codex 的回复不会再广播——链条在这里终止
 ```
 
-内置安全机制——五层纵深防御：
-- **代数上限**：`generation >= 2` 的信封在验证器直接拒收——用户触发 = 0，bot 回复 = 1，再往上的 re-broadcast 直接被丢
-- **AI 自我拒答**：bot prompt 允许回 `[NO_RESPONSE]` 表示"没什么要说的"，自己跳过这一轮
-- **不再广播策略**：A2A 响应只写共享上下文 + 发 TG，不再回注 A2A 总线——从源头切断乒乓链
-- **指纹去重**：`{chat_id, sender, content}` 的 SHA-256 指纹 + 300 秒 TTL，拒收重复信封
-- **Peer 熔断**：连续 3 次失败的 peer 自动屏蔽，直到健康检查恢复
+#### 为什么叫 A2A-TG 而不是直接用官方 A2A
 
-> `loop-guard.js` 里还保留了 cooldown 和窗口限流两个预留 hook——当前不接入，因为"不再广播策略"已经覆盖了死循环防护需求。
+[官方 A2A 协议](https://a2a-protocol.org)是给 web service 之间通过 Agent Card 互相发现、用 Task 模型交换长事务设计的，走 HTTPS/JSON-RPC。telegram-ai-bridge 的场景完全不同：peer 少、预配置、每轮消息短、高频，主要威胁是 bot 之间的乒乓死循环。
 
-> **重要：A2A 仅在群聊中生效。** 私聊/DM 消息不会被广播——防止不同 DM 窗口之间的消息泄漏。
+A2A-TG 保留 A2A 的精神（agent 对等通信、带 correlation/idempotency 的信封、TTL），但加了 IM 场景真正需要的东西：
 
-在 `config.json` 中启用：
+- **`generation` 代际计数**：每个信封有个代数，`>= 2` 直接拒收。官方 A2A 没有这个字段。
+- **群聊级指纹去重**：指纹基于 `(chat_id, sender, content)`，不是 web service 的 task ID。
+- **只走 loopback**：peer 都在 `127.0.0.1`，没有对外端点，也不需要 OAuth 流程。
+
+逐字段定义、兼容性对照表、预留 hook 说明见 **[A2A-TG v1 规范](docs/a2a-tg-v1.md)**。
+
+#### Envelope 速览
+
+```json
+{
+  "protocol_version": "a2a/v1",
+  "message_id": "<时间有序 id>",
+  "idempotency_key": "<每封唯一>",
+  "sender": "claude",
+  "chat_id": -1001234567890,
+  "generation": 1,
+  "content": "...",
+  "ttl_seconds": 300
+}
+```
+
+源码见 [`a2a/envelope.js`](a2a/envelope.js)。3.1.x 的线上 tag 仍是 `a2a/v1`；未来 v1.1 会把它 bump 到 `a2a-tg/v1`，视觉上跟官方 A2A 区分更清晰（详见规范 §1）。
+
+#### 五层防环（目前全部激活）
+
+1. **代数上限**：`validateEnvelope()` 拒收 `generation >= 2`。用户触发 = 0，bot 首次回复 = 1，再往上直接在线上被丢。
+2. **AI 自我拒答**：bot prompt 允许返回 `[NO_RESPONSE]` 表示"没啥要补充的"，bridge 检测到后跳过 TG 发送。
+3. **不再广播策略**：A2A 触发的回复只写共享上下文 + 发 TG，不再调用 `bus.broadcast()`——从源头切断乒乓链。参考：[`bridge.js:311`](bridge.js)。
+4. **指纹去重**：`(chat_id, sender, content)` 的 SHA-256 指纹 + 300 秒 TTL，拒收重复信封。
+5. **Peer 熔断**：连续 3 次失败的 peer 自动屏蔽，半开探针恢复后重新放行。
+
+> `loop-guard.js` 还保留了 `cooldownMs` / `maxResponsesPerWindow` / `windowMs` 作为**预留 hook**（当前不接入）。"不再广播"策略已经覆盖当前架构的防环需求——这些字段留作未来如果切换到链式回复模式时的扩展点。
+
+#### 安全边界
+
+> **A2A-TG 只在群聊生效。** 私聊/DM 消息永不被广播——入站和出站两端都过滤 `chat_id > 0`。两个人各自 DM 同一个账户下不同的 bot，信息不会互相泄漏。
+
+#### 启用
 
 ```json
 {
@@ -335,7 +384,32 @@ Codex:  [读到 Claude 的回复，补充："我建议再加个指数退避..."]
 }
 ```
 
-每个 bot 实例监听自己的端口。Peer 列表从 `a2aPorts` 自动发现（排除自身）。
+每个 bot 实例监听自己的 loopback 端口。Peer 列表从 `a2aPorts` 自动发现（排除自身）。Telegram 里发 `/a2a` 查看实时状态——总线状态、peer 健康、防环计数器。
+
+#### A2A-TG 在多 agent 赛道里的位置
+
+几个项目都在做"让多个 AI agent 协作"这件事，但各自挑了一个轴专精。下面的表只限多 agent 编排赛道（不包括 CC 远程控制那条线，那条前面已经比过了）。
+
+| 项目                                                                                       | 异构 agent             | 专门的协议层                    | 以 IM 为主 UI    | 自托管 |
+|--------------------------------------------------------------------------------------------|:----------------------:|---------------------------------|:----------------:|:------:|
+| [golutra](https://github.com/golutra/golutra)                                              | 支持（手工转发）       | GUI 管道，人在环里              | 桌面 GUI         | 是     |
+| [claude-code-studio](https://github.com/AliceLJY/claude-code-studio)                       | 仅 CC（同构）          | Redis + 文件系统 watcher        | Web UI           | 是     |
+| **telegram-ai-bridge**（本项目）                                                           | 支持（CC + Codex + Gemini） | A2A-TG 封装 + 防环         | Telegram         | 是     |
+
+不是说别人做得差——各自为不同任务而生。golutra 的长处是精准的人工路由，claude-code-studio 的长处是深度的同构 CC 编排。本项目的长处是 IM 里跑起来的异构自动协同，一个已经装在口袋里的 UI。
+
+---
+
+## 安全与信任模型
+
+这座桥用你本地的凭证跑完整 Claude Code / Codex，所以值得把"它保护什么、不保护什么"说清楚。
+
+- **Owner 白名单管的是触发权限，不是内容。** `ownerTelegramId` 控制谁能触发 bot。它**不会**过滤回复内容、共享上下文或 A2A-TG 信封。已经进了授权群的任何人，都能看到 bot 说的所有话。
+- **群聊会写进共享存储。** 每条群内 bot 回复都会写入共享上下文存储（SQLite / JSON / Redis）。不要把 bot 拉进你控制不了的群——对话会持久化在你磁盘上，群里任何一个 bot 被 @ 时都能读到。
+- **A2A-TG 广播只走 loopback，只在群聊。** 信封从不离开 `127.0.0.1`，入站/出站两端都拒绝 `chat_id > 0`（即 DM）。两个人各自 DM 不同 bot 不会互相泄漏。
+- **`bypassPermissions` 会关掉工具授权确认。** 启用这个模式后，bot 不再询问就执行 Bash / Write / Edit。自己本地用很方便，但如果别人能访问到 bot 就危险了——影响半径请心里有数。
+- **配置里的密钥。** `config.json` 已在 `.gitignore`。`bun run config` 输出时会隐藏敏感字段。不要把 bridge 日志原样分享出去——日志里可能有工具输出的敏感路径。
+- **上游信任传递。** Bridge 继承本地 Claude Code / Codex / Gemini 的全部能力——MCP 服务器、hooks、skills。装了不可信的 skill 或 MCP，bot 一样继承风险。
 
 ---
 
@@ -419,10 +493,10 @@ Telegram bot
 - `model` 可留空，使用 Codex 默认模型
 
 **Gemini：**
-- 实验兼容后端，不是主推荐路径
+- 定位是多 agent 群里的"书记员"——夜间纪要角色合适，不是前线编码主力
 - 需要 `~/.gemini/oauth_creds.json`、`oauthClientId`、`oauthClientSecret`
 - 走 Gemini Code Assist API 模式，不是完整 CLI 终端控制
-- 只有明确需要 Gemini 时再启用
+- "旁听"行为通过 prompt / 工作空间 `CLAUDE.md` 塑造，代码层没有强制只读开关
 
 </details>
 
@@ -563,11 +637,13 @@ docker run -d \
 | 层 | 协议 | 方式 | 场景 |
 |---|------|------|------|
 | **终端** | MCP | 内置 `codex mcp-server` + `claude mcp serve`，零代码 | CC ↔ Codex 在终端互调 |
-| **TG 群聊** | 自定义 A2A | 本项目的 A2A 总线，自动广播 | 多 bot 同群接话 |
+| **TG 群聊** | **A2A-TG** v1（本项目） | loopback HTTP 信封总线 + 代际防环 | 多个异构 bot 在群里互相接话 |
 | **TG 私聊** | MCP / CLI | Bot 通过终端配置直接互通 | 无需中转，直接跨 bot 通信 |
-| **服务端** | Google A2A v0.3.0 | [openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway) | OpenClaw agent 跨服务器通信 |
+| **服务端** | [官方 A2A](https://a2a-protocol.org) v0.3.0 | [openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway)（已归档） | Web service agent 跨服务器通信 |
 
 > **MCP vs A2A**：MCP 是工具调用协议（我调你的能力），A2A 是对等通信协议（我跟你对话）。CC 通过 MCP 调 Codex，本质是把 Codex 当工具用，不是两个 agent 在聊天。
+>
+> **官方 A2A vs A2A-TG**：官方 A2A 是 Linux Foundation 的开源项目（Google 最早提出），面向 web service 互通。A2A-TG 是本仓库的 IM 场景信封协议，借鉴 A2A——场景不同、传输不同、防环模型不同，不能直接互换。详见 [A2A-TG v1 规范 §7](docs/a2a-tg-v1.md#7-relation-to-official-a2a)。
 
 ### 终端：CLI 直连（不经过 Telegram）
 
@@ -588,9 +664,11 @@ args = ["mcp", "serve"]
 
 群聊走 A2A 自动广播，私聊通过 MCP/CLI 直接互通。详见上面的章节。
 
-### 服务端：openclaw-a2a-gateway
+### 服务端：openclaw-a2a-gateway（已归档）
 
-OpenClaw agent 通过 Google A2A v0.3.0 标准协议跨服务器通信。完全不同的系统——见 [openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway)。
+OpenClaw agent 通过官方 A2A v0.3.0 标准协议跨服务器通信（Linux Foundation 项目，Google 最早提出）。A2A 现在是 OpenClaw 的原生插件，独立 gateway 已归档——见 [openclaw-a2a-gateway](https://github.com/win4r/openclaw-a2a-gateway) 作为历史参考。
+
+代码归属：本仓库 `a2a/` 目录（envelope、idempotency store、peer-health manager）最初从 openclaw-a2a-gateway（MIT 协议）简化移植而来，之后按 A2A-TG 形态演化。原始 copyright 和 license 已保留。
 
 ## 开发
 
