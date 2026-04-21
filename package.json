@@ -1,6 +1,6 @@
 {
   "name": "telegram-ai-bridge",
-  "version": "3.1.0",
+  "version": "4.1.0",
   "description": "Self-hosted Telegram bridge for heterogeneous AI coding agents (Claude Code, Codex, Gemini) with the A2A-TG envelope protocol for safe multi-agent collaboration in group chats.",
   "type": "module",
   "main": "bridge.js",
