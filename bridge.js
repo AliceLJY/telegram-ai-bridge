@@ -1183,6 +1183,8 @@ async function processPrompt(ctx, prompt) {
     let resultSuccess = true;
     const capturedImages = [];  // { data, mediaType, toolUseId }
     const capturedFiles = [];   // { filePath, source }
+    let consecutiveImageEvents = 0;  // 连续 image 事件计数（防刷屏）
+    let imageFloodSuppressed = false; // 是否已触发图片防刷
 
     // Streaming preview: 实时显示 AI 文本输出
     const streamPreviewEnabled = process.env.STREAM_PREVIEW_ENABLED !== "false";
@@ -1258,9 +1260,21 @@ async function processPrompt(ctx, prompt) {
           });
         }
 
-        // 收集图片/文件事件
-        if (event.type === "image" && capturedImages.length < 10) {
-          capturedImages.push(event);
+        // 收集图片/文件事件（含防刷屏保护）
+        if (event.type === "image") {
+          consecutiveImageEvents++;
+          const IMAGE_CAPTURE_LIMIT = 5;
+          const CONSECUTIVE_FLOOD_THRESHOLD = 3;
+          if (consecutiveImageEvents >= CONSECUTIVE_FLOOD_THRESHOLD && !imageFloodSuppressed) {
+            console.warn(`[Bridge] ⚠️ 图片防刷: 连续 ${consecutiveImageEvents} 个 image 事件，疑似循环生成，后续图片跳过`);
+            imageFloodSuppressed = true;
+          }
+          if (!imageFloodSuppressed && capturedImages.length < IMAGE_CAPTURE_LIMIT) {
+            capturedImages.push(event);
+          }
+        } else if (event.type === "text" || event.type === "result") {
+          // 有正常文本/结果事件，重置连续图片计数
+          consecutiveImageEvents = 0;
         }
         if (event.type === "file_persisted") {
           capturedFiles.push({ filePath: event.filename, source: "persisted" });
@@ -1355,9 +1369,10 @@ async function processPrompt(ctx, prompt) {
 
     // 发送捕获的图片/文件（用原生 fetch，绕过 grammy multipart 兼容性问题）
     if (capturedImages.length > 0 || capturedFiles.length > 0) {
-      console.log(`[Bridge] 输出回传: ${capturedImages.length} 张图片, ${capturedFiles.length} 个文件`);
+      console.log(`[Bridge] 输出回传: ${capturedImages.length} 张图片${imageFloodSuppressed ? " (防刷已触发，部分跳过)" : ""}, ${capturedFiles.length} 个文件`);
     }
     if (resultSuccess && capturedImages.length > 0) {
+      let sentImageCount = 0;
       for (const img of capturedImages) {
         // 跳过工具结果图片（如 Read 读用户发的图），只发 AI 主动生成的图
         if (img.source === "tool_result") {
@@ -1369,6 +1384,11 @@ async function processPrompt(ctx, prompt) {
           if (buf.length > 10 * 1024 * 1024) continue;
           const ext = (img.mediaType || "image/png").split("/")[1] || "png";
           await tgSendPhoto(chatId, buf, `output.${ext}`);
+          sentImageCount++;
+          // 图片间加 300ms 间隔，防止 TG 限流 + 用户端刷屏
+          if (sentImageCount < capturedImages.length) {
+            await new Promise(r => setTimeout(r, 300));
+          }
         } catch (e) {
           console.error(`[Bridge] sendPhoto failed: ${e.message}`);
         }
