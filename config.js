@@ -279,11 +279,14 @@ function buildEnvFromConfig(config, backend, configPath) {
 
   const baseDir = dirname(configPath);
   const shared = config.shared || {};
+  // config.shared.httpProxy 优先；为空时回退到已存在的 HTTPS_PROXY 环境变量，
+  // 避免 launchd/shell 已经设好代理却被空串覆盖（2026-04-23 GFW 封 telegram 直连 IP 时踩过）
+  const resolvedHttpProxy = shared.httpProxy || process.env.HTTPS_PROXY || "";
   const env = {
     OWNER_TELEGRAM_ID: shared.ownerTelegramId != null ? String(shared.ownerTelegramId) : "",
     TELEGRAM_BOT_TOKEN: backendConfig.telegramBotToken || "",
-    HTTPS_PROXY: shared.httpProxy || "",
-    NO_PROXY: shared.httpProxy ? "localhost,127.0.0.1" : "",
+    HTTPS_PROXY: resolvedHttpProxy,
+    NO_PROXY: resolvedHttpProxy ? "localhost,127.0.0.1" : "",
     CC_CWD: resolvePathMaybe(baseDir, shared.cwd || process.env.HOME || REPO_DIR),
     DEFAULT_VERBOSE_LEVEL: String(shared.defaultVerboseLevel ?? 1),
     BRIDGE_EXECUTOR: String(shared.executor || "direct"),
