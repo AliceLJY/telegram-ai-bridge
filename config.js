@@ -191,6 +191,7 @@ export function createDefaultConfig() {
         sessionsDb: "sessions-codex.db",
         model: "",
         serviceTier: "",
+        defaultEffort: "",
       },
       gemini: {
         enabled: false,
@@ -346,6 +347,7 @@ function buildEnvFromConfig(config, backend, configPath) {
   if (selectedBackend === "codex") {
     env.CODEX_MODEL = backendConfig.model || "";
     env.CODEX_SERVICE_TIER = backendConfig.serviceTier || "";
+    env.DEFAULT_EFFORT = backendConfig.defaultEffort || "";
   }
 
   if (selectedBackend === "gemini") {
