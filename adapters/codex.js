@@ -17,6 +17,9 @@ try {
 export function createAdapter(config = {}) {
   const defaultModel = config.model || process.env.CODEX_MODEL || "";
   const cwd = config.cwd || process.env.CC_CWD || process.env.HOME;
+  // service_tier: "fast" | "flex" | ""（空 = 跟随 ~/.codex/config.toml）
+  // fast = 1.5x 速度，2x credits；flex = 省钱慢速；两者和 reasoning effort 正交
+  const defaultServiceTier = config.serviceTier || process.env.CODEX_SERVICE_TIER || "";
 
   // 按模型缓存 SDK 实例
   const sdkCache = new Map();
@@ -29,7 +32,10 @@ export function createAdapter(config = {}) {
     const key = m || "__default__";
     if (!sdkCache.has(key)) {
       const opts = {};
-      if (m) opts.config = { model: m };
+      const sdkConfig = {};
+      if (m) sdkConfig.model = m;
+      if (defaultServiceTier) sdkConfig.service_tier = defaultServiceTier;
+      if (Object.keys(sdkConfig).length > 0) opts.config = sdkConfig;
       sdkCache.set(key, new Codex(opts));
     }
     return sdkCache.get(key);
