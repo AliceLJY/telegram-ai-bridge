@@ -190,6 +190,7 @@ export function createDefaultConfig() {
         telegramBotToken: "",
         sessionsDb: "sessions-codex.db",
         model: "",
+        serviceTier: "",
       },
       gemini: {
         enabled: false,
@@ -344,6 +345,7 @@ function buildEnvFromConfig(config, backend, configPath) {
 
   if (selectedBackend === "codex") {
     env.CODEX_MODEL = backendConfig.model || "";
+    env.CODEX_SERVICE_TIER = backendConfig.serviceTier || "";
   }
 
   if (selectedBackend === "gemini") {
