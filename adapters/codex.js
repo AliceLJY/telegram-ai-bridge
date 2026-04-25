@@ -392,7 +392,7 @@ export function mapCodexEvent(event, state = createCodexEventState(), thread = {
     mapped.push({
       type: "result",
       success: false,
-      text: event.error?.message || "Codex stream error",
+      text: event.message || event.error?.message || "Codex stream error",
       cost: null,
       duration: null,
     });
