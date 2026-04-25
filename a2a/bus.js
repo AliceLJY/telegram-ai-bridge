@@ -200,6 +200,7 @@ export function createA2ABus(config) {
       peers: peerUrls.map((p) => p.name),
       loopGuard: loopGuardInstance.getStats(),
       peerHealth: peerHealth.getAllStates(),
+      circuitBreaker: peerHealth.getConfig(),
     };
   }
 

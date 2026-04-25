@@ -123,10 +123,11 @@ const sharedContextConfig = {
 const A2A_ENABLED = process.env.A2A_ENABLED === "true";
 const A2A_PORT = Number(process.env.A2A_PORT) || 0;
 const A2A_TOOL_MODE = normalizeA2AToolMode(process.env.A2A_TOOL_MODE);
-const A2A_MAX_GENERATION = Number(process.env.A2A_MAX_GENERATION) || 2;
 const A2A_COOLDOWN_MS = Number(process.env.A2A_COOLDOWN_MS) || 60000;
 const A2A_MAX_RESPONSES_PER_WINDOW = Number(process.env.A2A_MAX_RESPONSES_PER_WINDOW) || 3;
 const A2A_WINDOW_MS = Number(process.env.A2A_WINDOW_MS) || 300000;
+const A2A_CIRCUIT_BREAKER_THRESHOLD = Number(process.env.A2A_CIRCUIT_BREAKER_THRESHOLD) || 3;
+const A2A_CIRCUIT_BREAKER_RESET_MS = Number(process.env.A2A_CIRCUIT_BREAKER_RESET_MS) || 30000;
 
 // A2A 会话复用：per-chatId 维护 session，idle 超时回收
 const A2A_SESSION_TTL_MS = Number(process.env.A2A_SESSION_TTL_MS) || 30 * 60 * 1000; // 默认 30 分钟
@@ -193,6 +194,10 @@ if (A2A_ENABLED && A2A_PORT > 0 && Object.keys(A2A_PEERS).length > 0) {
       cooldownMs: A2A_COOLDOWN_MS,
       maxResponsesPerWindow: A2A_MAX_RESPONSES_PER_WINDOW,
       windowMs: A2A_WINDOW_MS,
+    },
+    circuitBreaker: {
+      failureThreshold: A2A_CIRCUIT_BREAKER_THRESHOLD,
+      resetTimeoutMs: A2A_CIRCUIT_BREAKER_RESET_MS,
     },
   });
   a2aBus.start();
@@ -1856,8 +1861,6 @@ bot.command("a2a", async (ctx) => {
       `  收到: ${lg.received}\n` +
       `  放行: ${lg.allowed}\n` +
       `  拦截(Generation): ${lg.blockedGeneration}\n` +
-      `  拦截(Cooldown): ${lg.blockedCooldown}\n` +
-      `  拦截(Rate): ${lg.blockedRate}\n` +
       `  拦截(Dup): ${lg.blockedDuplicate}\n` +
       `━━━━━━━━━━━━\n` +
       `Peer 熔断:\n` +
