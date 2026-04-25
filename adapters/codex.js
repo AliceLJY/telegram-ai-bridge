@@ -286,70 +286,17 @@ export function createAdapter(config = {}) {
       const turnOpts = abortSignal ? { signal: abortSignal } : {};
       const { events } = await thread.runStreamed(prompt, turnOpts);
 
-      let yieldedInit = false;
-      let lastAgentMessage = ""; // 累积最后的 agent_message 文本
+      const eventState = createCodexEventState();
 
       for await (const event of events) {
-        // thread.started 事件包含 thread_id
-        if (event.type === "thread.started") {
-          yield { type: "session_init", sessionId: event.thread_id };
-          yieldedInit = true;
-        }
-
-        // 首次拿到 thread.id 时兜底发 session_init
-        if (!yieldedInit && thread.id) {
-          yield { type: "session_init", sessionId: thread.id };
-          yieldedInit = true;
-        }
-
-        if (event.type === "item.completed") {
-          const item = event.item;
-          // agent_message 是最终回复文本，累积它
-          if (item.type === "agent_message") {
-            lastAgentMessage = item.text || "";
-          }
-          yield {
-            type: "progress",
-            toolName: summarizeItemName(item),
-            detail: summarizeItemDetail(item),
-          };
-        }
-
-        if (event.type === "turn.completed") {
-          // turn.completed 只有 usage，最终文本从 agent_message 累积
-          yield {
-            type: "result",
-            success: true,
-            text: lastAgentMessage,
-            cost: null,
-            duration: null,
-          };
-        }
-
-        if (event.type === "turn.failed") {
-          yield {
-            type: "result",
-            success: false,
-            text: event.error?.message || "Codex turn failed",
-            cost: null,
-            duration: null,
-          };
-        }
-
-        if (event.type === "error") {
-          yield {
-            type: "result",
-            success: false,
-            text: event.error?.message || "Codex stream error",
-            cost: null,
-            duration: null,
-          };
+        for (const mapped of mapCodexEvent(event, eventState, thread)) {
+          yield mapped;
         }
       }
 
       // 安全兜底：如果 events 全部消费完但没发过 session_init
-      if (!yieldedInit && thread.id) {
-        yield { type: "session_init", sessionId: thread.id };
+      for (const mapped of finalizeCodexEventMapping(eventState, thread)) {
+        yield mapped;
       }
     },
 
@@ -383,6 +330,83 @@ export function createAdapter(config = {}) {
       return await inspectSessionFile(fileInfo, options.limit || 6);
     },
   };
+}
+
+export function createCodexEventState() {
+  return {
+    yieldedInit: false,
+    lastAgentMessage: "",
+  };
+}
+
+export function mapCodexEvent(event, state = createCodexEventState(), thread = {}) {
+  const mapped = [];
+
+  // thread.started 事件包含 thread_id
+  if (event.type === "thread.started") {
+    mapped.push({ type: "session_init", sessionId: event.thread_id });
+    state.yieldedInit = true;
+  }
+
+  // 首次拿到 thread.id 时兜底发 session_init
+  if (!state.yieldedInit && thread.id) {
+    mapped.push({ type: "session_init", sessionId: thread.id });
+    state.yieldedInit = true;
+  }
+
+  if (event.type === "item.completed") {
+    const item = event.item;
+    // agent_message 是最终回复文本，累积它
+    if (item.type === "agent_message") {
+      state.lastAgentMessage = item.text || "";
+    }
+    mapped.push({
+      type: "progress",
+      toolName: summarizeItemName(item),
+      detail: summarizeItemDetail(item),
+    });
+  }
+
+  if (event.type === "turn.completed") {
+    // turn.completed 只有 usage，最终文本从 agent_message 累积
+    mapped.push({
+      type: "result",
+      success: true,
+      text: state.lastAgentMessage,
+      cost: null,
+      duration: null,
+    });
+  }
+
+  if (event.type === "turn.failed") {
+    mapped.push({
+      type: "result",
+      success: false,
+      text: event.error?.message || "Codex turn failed",
+      cost: null,
+      duration: null,
+    });
+  }
+
+  if (event.type === "error") {
+    mapped.push({
+      type: "result",
+      success: false,
+      text: event.error?.message || "Codex stream error",
+      cost: null,
+      duration: null,
+    });
+  }
+
+  return mapped;
+}
+
+export function finalizeCodexEventMapping(state, thread = {}) {
+  if (!state.yieldedInit && thread.id) {
+    state.yieldedInit = true;
+    return [{ type: "session_init", sessionId: thread.id }];
+  }
+  return [];
 }
 
 // Codex ThreadItem types:

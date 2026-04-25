@@ -37,8 +37,6 @@ export class LoopGuard {
       received: 0,
       allowed: 0,
       blockedGeneration: 0,
-      blockedCooldown: 0,
-      blockedRate: 0,
       blockedDuplicate: 0,
     };
   }
@@ -57,28 +55,7 @@ export class LoopGuard {
       return { allow: false, reason: `generation ${envelope.generation} >= ${this.maxGeneration}` };
     }
 
-    const chatId = envelope.chat_id;
-
-    // 层 2: Cooldown
-    const lastResponse = this.cooldowns.get(chatId);
-    if (lastResponse && Date.now() - lastResponse < this.cooldownMs) {
-      this.stats.blockedCooldown += 1;
-      return { allow: false, reason: `cooldown active (${this.cooldownMs}ms)` };
-    }
-
-    // 层 3: Rate limit
-    const now = Date.now();
-    const windowStart = now - this.windowMs;
-    let counts = this.rateCounts.get(chatId) || [];
-    counts = counts.filter((ts) => ts > windowStart);
-    this.rateCounts.set(chatId, counts);
-
-    if (counts.length >= this.maxResponsesPerWindow) {
-      this.stats.blockedRate += 1;
-      return { allow: false, reason: `rate limit ${this.maxResponsesPerWindow}/${this.windowMs}ms` };
-    }
-
-    // 层 4: Idempotency
+    // 层 2: Idempotency
     const fingerprint = createFingerprint(
       `${envelope.chat_id}:${envelope.sender}:${envelope.content}`
     );
@@ -109,6 +86,8 @@ export class LoopGuard {
   getStats() {
     return {
       ...this.stats,
+      activeLayers: ["generation", "idempotency"],
+      reservedLayers: ["cooldown", "rate-limit"],
       idempotency: this.idempotency.getStats(),
     };
   }
