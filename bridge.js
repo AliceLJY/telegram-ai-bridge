@@ -65,7 +65,10 @@ if (typeof Bun !== "undefined" && PROXY) {
     const hasProxy = !!opts.proxy;
     const u = typeof url === "string" ? url : (url?.url || String(url));
     if (!hasProxy && /telegram\.org|twttr|api\./.test(u)) {
-      console.error("[fetch-patch] forcing proxy for", u);
+      // Mask telegram bot token in log to avoid leaking it via stdout/log files.
+      // Real fetch URL stays intact (orig(url, ...)); only the printed string is redacted.
+      const safeUrl = u.replace(/(\/(?:file\/)?bot)\d+:[A-Za-z0-9_-]+/, "$1[REDACTED]");
+      console.error("[fetch-patch] forcing proxy for", safeUrl);
       return orig(url, { ...opts, proxy: PROXY });
     }
     return orig(url, opts);
