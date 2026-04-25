@@ -69,6 +69,9 @@ export function createA2ABus(config) {
         if (req.method === "POST" && url.pathname === "/a2a/message") {
           return handleInbound(req);
         }
+        if (req.method === "GET" && url.pathname === "/a2a/status") {
+          return Response.json(getStats());
+        }
         return new Response("Not Found", { status: 404 });
       },
     });
