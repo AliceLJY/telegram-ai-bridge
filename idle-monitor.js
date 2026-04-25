@@ -1,5 +1,5 @@
 // 闲置监控器（借鉴 cc-connect idle session 管理）
-// ① 卡死检测：处理中超时自动 abort
+// ① 卡死检测：处理中超时提醒用户，实际中止由 Stop 按钮触发
 // ② 闲置轮转：用户长时间不说话，下次自动开新 session
 
 export function createIdleMonitor(options = {}) {
