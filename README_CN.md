@@ -565,16 +565,18 @@ bun run start --backend claude --config config-2.json
 ```bash
 ./scripts/install-launch-agent.sh --backend claude --install
 ./scripts/install-launch-agent.sh --backend codex --install
+./scripts/install-log-rotation.sh --install
 ```
 
 包装层会先跑 `bun run check` 再跑 `bun run start`，配置有问题直接失败。
+日志写入 `~/Library/Logs/telegram-ai-bridge/`，轮转 agent 每天 03:00 copy-truncate。
 
 默认 label：`com.telegram-ai-bridge`、`com.telegram-ai-bridge-codex`、`com.telegram-ai-bridge-gemini`。
 
 ```bash
 launchctl print gui/$(id -u)/com.telegram-ai-bridge
 launchctl kickstart -k gui/$(id -u)/com.telegram-ai-bridge
-tail -f bridge.log
+tail -f ~/Library/Logs/telegram-ai-bridge/bridge.log
 ```
 
 如果日志出现 `409 Conflict`，说明另一条进程在轮询同一个 bot token。

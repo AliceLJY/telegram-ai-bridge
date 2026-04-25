@@ -567,16 +567,18 @@ Generate and install:
 ```bash
 ./scripts/install-launch-agent.sh --backend claude --install
 ./scripts/install-launch-agent.sh --backend codex --install
+./scripts/install-log-rotation.sh --install
 ```
 
 The wrapper runs `bun run check` before `bun run start`, so bad config fails fast.
+Logs are written under `~/Library/Logs/telegram-ai-bridge/` and the rotation agent copy-truncates them daily at 03:00.
 
 Default labels: `com.telegram-ai-bridge`, `com.telegram-ai-bridge-codex`, `com.telegram-ai-bridge-gemini`.
 
 ```bash
 launchctl print gui/$(id -u)/com.telegram-ai-bridge
 launchctl kickstart -k gui/$(id -u)/com.telegram-ai-bridge
-tail -f bridge.log
+tail -f ~/Library/Logs/telegram-ai-bridge/bridge.log
 ```
 
 If you see `409 Conflict`, another process is polling the same bot token.
