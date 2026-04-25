@@ -33,4 +33,13 @@ describe("Codex event mapping", () => {
       { type: "session_init", sessionId: "thread-fallback" },
     ]);
   });
+
+  test("maps stream error events from the SDK top-level message field", () => {
+    const state = createCodexEventState();
+
+    expect(mapCodexEvent({ type: "error", message: "network failed" }, state, { id: "thread-1" })).toEqual([
+      { type: "session_init", sessionId: "thread-1" },
+      { type: "result", success: false, text: "network failed", cost: null, duration: null },
+    ]);
+  });
 });
