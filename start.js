@@ -10,6 +10,7 @@ import {
   inspectRuntime,
   bootstrapWorkspace,
 } from "./config.js";
+import { checkRedisHealth } from "./shared-context/redis-health.js";
 
 function printHelp() {
   console.log(`Telegram AI Bridge CLI
@@ -85,10 +86,23 @@ async function main() {
 
   if (cli.command === "check") {
     const report = inspectRuntime(runtime);
+    const redisHealth = await checkRedisHealth({
+      sharedContextBackend: runtime.env.SHARED_CONTEXT_BACKEND,
+      redisUrl: runtime.env.SHARED_CONTEXT_REDIS_URL,
+    });
     console.log(`[check] backend=${report.backend} source=${report.source}`);
     console.log(`[check] cwd=${report.cwd}`);
     console.log(`[check] sessions_db=${report.sessionsDb}`);
     console.log(`[check] tasks_db=${report.tasksDb}`);
+    if (redisHealth.checked && redisHealth.ok) {
+      console.log("[check] redis=ok");
+    }
+    if (redisHealth.checked && !redisHealth.ok) {
+      report.errors.push({
+        path: "SHARED_CONTEXT_REDIS_URL",
+        message: `Redis ping failed: ${redisHealth.error}`,
+      });
+    }
     for (const warning of report.warnings) {
       console.warn(`[check] warning ${warning.path}: ${warning.message}`);
     }
