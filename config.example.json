@@ -30,7 +30,14 @@
     "streamPreviewIntervalMs": 700,
     "streamPreviewMinDeltaChars": 20,
     "streamPreviewMaxChars": 3900,
-    "streamPreviewActivationChars": 50
+    "streamPreviewActivationChars": 50,
+    "rateLimitMaxRequests": 10,
+    "rateLimitWindowMs": 60000,
+    "idleTimeoutMs": 1800000,
+    "resetOnIdleMs": 0,
+    "cronEnabled": true,
+    "cronMaxJobs": 10,
+    "cronDefaultTimeoutMs": 600000
   },
   "backends": {
     "claude": {
@@ -38,13 +45,16 @@
       "telegramBotToken": "123456:replace-me",
       "sessionsDb": "sessions.db",
       "model": "claude-sonnet-4-7",
+      "defaultEffort": "",
       "permissionMode": "default"
     },
     "codex": {
       "enabled": true,
       "telegramBotToken": "123456:replace-me",
       "sessionsDb": "sessions-codex.db",
-      "model": ""
+      "model": "",
+      "serviceTier": "",
+      "defaultEffort": ""
     },
     "gemini": {
       "enabled": false,
