@@ -354,7 +354,7 @@ const idleMonitor = createIdleMonitor({
   resetOnIdleMs: RESET_ON_IDLE_MS,
   onTimeout: async (chatId) => {
     try {
-      await bot.api.sendMessage(chatId, "⏰ 会话处理超时，已自动终止。发新消息即可继续。");
+      await bot.api.sendMessage(chatId, "⏰ 会话处理超时，仍在处理，可点 Stop 中止。");
     } catch {}
   },
 });
