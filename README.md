@@ -388,6 +388,13 @@ Source of truth: [`a2a/envelope.js`](a2a/envelope.js). As of v1.1 the on-wire ta
 
 Each bot instance listens on its assigned loopback port. Peers are auto-discovered from `a2aPorts` (excluding self). `/a2a` from Telegram shows live stats — bus status, peer health, loop-guard counters.
 
+For all local LaunchAgent instances plus optional mini targets:
+
+```bash
+./scripts/status-all.sh
+A2A_STATUS_URLS='mini-claude=http://mini.local:18810/a2a/status' ./scripts/status-all.sh
+```
+
 #### Where A2A-TG sits in the multi-agent landscape
 
 Several projects solve *some* part of "make multiple AI agents work together." They tend to pick one axis and specialize. The table below is scoped to the multi-agent orchestration lane (not CC-remote-control, which is a different lane covered earlier).
