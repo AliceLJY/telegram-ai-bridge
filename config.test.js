@@ -88,10 +88,21 @@ describe("config productization", () => {
     expect(paths).toContain("backends.codex.telegramBotToken");
   });
 
+  test("validateConfig rejects unknown A2A tool modes", () => {
+    const config = createDefaultConfig();
+    config.shared.a2aToolMode = "dangerous";
+
+    const issues = validateConfig(config);
+
+    expect(issues.map((issue) => issue.path)).toContain("shared.a2aToolMode");
+  });
+
   test("loadRuntimeConfig resolves config paths and summarizeRuntime redacts secrets", () => {
     const repoDir = makeTempDir();
     const configPath = join(repoDir, "config.json");
-    const { workspaceDir, dataDir } = writeConfig(configPath);
+    const { workspaceDir, dataDir } = writeConfig(configPath, (config) => {
+      config.shared.a2aToolMode = "full";
+    });
 
     const runtime = loadRuntimeConfig({ backend: "claude", configPath });
     const summary = summarizeRuntime(runtime);
@@ -99,6 +110,7 @@ describe("config productization", () => {
     expect(runtime.env.CC_CWD).toBe(workspaceDir);
     expect(runtime.env.SESSIONS_DB).toBe(join(dataDir, "sessions.db"));
     expect(runtime.env.TASKS_DB).toBe(join(dataDir, "tasks.db"));
+    expect(runtime.env.A2A_TOOL_MODE).toBe("full");
     expect(summary.env.TELEGRAM_BOT_TOKEN).toBe("1234…WXYZ");
   });
 

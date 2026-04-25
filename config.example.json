@@ -18,6 +18,7 @@
     "sessionTimeoutMs": 900000,
     "a2aEnabled": false,
     "a2aPorts": { "claude": 18810, "codex": 18811, "gemini": 18812 },
+    "a2aToolMode": "read-only",
     "a2aMaxGeneration": 2,
     "a2aCooldownMs": 60000,
     "a2aMaxResponsesPerWindow": 3,
