@@ -471,6 +471,12 @@ const flushGate = createFlushGate({
       .text("🗑 取消排队", "queue:clear");
     await ctx.reply("📥 已收到，会在当前任务完成后一起处理。", { reply_markup: kb }).catch(() => {});
   },
+  onDropped: async (_chatId, ctx) => {
+    const kb = new InlineKeyboard()
+      .text("⏹ Stop", "stop")
+      .text("🗑 取消排队", "queue:clear");
+    await ctx.reply("⚠️ 队列已满，这条未加入。可以稍后再发，或先取消排队。", { reply_markup: kb }).catch(() => {});
+  },
 });
 const verboseSettings = new Map(); // chatId -> verboseLevel
 const pendingPermissions = new Map(); // permId -> { resolve, cleanup, toolName, chatId, ... }
