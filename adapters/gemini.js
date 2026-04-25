@@ -298,9 +298,9 @@ export function createAdapter(config = {}) {
             allFiles.push(...files);
           } catch { /* skip */ }
         }
-      } catch { return null; }
+      } catch { return []; }
 
-      if (!allFiles.length) return null;
+      if (!allFiles.length) return [];
       allFiles.sort((a, b) => b.mtime - a.mtime);
       const recent = allFiles.slice(0, limit);
 
