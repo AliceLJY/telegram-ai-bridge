@@ -540,8 +540,8 @@ bun run start --backend claude --config config-2.json
 **4.（可选）注册为 LaunchAgent** 开机自启：
 
 ```bash
-# run 脚本支持第二个参数指定配置文件：
-# scripts/run-launch-agent.sh <backend> [config-file]
+./scripts/install-launch-agent.sh --backend claude --instance 2 --config config-2.json --install
+bun run check-configs config.example.json config-2.json
 ```
 
 详见下方 LaunchAgent 部分。

@@ -13,6 +13,7 @@
     <string>/bin/bash</string>
     <string>__SCRIPT__</string>
     <string>__BACKEND__</string>
+__CONFIG_ARG__
   </array>
 
   <key>EnvironmentVariables</key>

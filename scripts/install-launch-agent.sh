@@ -6,6 +6,8 @@ TEMPLATE_PATH="$REPO_DIR/launchd/com.telegram-ai-bridge.plist.template"
 RUNNER_PATH="$REPO_DIR/scripts/run-launch-agent.sh"
 
 backend="claude"
+instance=""
+config_path=""
 label=""
 plist_path=""
 log_path=""
@@ -19,6 +21,8 @@ Usage:
 
 Options:
   --backend <name>   claude | codex | gemini
+  --instance <name>  instance suffix, e.g. 2 -> com.telegram-ai-bridge-2
+  --config <path>    config file path passed to start.js
   --label <label>    launchd label override
   --plist <path>     plist output path
   --log <path>       log file path
@@ -32,6 +36,10 @@ escape_replacement() {
 }
 
 default_label() {
+  if [[ -n "$instance" ]]; then
+    printf 'com.telegram-ai-bridge-%s' "$instance"
+    return
+  fi
   if [[ "$1" == "claude" ]]; then
     printf 'com.telegram-ai-bridge'
     return
@@ -41,6 +49,10 @@ default_label() {
 
 default_log_path() {
   local log_dir="$HOME/Library/Logs/telegram-ai-bridge"
+  if [[ -n "$instance" ]]; then
+    printf '%s/bridge-%s.log' "$log_dir" "$instance"
+    return
+  fi
   if [[ "$1" == "claude" ]]; then
     printf '%s/bridge.log' "$log_dir"
     return
@@ -52,6 +64,14 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --backend)
       backend="${2:-}"
+      shift 2
+      ;;
+    --instance)
+      instance="${2:-}"
+      shift 2
+      ;;
+    --config)
+      config_path="${2:-}"
       shift 2
       ;;
     --label)
@@ -97,6 +117,15 @@ case "$backend" in
     ;;
 esac
 
+if [[ -n "$instance" && ! "$instance" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "Invalid instance suffix: $instance" >&2
+  exit 1
+fi
+
+if [[ -n "$config_path" && "$config_path" != /* ]]; then
+  config_path="$REPO_DIR/$config_path"
+fi
+
 if [[ -z "$label" ]]; then
   label="$(default_label "$backend")"
 fi
@@ -105,6 +134,11 @@ if [[ -z "$plist_path" ]]; then
 fi
 if [[ -z "$log_path" ]]; then
   log_path="$(default_log_path "$backend")"
+fi
+
+config_arg=""
+if [[ -n "$config_path" ]]; then
+  config_arg="    <string>$config_path</string>"
 fi
 
 mkdir -p "$(dirname "$plist_path")"
@@ -126,6 +160,7 @@ sed \
   -e "s/__WORKDIR__/$(escape_replacement "$REPO_DIR")/g" \
   -e "s/__SCRIPT__/$(escape_replacement "$RUNNER_PATH")/g" \
   -e "s/__BACKEND__/$(escape_replacement "$backend")/g" \
+  -e "s/__CONFIG_ARG__/$(escape_replacement "$config_arg")/g" \
   -e "s/__PATH__/$(escape_replacement "$launch_path")/g" \
   -e "s/__LOG__/$(escape_replacement "$log_path")/g" \
   "$TEMPLATE_PATH" > "$plist_path"
@@ -141,6 +176,9 @@ fi
 echo "Wrote $plist_path"
 echo "  label: $label"
 echo "  backend: $backend"
+if [[ -n "$config_path" ]]; then
+  echo "  config: $config_path"
+fi
 echo "  log: $log_path"
 
 if [[ "$install_now" != true ]]; then
