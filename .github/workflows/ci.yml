@@ -20,5 +20,8 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Check config schema
+        run: bun run check-configs config.example.json
+
       - name: Run tests
         run: bun test
