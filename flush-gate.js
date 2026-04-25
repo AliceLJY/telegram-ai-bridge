@@ -6,6 +6,7 @@ export function createFlushGate(options = {}) {
     batchDelayMs = 800,
     maxBufferSize = 5,
     onBuffered = null, // async (chatId) => {} — 消息入缓冲时的回调（用于发"已收到"提示）
+    onDropped = null, // async (chatId, ctx) => {} — 满缓冲时的回调
   } = options;
 
   // 每个 chatId 的状态
@@ -37,6 +38,9 @@ export function createFlushGate(options = {}) {
         }
       } else {
         console.warn(`[FlushGate] chatId=${chatId} buffer full (${maxBufferSize}), dropping message`);
+        if (onDropped) {
+          await onDropped(chatId, message.ctx).catch(() => {});
+        }
       }
       return;
     }
