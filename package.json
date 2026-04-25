@@ -71,7 +71,8 @@
     "config": "bun start.js config",
     "bridge": "bun bridge.js",
     "agent": "bun agent/server.js",
-    "test": "bun test"
+    "test": "bun test",
+    "check-configs": "bun scripts/check-configs.js"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.117",

@@ -542,8 +542,8 @@ bun run start --backend claude --config config-2.json
 **4. (Optional) Register as LaunchAgent** for auto-start:
 
 ```bash
-# The run script accepts an optional config path as second argument:
-# scripts/run-launch-agent.sh <backend> [config-file]
+./scripts/install-launch-agent.sh --backend claude --instance 2 --config config-2.json --install
+bun run check-configs config.example.json config-2.json
 ```
 
 See the LaunchAgent section below for plist setup.
