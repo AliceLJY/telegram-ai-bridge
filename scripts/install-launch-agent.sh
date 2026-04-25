@@ -35,6 +35,26 @@ escape_replacement() {
   printf '%s' "$1" | sed -e 's/[\/&]/\\&/g'
 }
 
+lint_plist() {
+  local path="$1"
+  if command -v plutil >/dev/null 2>&1; then
+    plutil -lint "$path"
+    return
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$path" <<'PY'
+import plistlib
+import sys
+
+with open(sys.argv[1], "rb") as plist_file:
+    plistlib.load(plist_file)
+print(f"{sys.argv[1]}: OK")
+PY
+    return
+  fi
+  echo "Warning: no plist linter available, skipping lint for $path" >&2
+}
+
 default_label() {
   if [[ -n "$instance" ]]; then
     printf 'com.telegram-ai-bridge-%s' "$instance"
@@ -150,7 +170,7 @@ mkdir -p "$(dirname "$log_path")"
 # JSON array instead of a dict). We still overwrite from the template below,
 # but make the recovery visible so the operator knows what happened.
 if [[ -f "$plist_path" ]]; then
-  if ! plutil -lint "$plist_path" >/dev/null 2>&1; then
+  if ! lint_plist "$plist_path" >/dev/null 2>&1; then
     echo "Warning: existing plist at $plist_path is invalid, overwriting from template" >&2
   fi
 fi
@@ -168,7 +188,7 @@ sed \
 # Lint the freshly-written plist. If sed ever produces something that's not a
 # legal plist dict (e.g. unescaped placeholder, broken template), fail loudly
 # rather than silently leaving a bad file behind.
-if ! plutil -lint "$plist_path"; then
+if ! lint_plist "$plist_path"; then
   echo "ERROR: generated plist failed plutil -lint at $plist_path" >&2
   exit 1
 fi
