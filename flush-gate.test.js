@@ -53,8 +53,13 @@ describe("FlushGate", () => {
 
   test("keeps the processing buffer capped at maxBufferSize", async () => {
     let releaseFirst;
+    const dropped = [];
     const firstDone = new Promise((resolve) => { releaseFirst = resolve; });
-    const gate = createFlushGate({ batchDelayMs: 1, maxBufferSize: 1 });
+    const gate = createFlushGate({
+      batchDelayMs: 1,
+      maxBufferSize: 1,
+      onDropped: async (chatId, ctx) => dropped.push({ chatId, ctx }),
+    });
     const processFn = async (_ctx, prompt) => {
       if (prompt === "first") await firstDone;
     };
@@ -65,6 +70,7 @@ describe("FlushGate", () => {
     await gate.enqueue(1, { ctx: "ctx-3", prompt: "third" }, processFn);
 
     expect(gate.getPendingCount(1)).toBe(1);
+    expect(dropped).toEqual([{ chatId: 1, ctx: "ctx-3" }]);
 
     releaseFirst();
     await sleep(10);
