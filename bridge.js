@@ -35,6 +35,7 @@ import { createExecutor } from "./executor/interface.js";
 import { getBackendProfile } from "./config.js";
 import { initSharedContext, writeSharedMessage, readSharedMessages } from "./shared-context.js";
 import { createA2ABus } from "./a2a/bus.js";
+import { createA2AClaudeOverrides, normalizeA2AToolMode } from "./a2a/tool-mode.js";
 import { createFlushGate } from "./flush-gate.js";
 import { createRateLimiter } from "./rate-limiter.js";
 import { createDirManager } from "./dir-manager.js";
@@ -121,6 +122,7 @@ const sharedContextConfig = {
 // A2A 配置
 const A2A_ENABLED = process.env.A2A_ENABLED === "true";
 const A2A_PORT = Number(process.env.A2A_PORT) || 0;
+const A2A_TOOL_MODE = normalizeA2AToolMode(process.env.A2A_TOOL_MODE);
 const A2A_MAX_GENERATION = Number(process.env.A2A_MAX_GENERATION) || 2;
 const A2A_COOLDOWN_MS = Number(process.env.A2A_COOLDOWN_MS) || 60000;
 const A2A_MAX_RESPONSES_PER_WINDOW = Number(process.env.A2A_MAX_RESPONSES_PER_WINDOW) || 3;
@@ -248,13 +250,9 @@ ${meta.originalPrompt ? `\n用户的原始问题：${meta.originalPrompt}` : ""}
         ? getA2ASession(meta.chatId, DEFAULT_BACKEND)
         : null;
 
-      const a2aOverrides = DEFAULT_BACKEND === "claude" ? {
-        permissionMode: "dontAsk",
-        allowedTools: ["Read", "Grep", "Glob", "Bash", "WebFetch", "WebSearch"],
-        persistSession: true,
-        maxTurns: 1,
-        settingSources: [],
-      } : {};
+      const a2aOverrides = DEFAULT_BACKEND === "claude"
+        ? createA2AClaudeOverrides({ toolMode: A2A_TOOL_MODE })
+        : {};
 
       if (a2aSessionId) {
         console.log(`[A2A] Reusing session ${a2aSessionId.slice(0, 8)}... for chatId=${meta.chatId}`);

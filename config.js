@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs
 import { resolve, dirname, join, isAbsolute } from "path";
 import { createInterface } from "readline/promises";
 import { stdin as input, stdout as output } from "process";
+import { A2A_TOOL_MODES, normalizeA2AToolMode } from "./a2a/tool-mode.js";
 
 const REPO_DIR = import.meta.dir;
 const DEFAULT_CONFIG_PATH = join(REPO_DIR, "config.json");
@@ -153,6 +154,7 @@ export function createDefaultConfig() {
       // A2A 配置
       a2aEnabled: false,
       a2aPorts: { claude: 18810, codex: 18811, gemini: 18812 },
+      a2aToolMode: "read-only",
       a2aMaxGeneration: 2,
       a2aCooldownMs: 60000,
       a2aMaxResponsesPerWindow: 3,
@@ -315,6 +317,7 @@ function buildEnvFromConfig(config, backend, configPath) {
       .filter(([name]) => config.backends?.[name]?.enabled !== false)
       .map(([name, port]) => `${name}:http://localhost:${port}`)
       .join(","),
+    A2A_TOOL_MODE: normalizeA2AToolMode(shared.a2aToolMode),
     A2A_MAX_GENERATION: String(shared.a2aMaxGeneration ?? 2),
     A2A_COOLDOWN_MS: String(shared.a2aCooldownMs ?? 60000),
     A2A_MAX_RESPONSES_PER_WINDOW: String(shared.a2aMaxResponsesPerWindow ?? 3),
@@ -403,6 +406,9 @@ export function validateConfig(config, options = {}) {
   }
   if (shared.sharedContextBackend === "redis" && !isNonEmptyString(shared.redisUrl)) {
     pushIssue(issues, "shared.redisUrl", "must be set when sharedContextBackend is redis.");
+  }
+  if (!A2A_TOOL_MODES.includes(String(shared.a2aToolMode || "").trim())) {
+    pushIssue(issues, "shared.a2aToolMode", `must be one of: ${A2A_TOOL_MODES.join(", ")}.`);
   }
 
   const backends = config?.backends;
