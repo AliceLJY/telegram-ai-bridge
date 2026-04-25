@@ -6,6 +6,8 @@ import { createJsonBackend } from "./json.js";
 import { createRedisBackend } from "./redis.js";
 
 let backend = null;
+let backendType = "";
+let lastWriteError = null;
 
 const BACKENDS = { sqlite: createSqliteBackend, json: createJsonBackend, redis: createRedisBackend };
 
@@ -22,6 +24,8 @@ export async function initSharedContext(config) {
   const type = config.sharedContextBackend || "sqlite";
   const factory = BACKENDS[type] || BACKENDS.sqlite;
   backend = factory(config);
+  backendType = type;
+  lastWriteError = null;
   await backend.init();
   console.log(`[shared-context] Backend: ${type}`);
 }
@@ -31,7 +35,16 @@ export async function initSharedContext(config) {
  */
 export async function writeSharedMessage(chatId, msg) {
   if (!backend) return;
-  await backend.write(chatId, msg);
+  try {
+    await backend.write(chatId, msg);
+    lastWriteError = null;
+  } catch (error) {
+    lastWriteError = {
+      message: error.message,
+      ts: Date.now(),
+    };
+    console.warn(`[shared-context] write failed: ${error.message}`);
+  }
 }
 
 /**
@@ -41,4 +54,17 @@ export async function writeSharedMessage(chatId, msg) {
 export async function readSharedMessages(chatId, opts) {
   if (!backend) return [];
   return backend.read(chatId, opts);
+}
+
+export function getSharedContextStatus() {
+  return {
+    backend: backendType,
+    lastWriteError,
+  };
+}
+
+export function __setSharedContextBackendForTest(testBackend, type = "test") {
+  backend = testBackend;
+  backendType = type;
+  lastWriteError = null;
 }
