@@ -945,9 +945,10 @@ async function getExternalSessionsForChat(chatId, backendName, adapter, limit = 
   }
 
   const scanned = await adapter.listSessions(limit * 3);
+  const scannedSessions = Array.isArray(scanned) ? scanned : [];
   const external = [];
 
-  for (const session of scanned) {
+  for (const session of scannedSessions) {
     const sessionId = session.session_id || session.sessionId;
     if (!sessionId) continue;
     if (sessionBelongsToChat(chatId, sessionId, backendName, "owned")) continue;
