@@ -4,6 +4,8 @@ import { join, isAbsolute } from "path";
 const DB_PATH = process.env.TASKS_DB
   ? (isAbsolute(process.env.TASKS_DB) ? process.env.TASKS_DB : join(import.meta.dir, process.env.TASKS_DB))
   : join(import.meta.dir, "tasks.db");
+const DEFAULT_TASK_RETENTION_DAYS = Number(process.env.TASK_RETENTION_DAYS || 14);
+const DEFAULT_TASK_RETENTION_MIN_ROWS = Number(process.env.TASK_RETENTION_MIN_ROWS || 200);
 
 const db = new Database(DB_PATH);
 db.exec("PRAGMA journal_mode = WAL");
@@ -86,6 +88,17 @@ const stmtActiveByChat = db.prepare(`
   LIMIT 1
 `);
 
+const stmtCleanupOldTasks = db.prepare(`
+  DELETE FROM tasks
+  WHERE status NOT IN ('pending', 'running', 'approval_required')
+    AND updated_at < ?
+    AND task_id NOT IN (
+      SELECT task_id FROM tasks
+      ORDER BY updated_at DESC
+      LIMIT ?
+    )
+`);
+
 function nowTs() {
   return Date.now();
 }
@@ -160,3 +173,25 @@ export function recentTasks(chatId, limit = 8) {
 export function getActiveTask(chatId) {
   return stmtActiveByChat.get(chatId) || null;
 }
+
+export function cleanupOldTasks(options = {}) {
+  const retentionDays = Number(options.retentionDays ?? DEFAULT_TASK_RETENTION_DAYS);
+  const minRows = Number(options.minRows ?? DEFAULT_TASK_RETENTION_MIN_ROWS);
+  if (!Number.isFinite(retentionDays) || retentionDays <= 0) {
+    return { deleted: 0, skipped: true, reason: "invalid_retention_days" };
+  }
+  if (!Number.isFinite(minRows) || minRows < 0) {
+    return { deleted: 0, skipped: true, reason: "invalid_min_rows" };
+  }
+
+  const cutoff = nowTs() - retentionDays * 24 * 60 * 60 * 1000;
+  const result = stmtCleanupOldTasks.run(cutoff, Math.floor(minRows));
+  if (result.changes > 0) {
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  }
+  return { deleted: result.changes, cutoff };
+}
+
+cleanupOldTasks();
+const cleanupTimer = setInterval(() => cleanupOldTasks(), 24 * 60 * 60 * 1000);
+cleanupTimer.unref?.();

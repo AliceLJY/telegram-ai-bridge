@@ -141,6 +141,8 @@ export function createDefaultConfig() {
       defaultVerboseLevel: 1,
       executor: "direct",
       tasksDb: "",
+      taskRetentionDays: 14,
+      taskRetentionMinRows: 200,
       enableGroupSharedContext: true,
       groupContextMaxMessages: 30,
       groupContextMaxTokens: 3000,
@@ -304,6 +306,8 @@ function buildEnvFromConfig(config, backend, configPath) {
     SESSION_TIMEOUT_MS: String(shared.sessionTimeoutMs ?? 900000),
     SESSIONS_DB: resolvePathMaybe(baseDir, backendConfig.sessionsDb || `${selectedBackend}.db`),
     TASKS_DB: resolvePathMaybe(baseDir, shared.tasksDb || `tasks-${selectedBackend}.db`),
+    TASK_RETENTION_DAYS: String(shared.taskRetentionDays ?? 14),
+    TASK_RETENTION_MIN_ROWS: String(shared.taskRetentionMinRows ?? 200),
     SHARED_CONTEXT_BACKEND: shared.sharedContextBackend || "sqlite",
     SHARED_CONTEXT_DB: resolvePathMaybe(baseDir, shared.sharedContextDb || "shared-context.db"),
     SHARED_CONTEXT_JSON_PATH: resolvePathMaybe(baseDir, shared.sharedContextJsonPath || "shared-context.json"),
@@ -392,6 +396,8 @@ export function validateConfig(config, options = {}) {
   if (!isNonEmptyString(shared.tasksDb)) {
     pushIssue(issues, "shared.tasksDb", "must be set.");
   }
+  validatePositiveIntegerField(issues, "shared.taskRetentionDays", shared.taskRetentionDays);
+  validatePositiveIntegerField(issues, "shared.taskRetentionMinRows", shared.taskRetentionMinRows);
   if (typeof shared.enableGroupSharedContext !== "boolean") {
     pushIssue(issues, "shared.enableGroupSharedContext", "must be true or false.");
   }

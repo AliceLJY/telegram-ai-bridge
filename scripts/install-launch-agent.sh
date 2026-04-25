@@ -40,11 +40,12 @@ default_label() {
 }
 
 default_log_path() {
+  local log_dir="$HOME/Library/Logs/telegram-ai-bridge"
   if [[ "$1" == "claude" ]]; then
-    printf '%s/bridge.log' "$REPO_DIR"
+    printf '%s/bridge.log' "$log_dir"
     return
   fi
-  printf '%s/bridge-%s.log' "$REPO_DIR" "$1"
+  printf '%s/bridge-%s.log' "$log_dir" "$1"
 }
 
 while [[ $# -gt 0 ]]; do

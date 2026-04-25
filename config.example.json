@@ -6,6 +6,8 @@
     "defaultVerboseLevel": 1,
     "executor": "direct",
     "tasksDb": "tasks.db",
+    "taskRetentionDays": 14,
+    "taskRetentionMinRows": 200,
     "enableGroupSharedContext": true,
     "groupContextMaxMessages": 30,
     "groupContextMaxTokens": 3000,
