@@ -2,6 +2,8 @@
 // /doctor 命令：全面诊断 bridge 运行状态
 
 import { existsSync } from "fs";
+import { getSharedContextStatus } from "./shared-context.js";
+import { checkRedisHealth } from "./shared-context/redis-health.js";
 
 export async function runHealthCheck(ctx) {
   const {
@@ -82,6 +84,18 @@ export async function runHealthCheck(ctx) {
   if (sharedContextConfig) {
     const backend = sharedContextConfig.sharedContextBackend || "sqlite";
     lines.push(`✅ Shared Context: ${backend}`);
+    const sharedStatus = getSharedContextStatus();
+    if (sharedStatus.lastWriteError) {
+      lines.push(`⚠️ Shared Context write: ${sharedStatus.lastWriteError.message}`);
+    }
+    if (backend === "redis") {
+      const redisHealth = await checkRedisHealth(sharedContextConfig);
+      if (redisHealth.ok) {
+        lines.push(`✅ Redis: ping ok`);
+      } else {
+        lines.push(`❌ Redis: ${redisHealth.error}`);
+      }
+    }
   } else {
     lines.push(`⏭️ Shared Context: disabled`);
   }
