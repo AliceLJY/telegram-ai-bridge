@@ -1320,7 +1320,10 @@ async function processPrompt(ctx, prompt) {
         }
       }
     } catch (err) {
-      if (err.name === "AbortError" || (err.message && err.message.includes("aborted"))) {
+      // 双重确认：只有 abortController.signal.aborted 才是真"用户按 Stop"；
+      // SDK fetch error / 网络错误 / 未登录错误的 message 也可能包含 "aborted" 字样，单看 message 会误判
+      const isUserAbort = abortController.signal.aborted && (err.name === "AbortError" || (err.message && err.message.includes("aborted")));
+      if (isUserAbort) {
         // 用户主动 Stop，不算错误
         resultText = "";
         resultSuccess = true;
