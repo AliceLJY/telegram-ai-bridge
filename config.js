@@ -157,7 +157,6 @@ export function createDefaultConfig() {
       a2aEnabled: false,
       a2aPorts: { claude: 18810, codex: 18811, gemini: 18812 },
       a2aToolMode: "read-only",
-      a2aMaxGeneration: 2,
       a2aCooldownMs: 60000,
       a2aMaxResponsesPerWindow: 3,
       a2aWindowMs: 300000,
@@ -322,10 +321,11 @@ function buildEnvFromConfig(config, backend, configPath) {
       .map(([name, port]) => `${name}:http://localhost:${port}`)
       .join(","),
     A2A_TOOL_MODE: normalizeA2AToolMode(shared.a2aToolMode),
-    A2A_MAX_GENERATION: String(shared.a2aMaxGeneration ?? 2),
     A2A_COOLDOWN_MS: String(shared.a2aCooldownMs ?? 60000),
     A2A_MAX_RESPONSES_PER_WINDOW: String(shared.a2aMaxResponsesPerWindow ?? 3),
     A2A_WINDOW_MS: String(shared.a2aWindowMs ?? 300000),
+    A2A_CIRCUIT_BREAKER_THRESHOLD: String(shared.a2aCircuitBreakerThreshold ?? 3),
+    A2A_CIRCUIT_BREAKER_RESET_MS: String(shared.a2aCircuitBreakerResetMs ?? 30000),
 
     // Streaming Preview
     STREAM_PREVIEW_ENABLED: String(shared.streamPreviewEnabled ?? true),
@@ -416,6 +416,8 @@ export function validateConfig(config, options = {}) {
   if (!A2A_TOOL_MODES.includes(String(shared.a2aToolMode || "").trim())) {
     pushIssue(issues, "shared.a2aToolMode", `must be one of: ${A2A_TOOL_MODES.join(", ")}.`);
   }
+  validatePositiveIntegerField(issues, "shared.a2aCircuitBreakerThreshold", shared.a2aCircuitBreakerThreshold);
+  validatePositiveIntegerField(issues, "shared.a2aCircuitBreakerResetMs", shared.a2aCircuitBreakerResetMs);
 
   const backends = config?.backends;
   if (!backends || typeof backends !== "object") {

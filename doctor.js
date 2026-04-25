@@ -70,7 +70,7 @@ export async function runHealthCheck(ctx) {
   if (a2aBus) {
     try {
       const stats = a2aBus.getStats?.();
-      lines.push(`✅ A2A Bus: port=${process.env.A2A_PORT || "?"}, received=${stats?.received || 0}`);
+      lines.push(`✅ A2A Bus: port=${process.env.A2A_PORT || "?"}, received=${stats?.loopGuard?.received || 0}`);
     } catch {
       lines.push(`❌ A2A Bus: 状态获取失败`);
     }
