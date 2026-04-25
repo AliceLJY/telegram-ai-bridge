@@ -93,4 +93,11 @@ export class PeerHealthManager {
     }
     return result;
   }
+
+  getConfig() {
+    return {
+      failureThreshold: this.failureThreshold,
+      resetTimeoutMs: this.resetTimeoutMs,
+    };
+  }
 }

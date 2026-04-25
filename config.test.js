@@ -111,6 +111,9 @@ describe("config productization", () => {
     expect(runtime.env.SESSIONS_DB).toBe(join(dataDir, "sessions.db"));
     expect(runtime.env.TASKS_DB).toBe(join(dataDir, "tasks.db"));
     expect(runtime.env.A2A_TOOL_MODE).toBe("full");
+    expect(runtime.env.A2A_MAX_GENERATION).toBeUndefined();
+    expect(runtime.env.A2A_CIRCUIT_BREAKER_THRESHOLD).toBe("3");
+    expect(runtime.env.A2A_CIRCUIT_BREAKER_RESET_MS).toBe("30000");
     expect(summary.env.TELEGRAM_BOT_TOKEN).toBe("1234…WXYZ");
   });
 
