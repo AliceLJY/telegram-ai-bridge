@@ -109,6 +109,17 @@ fi
 mkdir -p "$(dirname "$plist_path")"
 mkdir -p "$(dirname "$log_path")"
 
+# If a plist already exists at the target path, lint it first. A failing lint
+# means the file got clobbered (e.g. by an accidental `plutil -convert json` or
+# `plutil -replace ProgramArguments -json '[...]' file.plist` writing a bare
+# JSON array instead of a dict). We still overwrite from the template below,
+# but make the recovery visible so the operator knows what happened.
+if [[ -f "$plist_path" ]]; then
+  if ! plutil -lint "$plist_path" >/dev/null 2>&1; then
+    echo "Warning: existing plist at $plist_path is invalid, overwriting from template" >&2
+  fi
+fi
+
 sed \
   -e "s/__LABEL__/$(escape_replacement "$label")/g" \
   -e "s/__WORKDIR__/$(escape_replacement "$REPO_DIR")/g" \
@@ -118,7 +129,13 @@ sed \
   -e "s/__LOG__/$(escape_replacement "$log_path")/g" \
   "$TEMPLATE_PATH" > "$plist_path"
 
-plutil -lint "$plist_path" >/dev/null
+# Lint the freshly-written plist. If sed ever produces something that's not a
+# legal plist dict (e.g. unescaped placeholder, broken template), fail loudly
+# rather than silently leaving a bad file behind.
+if ! plutil -lint "$plist_path"; then
+  echo "ERROR: generated plist failed plutil -lint at $plist_path" >&2
+  exit 1
+fi
 
 echo "Wrote $plist_path"
 echo "  label: $label"
