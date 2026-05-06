@@ -24,6 +24,7 @@ export function saveCapturedSession({
   chatId,
   prompt,
   backendName,
+  sessionType = "normal",
   setSession,
   patchCodexStateDb,
   logger = console,
@@ -35,7 +36,7 @@ export function saveCapturedSession({
 
   const displayName = prompt.slice(0, 30);
   logger.log(`[Session Debug] Saving session: chatId=${chatId} sessionId=${capturedSessionId.slice(0, 8)}... backend=${backendName} (was=${sessionId?.slice(0, 8) || "null"})`);
-  setSession(chatId, capturedSessionId, displayName, backendName, "owned");
+  setSession(chatId, capturedSessionId, displayName, backendName, "owned", sessionType);
   if (backendName === "codex") {
     setTimeout(patchCodexStateDb, 1000);
   }
@@ -49,6 +50,7 @@ export async function finishTurnProgress({
   chatId,
   resultSuccess,
   verboseLevel,
+  keepAsSummary = true,
   durationMs,
   deleteMessage,
   activeProgressTrackers,
@@ -61,7 +63,7 @@ export async function finishTurnProgress({
     await progress.finish({ skipMessage: true });
   } else {
     await progress.finish({
-      keepAsSummary: verboseLevel >= 1 && resultSuccess,
+      keepAsSummary: keepAsSummary && verboseLevel >= 1 && resultSuccess,
       durationMs,
     });
   }

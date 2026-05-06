@@ -54,8 +54,28 @@ function isPositiveInteger(value) {
   return parsed != null && parsed > 0;
 }
 
+function parseChatIdList(value) {
+  if (value == null) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [value];
+}
+
+function normalizeChatIdList(value) {
+  return parseChatIdList(value).map((item) => String(item).trim());
+}
+
 function looksLikeTelegramUserId(value) {
   return /^\d+$/.test(String(value ?? "").trim());
+}
+
+function looksLikeTelegramChatId(value) {
+  return /^-?\d+$/.test(String(value ?? "").trim());
 }
 
 function looksLikeTelegramBotToken(value) {
@@ -144,6 +164,7 @@ export function createDefaultConfig() {
       taskRetentionDays: 14,
       taskRetentionMinRows: 200,
       enableGroupSharedContext: true,
+      discussChatIds: [],
       groupContextMaxMessages: 30,
       groupContextMaxTokens: 3000,
       groupContextTtlMs: 1200000,
@@ -298,6 +319,7 @@ function buildEnvFromConfig(config, backend, configPath) {
     DEFAULT_BACKEND: selectedBackend,
     ENABLED_BACKENDS: selectedBackend,
     ENABLE_GROUP_SHARED_CONTEXT: String(shared.enableGroupSharedContext ?? true),
+    DISCUSS_CHAT_IDS: normalizeChatIdList(shared.discussChatIds).join(","),
     GROUP_CONTEXT_MAX_MESSAGES: String(shared.groupContextMaxMessages ?? 30),
     GROUP_CONTEXT_MAX_TOKENS: String(shared.groupContextMaxTokens ?? 3000),
     GROUP_CONTEXT_TTL_MS: String(shared.groupContextTtlMs ?? 1200000),
@@ -400,6 +422,12 @@ export function validateConfig(config, options = {}) {
   validatePositiveIntegerField(issues, "shared.taskRetentionMinRows", shared.taskRetentionMinRows);
   if (typeof shared.enableGroupSharedContext !== "boolean") {
     pushIssue(issues, "shared.enableGroupSharedContext", "must be true or false.");
+  }
+  const discussChatIds = parseChatIdList(shared.discussChatIds);
+  if (!Array.isArray(shared.discussChatIds)) {
+    pushIssue(issues, "shared.discussChatIds", "must be an array of Telegram chat IDs.");
+  } else if (!discussChatIds.every(looksLikeTelegramChatId)) {
+    pushIssue(issues, "shared.discussChatIds", "must contain only numeric Telegram chat IDs.");
   }
   validatePositiveIntegerField(issues, "shared.groupContextMaxMessages", shared.groupContextMaxMessages);
   validatePositiveIntegerField(issues, "shared.groupContextMaxTokens", shared.groupContextMaxTokens);
@@ -550,6 +578,16 @@ export function validateResolvedEnv(env, options = {}) {
   }
   if (isNonEmptyString(env.SESSION_TIMEOUT_MS)) {
     validatePositiveIntegerField(issues, "SESSION_TIMEOUT_MS", env.SESSION_TIMEOUT_MS);
+  }
+  if (
+    isNonEmptyString(env.DISCUSS_CHAT_IDS)
+    && !String(env.DISCUSS_CHAT_IDS)
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .every(looksLikeTelegramChatId)
+  ) {
+    pushIssue(issues, "DISCUSS_CHAT_IDS", "must contain only numeric Telegram chat IDs.");
   }
 
   if (

@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   __setSharedContextBackendForTest,
   getSharedContextStatus,
+  readSharedMessages,
   writeSharedMessage,
 } from "./index.js";
 
@@ -20,5 +21,17 @@ describe("shared context manager", () => {
     })).resolves.toBeUndefined();
 
     expect(getSharedContextStatus().lastWriteError.message).toBe("redis unavailable");
+  });
+
+  test("read failures are downgraded to empty context", async () => {
+    __setSharedContextBackendForTest({
+      async read() {
+        throw new Error("database is locked");
+      },
+    }, "sqlite");
+
+    await expect(readSharedMessages(-100)).resolves.toEqual([]);
+
+    expect(getSharedContextStatus().lastReadError.message).toBe("database is locked");
   });
 });
