@@ -52,6 +52,7 @@ import { markdownToTelegramHTML, hasMarkdownFormatting } from "./markdown-to-tg.
 import { extractFilePathsFromText, sendCapturedOutputs, sendFinalResult } from "./output-relay.js";
 import { createTaskFinalizer, finishTurnProgress, saveCapturedSession } from "./turn-state.js";
 import { registerCommands } from "./commands/index.js";
+import { startEntrypointPatcher } from "./scripts/patch-entrypoint.js";
 import {
   buildDiscussCommandResult,
   buildDiscussExitContractHint,
@@ -1579,6 +1580,8 @@ bot.use((ctx, next) => {
   }
   return next();
 });
+
+startEntrypointPatcher();
 
 registerCommands(bot, {
   ACTIVE_BACKENDS,
