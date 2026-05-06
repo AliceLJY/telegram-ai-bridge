@@ -8,6 +8,7 @@ import { estimateTokens, trimByTokens } from "./utils.js";
 export function createSqliteBackend(config) {
   let db = null;
   const dbPath = config.sharedContextDb || "shared-context.db";
+  const busyTimeoutMs = 5000;
 
   return {
     async init() {
@@ -16,6 +17,7 @@ export function createSqliteBackend(config) {
         : join(config._baseDir || import.meta.dir, dbPath);
       db = new Database(resolved);
       db.run("PRAGMA journal_mode = WAL");
+      db.run(`PRAGMA busy_timeout = ${busyTimeoutMs}`);
       db.run(`
         CREATE TABLE IF NOT EXISTS shared_context (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,7 +49,12 @@ export function createSqliteBackend(config) {
       const minTs = Date.now() - ttlMs;
 
       // 清理过期数据
-      db.prepare("DELETE FROM shared_context WHERE chat_id = ? AND ts < ?").run(chatId, minTs);
+      try {
+        db.prepare("DELETE FROM shared_context WHERE chat_id = ? AND ts < ?").run(chatId, minTs);
+      } catch (error) {
+        if (!/database is locked/i.test(error.message)) throw error;
+        console.warn(`[shared-context:sqlite] cleanup skipped: ${error.message}`);
+      }
 
       // 读取最近消息（按时间倒序取，再反转）
       const rows = db.prepare(

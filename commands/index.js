@@ -7,10 +7,12 @@ export function registerCommands(bot, deps) {
     CC_CWD,
     DEFAULT_EFFORT,
     DEFAULT_VERBOSE,
+    DISCUSS_CHAT_IDS,
     InlineKeyboard,
     a2aBus,
     adapters,
     buildResumeHint,
+    buildDiscussCommandResult,
     buildSessionButtonLabel,
     chatAbortControllers,
     chatPermState,
@@ -30,9 +32,11 @@ export function registerCommands(bot, deps) {
     getChatEffort,
     getChatModel,
     getExternalSessionsForChat,
+    getDiscussTurnState,
     getOwnedSessionsForChat,
     getPermState,
     getSession,
+    getSessionTypeState,
     getSessionProjectLabel,
     getSessionSourceLabel,
     lastSessionList,
@@ -50,12 +54,30 @@ export function registerCommands(bot, deps) {
     setChatEffort,
     setChatModel,
     setSession,
+    setSessionType,
     sharedContextConfig,
     sortSessionsForDisplay,
     submitAndWait,
     tgSendDocument,
     verboseSettings,
   } = deps;
+
+  function getEffectiveSession(chatId) {
+    const session = getSession(chatId);
+    const sessionTypeState = typeof getSessionTypeState === "function"
+      ? getSessionTypeState(chatId)
+      : { sessionType: session?.session_type || "normal", explicit: false };
+    return session
+      ? {
+        ...session,
+        session_type: sessionTypeState.sessionType,
+        session_type_explicit: sessionTypeState.explicit,
+      }
+      : {
+        session_type: sessionTypeState.sessionType,
+        session_type_explicit: sessionTypeState.explicit,
+      };
+  }
 
   // ── /help 命令 ──
   bot.command("help", async (ctx) => {
@@ -75,6 +97,7 @@ export function registerCommands(bot, deps) {
       "/effort — 切换思考深度",
       "/dir — 切换工作目录",
       "/verbose \\[0-2] — 输出详细度",
+      "/discuss status|on|off — 控制群聊 Discuss 模式",
       "",
       "📊 *状态*",
       "/status — 当前状态",
@@ -94,6 +117,31 @@ export function registerCommands(bot, deps) {
     await ctx.reply(text, { parse_mode: "Markdown" }).catch(() => {
       ctx.reply(text.replace(/[*\\]/g, "")).catch(() => {});
     });
+  });
+
+  // ── /discuss 命令：控制当前群聊 session 的 Discuss 模式 ──
+  bot.command("discuss", async (ctx) => {
+    const session = getEffectiveSession(ctx.chat.id);
+    const result = buildDiscussCommandResult({
+      arg: ctx.match,
+      chat: ctx.chat,
+      from: ctx.from,
+      ownerId: deps.OWNER_ID,
+      session,
+      discussChatIds: DISCUSS_CHAT_IDS,
+    });
+
+    if (result.ignored) return;
+
+    if (result.nextSessionType) {
+      const changed = setSessionType(ctx.chat.id, result.nextSessionType);
+      if (!changed) {
+        await ctx.reply("会话状态未更新：当前会话不存在或已过期。");
+        return;
+      }
+    }
+
+    await ctx.reply(result.replyText);
   });
 
   // ── 按钮回调：Stop（一键停止） ──
@@ -125,7 +173,7 @@ export function registerCommands(bot, deps) {
 
   // ── /new 命令：重置会话 ──
   bot.command("new", async (ctx) => {
-    deleteSession(ctx.chat.id);
+    deleteSession(ctx.chat.id, "/new-command");
     chatPermState.delete(ctx.chat.id);
     const adapter = getAdapter(ctx.chat.id);
     await ctx.reply(`会话已重置，下条消息将开启新 ${adapter.label} 会话。`);
@@ -235,9 +283,8 @@ export function registerCommands(bot, deps) {
         const isCurrent = current && current.session_id === s.session_id;
         kb.text(buildSessionButtonLabel(s, backend, isCurrent), `resume:${s.session_id}:${backend}`).row();
       }
-      kb.text("🆕 开新会话", "action:new").row();
       await ctx.reply(
-        "选择会话：点按钮接续，或 /resume <序号>（如 /resume 3）",
+        "选择会话：点按钮接续，或 /resume <序号>（如 /resume 3）。要新开会话发 /new。",
         { reply_markup: kb },
       );
     } catch (e) {
@@ -273,11 +320,17 @@ export function registerCommands(bot, deps) {
     const adapter = getAdapter(ctx.chat.id);
     const backendName = getBackendName(ctx.chat.id);
     const session = getSession(ctx.chat.id);
+    const effectiveSession = getEffectiveSession(ctx.chat.id);
     const verbose = verboseSettings.get(ctx.chat.id) ?? DEFAULT_VERBOSE;
     const modelOverride = getChatModel(ctx.chat.id);
     const effortOverride = getChatEffort(ctx.chat.id) || DEFAULT_EFFORT || null;
     const info = adapter.statusInfo(modelOverride, effortOverride);
     const activeTask = getActiveTask(ctx.chat.id);
+    const discussState = getDiscussTurnState({
+      chat: ctx.chat,
+      session: effectiveSession,
+      discussChatIds: DISCUSS_CHAT_IDS,
+    });
 
     let sessionLine = "当前会话: 无（下条消息开新会话）";
     let resumeHint = "";
@@ -307,6 +360,7 @@ export function registerCommands(bot, deps) {
       `思考深度: ${info.effort || DEFAULT_EFFORT || "默认 (high)"}\n` +
       `工作目录: ${dirManager.current(ctx.chat.id)}\n` +
       `${sessionLine}${sessionMetaLine}${resumeHint}\n` +
+      `Discuss: ${discussState.active ? "on" : "off"} (${discussState.sessionType})\n` +
       `进度详细度: ${verbose}（0=关/1=工具名/2=详细）` +
       `${cronManager ? `\nCron: ${cronManager.count(ctx.chat.id)} 个任务` : ""}` +
       `${activeTask ? `\n活动任务: ${formatTaskStatus(activeTask)}` : ""}`;
@@ -735,14 +789,6 @@ export function registerCommands(bot, deps) {
       `继续发消息即可。`,
       { parse_mode: "Markdown" }
     );
-  });
-
-  // ── 按钮回调：新会话 ──
-  bot.callbackQuery("action:new", async (ctx) => {
-    deleteSession(ctx.chat.id);
-    await ctx.answerCallbackQuery({ text: "已重置 ✓" });
-    const adapter = getAdapter(ctx.chat.id);
-    await ctx.editMessageText(`会话已重置，下条消息将开启新 ${adapter.label} 会话。`);
   });
 
   // ── 按钮回调：AskUserQuestion 选项 ──

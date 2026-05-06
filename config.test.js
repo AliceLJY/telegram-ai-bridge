@@ -117,6 +117,35 @@ describe("config productization", () => {
     expect(summary.env.TELEGRAM_BOT_TOKEN).toBe("1234…WXYZ");
   });
 
+  test("loadRuntimeConfig exposes discuss chat allowlist without changing defaults", () => {
+    const repoDir = makeTempDir();
+    const configPath = join(repoDir, "config.json");
+    writeConfig(configPath, (config) => {
+      config.shared.discussChatIds = [-1001234567890, "-1009876543210"];
+    });
+
+    const runtime = loadRuntimeConfig({ backend: "claude", configPath });
+
+    expect(createDefaultConfig().shared.discussChatIds).toEqual([]);
+    expect(runtime.env.DISCUSS_CHAT_IDS).toBe("-1001234567890,-1009876543210");
+    expect(validateConfig(runtime.config)).toEqual([]);
+  });
+
+  test("validateConfig rejects invalid discuss chat ids", () => {
+    const config = createDefaultConfig();
+    config.shared.ownerTelegramId = "123456789";
+    config.shared.cwd = makeTempDir();
+    config.shared.tasksDb = "tasks.db";
+    config.backends.claude.enabled = true;
+    config.backends.claude.telegramBotToken = "123456:ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    config.backends.claude.sessionsDb = "sessions.db";
+    config.shared.discussChatIds = ["not-a-chat-id"];
+
+    const issues = validateConfig(config);
+
+    expect(issues.map((issue) => issue.path)).toContain("shared.discussChatIds");
+  });
+
   test("loadRuntimeConfig rejects configs whose working directory does not exist", () => {
     const repoDir = makeTempDir();
     const configPath = join(repoDir, "config.json");

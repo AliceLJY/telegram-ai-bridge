@@ -93,13 +93,15 @@ export function createProgressTracker(ctx, chatId, verboseLevel = 1, backendLabe
     return `${headerBase}... ⏱ ${elapsedLabel()}`;
   }
 
-  async function start() {
-    try {
-      const opts = replyMarkup ? { reply_markup: replyMarkup } : {};
-      const msg = await ctx.api.sendMessage(chatId, headerText(), opts);
-      progressMsgId = msg.message_id;
-    } catch {
-      // 发送失败不影响主流程
+  async function start({ visibleMessage = true } = {}) {
+    if (visibleMessage) {
+      try {
+        const opts = replyMarkup ? { reply_markup: replyMarkup } : {};
+        const msg = await ctx.api.sendMessage(chatId, headerText(), opts);
+        progressMsgId = msg.message_id;
+      } catch {
+        // 发送失败不影响主流程
+      }
     }
 
     // Typing 心跳（每 4 秒发一次，Telegram typing 持续 5 秒）

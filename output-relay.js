@@ -126,6 +126,12 @@ export async function sendFinalResult({
 }) {
   let text = resultText ? protectFileReferences(resultText) : resultText;
 
+  // 让最终结果在 Telegram 上 quote 触发本次任务的原消息，对齐"提问↔答案"视觉关系
+  const _mid = ctx?.message?.message_id;
+  const quote = _mid
+    ? { reply_parameters: { message_id: _mid, allow_sending_without_reply: true } }
+    : {};
+
   if (!resultSuccess) {
     finalizeFailure(summarizeText(text, 240), "RESULT_ERROR");
     await sendLong(ctx, `${adapterLabel} 错误: ${text}`);
@@ -134,7 +140,7 @@ export async function sendFinalResult({
 
   if (!text) {
     finalizeSuccess("");
-    await ctx.reply(`${adapterLabel} 无输出。`);
+    await ctx.reply(`${adapterLabel} 无输出。`, quote);
     return text;
   }
 
@@ -151,17 +157,17 @@ export async function sendFinalResult({
     }
     if (hasMarkdownFormatting(text)) {
       await withRetry(
-        () => ctx.reply(markdownToTelegramHTML(text), { reply_markup: kb, parse_mode: "HTML" }),
-        { onParseFallback: () => ctx.reply(text, { reply_markup: kb }) },
+        () => ctx.reply(markdownToTelegramHTML(text), { reply_markup: kb, parse_mode: "HTML", ...quote }),
+        { onParseFallback: () => ctx.reply(text, { reply_markup: kb, ...quote }) },
       );
     } else {
-      await ctx.reply(text, { reply_markup: kb });
+      await ctx.reply(text, { reply_markup: kb, ...quote });
     }
   } else if (text.length > 4000 && estimateCodeRatio(text) > 0.6) {
     const ext = detectCodeLang(text) || "txt";
     await sendDocument(chatId, Buffer.from(text, "utf-8"), `output.${ext}`);
     const preview = text.slice(0, 300).replace(/```\w*\n?/, "");
-    await ctx.reply(`${preview}\n\n📎 完整输出 (${text.length} 字符) 见附件`);
+    await ctx.reply(`${preview}\n\n📎 完整输出 (${text.length} 字符) 见附件`, quote);
   } else {
     await sendLong(ctx, text);
   }

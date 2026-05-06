@@ -8,6 +8,7 @@ import { createRedisBackend } from "./redis.js";
 let backend = null;
 let backendType = "";
 let lastWriteError = null;
+let lastReadError = null;
 
 const BACKENDS = { sqlite: createSqliteBackend, json: createJsonBackend, redis: createRedisBackend };
 
@@ -26,6 +27,7 @@ export async function initSharedContext(config) {
   backend = factory(config);
   backendType = type;
   lastWriteError = null;
+  lastReadError = null;
   await backend.init();
   console.log(`[shared-context] Backend: ${type}`);
 }
@@ -53,13 +55,25 @@ export async function writeSharedMessage(chatId, msg) {
  */
 export async function readSharedMessages(chatId, opts) {
   if (!backend) return [];
-  return backend.read(chatId, opts);
+  try {
+    const messages = await backend.read(chatId, opts);
+    lastReadError = null;
+    return messages;
+  } catch (error) {
+    lastReadError = {
+      message: error.message,
+      ts: Date.now(),
+    };
+    console.warn(`[shared-context] read failed: ${error.message}`);
+    return [];
+  }
 }
 
 export function getSharedContextStatus() {
   return {
     backend: backendType,
     lastWriteError,
+    lastReadError,
   };
 }
 
@@ -67,4 +81,5 @@ export function __setSharedContextBackendForTest(testBackend, type = "test") {
   backend = testBackend;
   backendType = type;
   lastWriteError = null;
+  lastReadError = null;
 }

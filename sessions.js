@@ -7,6 +7,13 @@ const DB_PATH = process.env.SESSIONS_DB
   ? (isAbsolute(process.env.SESSIONS_DB) ? process.env.SESSIONS_DB : join(import.meta.dir, process.env.SESSIONS_DB))
   : join(import.meta.dir, "sessions.db");
 
+export const SESSION_TYPES = ["normal", "discuss"];
+
+function normalizeSessionType(value) {
+  const normalized = String(value || "normal").trim().toLowerCase();
+  return SESSION_TYPES.includes(normalized) ? normalized : "normal";
+}
+
 const db = new Database(DB_PATH);
 db.exec("PRAGMA journal_mode = WAL");
 db.exec(`
@@ -17,7 +24,8 @@ db.exec(`
     last_active INTEGER NOT NULL,
     display_name TEXT DEFAULT '',
     backend TEXT DEFAULT 'claude',
-    ownership TEXT DEFAULT 'owned'
+    ownership TEXT DEFAULT 'owned',
+    session_type TEXT DEFAULT 'normal'
   )
 `);
 
@@ -38,6 +46,14 @@ try {
     throw e;
   }
 }
+try {
+  db.exec("ALTER TABLE sessions ADD COLUMN session_type TEXT DEFAULT 'normal'");
+} catch (e) {
+  if (!/duplicate column|already exists/i.test(e.message)) {
+    console.error("[DB] Migration error (session_type column):", e.message);
+    throw e;
+  }
+}
 
 // 会话历史表（保留所有历史会话，不被 /new 或 upsert 覆盖）
 db.exec(`
@@ -48,7 +64,8 @@ db.exec(`
     last_active INTEGER NOT NULL,
     display_name TEXT DEFAULT '',
     backend TEXT DEFAULT 'claude',
-    ownership TEXT DEFAULT 'owned'
+    ownership TEXT DEFAULT 'owned',
+    session_type TEXT DEFAULT 'normal'
   )
 `);
 try {
@@ -56,6 +73,14 @@ try {
 } catch (e) {
   if (!/duplicate column|already exists/i.test(e.message)) {
     console.error("[DB] Migration error (session_history.ownership):", e.message);
+    throw e;
+  }
+}
+try {
+  db.exec("ALTER TABLE session_history ADD COLUMN session_type TEXT DEFAULT 'normal'");
+} catch (e) {
+  if (!/duplicate column|already exists/i.test(e.message)) {
+    console.error("[DB] Migration error (session_history.session_type):", e.message);
     throw e;
   }
 }
@@ -68,61 +93,90 @@ db.exec(`
   )
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS chat_session_type (
+    chat_id INTEGER PRIMARY KEY,
+    session_type TEXT NOT NULL DEFAULT 'normal',
+    explicit INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL
+  )
+`);
+try {
+  db.exec("ALTER TABLE chat_session_type ADD COLUMN explicit INTEGER NOT NULL DEFAULT 0");
+} catch (e) {
+  if (!/duplicate column|already exists/i.test(e.message)) {
+    console.error("[DB] Migration error (chat_session_type.explicit):", e.message);
+    throw e;
+  }
+}
+
 // Prepared statements — sessions
-const stmtGet = db.prepare("SELECT session_id, last_active, backend, ownership FROM sessions WHERE chat_id = ?");
+const stmtGet = db.prepare("SELECT session_id, last_active, backend, ownership, session_type FROM sessions WHERE chat_id = ?");
 const stmtUpsert = db.prepare(`
-  INSERT INTO sessions (chat_id, session_id, created_at, last_active, display_name, backend, ownership)
-  VALUES (?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO sessions (chat_id, session_id, created_at, last_active, display_name, backend, ownership, session_type)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(chat_id) DO UPDATE SET
     session_id = excluded.session_id,
     last_active = excluded.last_active,
     display_name = excluded.display_name,
     backend = excluded.backend,
-    ownership = excluded.ownership
+    ownership = excluded.ownership,
+    session_type = excluded.session_type
 `);
 const stmtDelete = db.prepare("DELETE FROM sessions WHERE chat_id = ?");
 const stmtRecentAll = db.prepare(`
-  SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership FROM (
-    SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership FROM sessions
+  SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership, session_type FROM (
+    SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership, session_type FROM sessions
     UNION ALL
-    SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership FROM session_history
+    SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership, session_type FROM session_history
   ) ORDER BY last_active DESC LIMIT ?
 `);
 const stmtRecentByChat = db.prepare(`
-  SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership FROM (
-    SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership FROM sessions
+  SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership, session_type FROM (
+    SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership, session_type FROM sessions
     UNION ALL
-    SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership FROM session_history
+    SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership, session_type FROM session_history
   ) WHERE chat_id = ?
   ORDER BY last_active DESC LIMIT ?
 `);
 const stmtRecentByChatAndBackend = db.prepare(`
-  SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership FROM (
-    SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership FROM sessions
+  SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership, session_type FROM (
+    SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership, session_type FROM sessions
     UNION ALL
-    SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership FROM session_history
+    SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership, session_type FROM session_history
   ) WHERE chat_id = ? AND backend = ?
   ORDER BY last_active DESC LIMIT ?
 `);
 const stmtRecentByChatBackendAndOwnership = db.prepare(`
-  SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership FROM (
-    SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership FROM sessions
+  SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership, session_type FROM (
+    SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership, session_type FROM sessions
     UNION ALL
-    SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership FROM session_history
+    SELECT chat_id, session_id, created_at, last_active, display_name, backend, ownership, session_type FROM session_history
   ) WHERE chat_id = ? AND backend = ? AND ownership = ?
   ORDER BY last_active DESC LIMIT ?
 `);
 const stmtCleanup = db.prepare("DELETE FROM sessions WHERE last_active < ?");
 const stmtCleanupHistory = db.prepare("DELETE FROM session_history WHERE last_active < ?");
 const stmtTouch = db.prepare("UPDATE sessions SET last_active = ? WHERE chat_id = ?");
+const stmtGetSessionType = db.prepare("SELECT session_type FROM sessions WHERE chat_id = ?");
+const stmtSetSessionType = db.prepare("UPDATE sessions SET session_type = ?, last_active = ? WHERE chat_id = ?");
+const stmtGetChatSessionType = db.prepare("SELECT session_type, explicit FROM chat_session_type WHERE chat_id = ?");
+const stmtSetChatSessionType = db.prepare(`
+  INSERT INTO chat_session_type (chat_id, session_type, explicit, updated_at)
+  VALUES (?, ?, 1, ?)
+  ON CONFLICT(chat_id) DO UPDATE SET
+    session_type = excluded.session_type,
+    explicit = excluded.explicit,
+    updated_at = excluded.updated_at
+`);
 
 // History statements
 const stmtArchive = db.prepare(`
-  INSERT OR REPLACE INTO session_history (session_id, chat_id, created_at, last_active, display_name, backend, ownership)
-  SELECT session_id, chat_id, created_at, last_active, display_name, backend, ownership FROM sessions WHERE chat_id = ?
+  INSERT OR REPLACE INTO session_history (session_id, chat_id, created_at, last_active, display_name, backend, ownership, session_type)
+  SELECT session_id, chat_id, created_at, last_active, display_name, backend, ownership, session_type FROM sessions WHERE chat_id = ?
 `);
 const stmtGetHistory = db.prepare(
-  "SELECT session_id, chat_id, created_at, last_active, display_name, backend, ownership FROM session_history WHERE session_id = ?"
+  "SELECT session_id, chat_id, created_at, last_active, display_name, backend, ownership, session_type FROM session_history WHERE session_id = ?"
 );
 const stmtDeleteFromHistory = db.prepare("DELETE FROM session_history WHERE session_id = ?");
 const stmtHasSessionForChat = db.prepare(`
@@ -182,6 +236,7 @@ export function getSession(chatId) {
     session_id: row.session_id,
     backend: row.backend || "claude",
     ownership: row.ownership || "owned",
+    session_type: normalizeSessionType(row.session_type),
   };
 }
 
@@ -191,25 +246,69 @@ export function setSession(
   displayName = "",
   backend = "claude",
   ownership = "owned",
+  sessionType = "normal",
 ) {
   // 归档旧会话（如果有）
   stmtArchive.run(chatId);
   // 从历史中移除（避免恢复后重复出现）
   stmtDeleteFromHistory.run(sessionId);
   const now = Date.now();
-  stmtUpsert.run(chatId, sessionId, now, now, displayName, backend, ownership);
+  const normalizedSessionType = normalizeSessionType(sessionType);
+  stmtUpsert.run(chatId, sessionId, now, now, displayName, backend, ownership, normalizedSessionType);
 }
 
-export function deleteSession(chatId) {
+export function deleteSession(chatId, source = "unknown") {
   // 归档到历史再删除
   const existing = stmtGet.get(chatId);
-  console.log(`[Session Debug] deleteSession(${chatId}) called — existing:`, existing ? `${existing.session_id.slice(0, 8)}...` : "none", new Error().stack?.split("\n").slice(1, 4).join(" ← "));
+  console.log(`[Session Debug] deleteSession(${chatId}) source=${source} existing:`, existing ? `${existing.session_id.slice(0, 8)}...` : "none", new Error().stack?.split("\n").slice(1, 8).join(" ← "));
   stmtArchive.run(chatId);
   stmtDelete.run(chatId);
 }
 
 export function getHistorySession(sessionId) {
   return stmtGetHistory.get(sessionId) || null;
+}
+
+export function getSessionType(chatId) {
+  return getSessionTypeState(chatId).sessionType;
+}
+
+export function getSessionTypeState(chatId) {
+  const chatRow = stmtGetChatSessionType.get(chatId);
+  if (chatRow && Number(chatRow.explicit) === 1) {
+    return {
+      sessionType: normalizeSessionType(chatRow.session_type),
+      explicit: true,
+    };
+  }
+
+  const row = stmtGetSessionType.get(chatId);
+  if (row?.session_type) {
+    return {
+      sessionType: normalizeSessionType(row.session_type),
+      explicit: false,
+    };
+  }
+
+  if (chatRow) {
+    return {
+      sessionType: normalizeSessionType(chatRow.session_type),
+      explicit: false,
+    };
+  }
+
+  return {
+    sessionType: "normal",
+    explicit: false,
+  };
+}
+
+export function setSessionType(chatId, sessionType) {
+  const normalizedSessionType = normalizeSessionType(sessionType);
+  const now = Date.now();
+  stmtSetChatSessionType.run(chatId, normalizedSessionType, now);
+  const sessionChanges = stmtSetSessionType.run(normalizedSessionType, now, chatId).changes;
+  return Math.max(1, sessionChanges);
 }
 
 export function recentSessions(limit = 8, options = {}) {

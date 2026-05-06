@@ -118,6 +118,8 @@ Two collaboration modes in one project:
 - **A2A mode** (CC + Codex group): bots auto-respond to each other with loop guards — for brainstorming and debate
 - **War Room mode** (multi-CC group): @mention only — for coordinated parallel execution
 
+For softer group-chat behavior, allowlist the room with `shared.discussChatIds`. Allowlisted rooms default to Discuss mode: each bot can read an unmentioned human message and independently decide whether it has something useful to add. A bot that is explicitly @mentioned or replied to must answer; the others still self-select. Bots that opt out stay silent; bots that opt in send normal text only. Use `/discuss off` to quiet a room explicitly, and `/discuss on` to re-enable it. The bridge suppresses progress bubbles in this mode but keeps Telegram's native typing indicator, so the room stays quiet without becoming opaque.
+
 Done discussing? `/export` dumps the entire cross-bot conversation as a Markdown file — full audit trail, every bot's contribution timestamped.
 
 <img src="assets/export-demo.png" alt="/export — War Room conversation exported as Markdown" width="600">
@@ -198,6 +200,7 @@ Sessions are sticky: messages continue the current session until you explicitly 
 | `/resume <#\|id>` | Resume by sequence number or session ID |
 | `/model` | Pick a model for the current bot |
 | `/status` | Show backend, model, cwd, and session |
+| `/discuss status\|on\|off` | Control opt-in Discuss mode for allowlisted group chats |
 | `/dir` | Switch working directory |
 | `/tasks` | Show recent task history |
 | `/verbose 0\|1\|2` | Change progress verbosity |
@@ -616,7 +619,11 @@ Swap credential mount and `--backend` for other backends. See `docker-compose.ex
 - `config.js` — Config loader and setup wizard
 - `bridge.js` — Telegram bot runtime
 - `sessions.js` — SQLite session persistence
+- `discuss-mode.js` — Discuss mode send/silent contract, control command semantics, and probe gating
+- `group-context-pipeline.js` — Canonical group-message context reduction and rendering
+- `telegram-command-routing.js` — Telegram slash-command target parsing, including mention-first control commands
 - `streaming-preview.js` — Live text preview via editMessage (throttled, with degradation)
+- `progress.js` — Progress messages and typing-only indicators
 - `send-retry.js` — Outbound delivery retry with error classification and HTML fallback
 - `file-ref-protect.js` — Prevents Telegram auto-linking filenames as domains (.md, .go, .py etc.)
 - `shared-context.js` — Cross-bot shared context entry point
