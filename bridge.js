@@ -802,7 +802,9 @@ function buildResumeHint(backend, sessionId, cwdHint = "") {
     return `codex -C ${cwdHint || CC_CWD} resume ${sessionId}`;
   }
   if (backend === "claude") {
-    return `claude --resume ${sessionId}`;
+    // CLI --resume 受 cwd 限制：sanitized-cwd 不匹配会报 "No conversation found"
+    // 必须先 cd 到写入 jsonl 时的 cwd（默认 ~），resume 才能定位到 session
+    return `cd ${cwdHint || CC_CWD} && claude --resume ${sessionId}`;
   }
   return "";
 }
