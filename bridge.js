@@ -806,9 +806,25 @@ function formatSessionIdShort(sessionId, length = 8) {
   return sessionId.length > length ? `${sessionId.slice(0, length)}...` : sessionId;
 }
 
+function formatLocalTimeShort(ms) {
+  if (!ms) return "";
+  const date = new Date(Number(ms));
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Singapore",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type) => parts.find((p) => p.type === type)?.value || "";
+  return `${get("month")}-${get("day")} ${get("hour")}:${get("minute")}`;
+}
+
 function buildSessionButtonLabel(sessionMeta, backend, isCurrent) {
   const icon = backend === "codex" ? "🟢" : backend === "gemini" ? "🔵" : "🟣";
-  const time = new Date(sessionMeta.last_active).toISOString().slice(5, 16).replace("T", " ");
+  const time = formatLocalTimeShort(sessionMeta.last_active);
   const topic = getTopicSnippet(sessionMeta);
   // 只在非 home 目录时显示项目名
   const project = getSessionProjectLabel(sessionMeta);
@@ -1024,7 +1040,7 @@ function summarizeText(text, maxLen = 120) {
 }
 
 function formatTaskStatus(task) {
-  const time = new Date(task.updated_at || task.created_at).toISOString().slice(5, 16).replace("T", " ");
+  const time = formatLocalTimeShort(task.updated_at || task.created_at);
   const tool = task.approval_tool ? ` · ${task.approval_tool}` : "";
   const summary = summarizeText(task.prompt_summary || task.result_summary || "", 36);
   const suffix = summary ? ` · ${summary}` : "";
