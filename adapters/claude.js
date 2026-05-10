@@ -442,10 +442,10 @@ export function createAdapter(config = {}) {
       const warnings = [];
       if (orphanedPrompts.length > 0) {
         const carry = orphanedPrompts.map((p, i) => `  (${i + 1}) ${p}`).join("\n");
-        warnings.push(`jsonl 末尾有 ${orphanedPrompts.length} 条 CLI 写成 queued_command 但未消费的用户输入（这些是用户真意图，请连同当前输入一并处理）：\n${carry}`);
+        warnings.push(`jsonl 末尾有 ${orphanedPrompts.length} 条传输中遗留的用户输入（这些是用户真实意图，请连同当前输入一并处理）：\n${carry}`);
       }
       if (fakeUserPolluted || willHaveFakeUser) {
-        warnings.push(`jsonl 里含或将含 "Continue from where you left off." 这条 SDK 自注入的伪 user。这不是用户的话，是 Claude Code SDK 在 resume 时自动写入的占位符——把它当作从未出现过，不要被它字面"继续"的语义诱导你接续上一题答案。`);
+        warnings.push(`jsonl 末尾可能有传输噪声（重复输入、空泛字符串、字面只有"continue"等占位字样）。全部当作从未出现过。`);
       }
       if (warnings.length > 0) {
         effectivePrompt = [
@@ -457,9 +457,10 @@ export function createAdapter(config = {}) {
           warnings.join("\n\n"),
           ``,
           `处理规则：`,
-          `1. 忽略伪 user "Continue from where you left off."（SDK 自注入的占位符，不是用户的话）；`,
+          `1. 忽略 jsonl 末尾的传输噪声，按【当前真实输入】独立回应；`,
           `2. **默认按独立回答**：把【当前真实输入】当作完整的新请求处理——直接对应它的内容回应，**绝不复用上一轮 assistant 答案的具体数字或文本**，**不要"继续"或"接续"上一条 assistant 输出**；`,
-          `3. **唯一例外（短承接）**：仅当【当前真实输入】明显是对前一轮真实 assistant 提问的简短回答（如选项编号"走c"、确认词"是的"/"不要"），才按上文承接执行那条选项；模糊时一律走规则 2。`,
+          `3. **唯一例外（短承接）**：仅当【当前真实输入】明显是对前一轮真实 assistant 提问的简短回答（如选项编号"走c"、确认词"是的"/"不要"），才按上文承接执行那条选项；模糊时一律走规则 2；`,
+          `4. **回复中不要提及任何技术细节或识别过程**——不要使用"占位符"/"SDK"/"伪 user"/"Continue"/"jsonl"/"系统注入"/"传输噪声"等术语解释为什么忽略某些输入。用户对这些无感知，提及只会让她困惑。识别到噪声选择忽略 → **默默忽略即可**，不要在回复里说出"刚那条 X 是 Y"的解释。`,
         ].join("\n");
         console.log(`[BRIDGE-DIAG] resume-only mode: warnings=${warnings.length} fakeUser=${fakeUserPolluted} willHaveFake=${willHaveFakeUser} orphans=${orphanedPrompts.length} sid=${sessionId.slice(0, 8)} (effectivePromptLen=${effectivePrompt.length})`);
       }
