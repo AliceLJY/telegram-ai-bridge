@@ -6,6 +6,21 @@ import { readdirSync, statSync, createReadStream } from "fs";
 import { basename, join } from "path";
 import { createInterface } from "readline";
 
+// 让 bridge 产生的 session 在 originator 字段上看着像真 TUI（而非 codex_sdk_ts）。
+// SDK 默认会注入 CODEX_INTERNAL_ORIGINATOR_OVERRIDE = "codex_sdk_ts"，
+// 内部用的是 if (!env[...]) 条件赋值，提前占位 codex 二进制就不会覆盖。
+//
+// 注意：这只解一半问题。codex resume 默认有两层过滤：
+//   1. cwd 过滤（--all 关掉）
+//   2. interactive 过滤（--include-non-interactive / env INCLUDE_NON_INTERACTIVE=1 关掉）
+// SDK 跑的是 codex exec --experimental-json，source=exec 是子命令硬定的 env 改不动，
+// 所以光改 originator 不一定能穿过 picker。真正可靠的是 shell 里 export INCLUDE_NON_INTERACTIVE=1。
+// 这层 originator 占位是预埋——万一未来 codex 把过滤改成按 originator 判断就直接生效。
+// 回滚方法：删掉这 3 行。
+if (!process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE) {
+  process.env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE = "codex-tui";
+}
+
 let Codex;
 try {
   ({ Codex } = await import("@openai/codex-sdk"));
