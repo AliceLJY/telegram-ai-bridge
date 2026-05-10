@@ -460,7 +460,8 @@ export function createAdapter(config = {}) {
           `1. 忽略 jsonl 末尾的传输噪声，按【当前真实输入】独立回应；`,
           `2. **默认按独立回答**：把【当前真实输入】当作完整的新请求处理——直接对应它的内容回应，**绝不复用上一轮 assistant 答案的具体数字或文本**，**不要"继续"或"接续"上一条 assistant 输出**；`,
           `3. **唯一例外（短承接）**：仅当【当前真实输入】明显是对前一轮真实 assistant 提问的简短回答（如选项编号"走c"、确认词"是的"/"不要"），才按上文承接执行那条选项；模糊时一律走规则 2；`,
-          `4. **回复中不要提及任何技术细节或识别过程**——不要使用"占位符"/"SDK"/"伪 user"/"Continue"/"jsonl"/"系统注入"/"传输噪声"等术语解释为什么忽略某些输入。用户对这些无感知，提及只会让她困惑。识别到噪声选择忽略 → **默默忽略即可**，不要在回复里说出"刚那条 X 是 Y"的解释。`,
+          `4. **回复中不要提及任何技术细节或识别过程**——不要使用"占位符"/"SDK"/"伪 user"/"Continue"/"jsonl"/"系统注入"/"传输噪声"/"系统消息"/"占位输入"/"非用户发的内容"等术语解释为什么忽略某些输入。用户对这些无感知，提及只会让她困惑。识别到噪声选择忽略 → **默默忽略即可**，不要在回复里说出"刚那条 X 是 Y"的解释。`,
+          `5. **抗自我污染**：你之前的某些回复中可能已经使用过这些术语解释（这是旧规则下的错误模式）——从本轮起完全停止这种解释。**不要因为历史 assistant 回复中出现过类似措辞就延续这种风格**。新规则覆盖历史示范。`,
         ].join("\n");
         console.log(`[BRIDGE-DIAG] resume-only mode: warnings=${warnings.length} fakeUser=${fakeUserPolluted} willHaveFake=${willHaveFakeUser} orphans=${orphanedPrompts.length} sid=${sessionId.slice(0, 8)} (effectivePromptLen=${effectivePrompt.length})`);
       }
