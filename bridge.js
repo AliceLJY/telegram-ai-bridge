@@ -3,7 +3,7 @@
 
 import { Bot, InlineKeyboard, InputFile, GrammyError } from "grammy";
 import { HttpsProxyAgent } from "https-proxy-agent";
-import { mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync, existsSync } from "fs";
+import { mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync, existsSync, renameSync } from "fs";
 import { basename, join } from "path";
 import {
   getSession,
@@ -950,6 +950,34 @@ function mergeSessionsForPicker(ownedSessions, externalSessions) {
 // ── 文件下载 ──
 const FILE_DIR = join(import.meta.dir, "files");
 mkdirSync(FILE_DIR, { recursive: true });
+
+(function cleanupOldFilesOnStartup() {
+  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+  const cutoff = Date.now() - THIRTY_DAYS_MS;
+  const TRASH_DIR = join(process.env.HOME || "/Users/user", ".Trash");
+  let moved = 0;
+  let bytesFreed = 0;
+  try {
+    const files = readdirSync(FILE_DIR);
+    for (const filename of files) {
+      const filePath = join(FILE_DIR, filename);
+      try {
+        const stat = statSync(filePath);
+        if (stat.isFile() && stat.mtimeMs < cutoff) {
+          renameSync(filePath, join(TRASH_DIR, `bridge-${Date.now()}-${filename}`));
+          moved++;
+          bytesFreed += stat.size;
+        }
+      } catch (_e) {
+      }
+    }
+    if (moved > 0) {
+      console.log(`[startup-cleanup] 移走 ${moved} 个 30+ 天前的文件到 ~/.Trash/，释放 ${(bytesFreed / 1024 / 1024).toFixed(2)} MB`);
+    }
+  } catch (e) {
+    console.log(`[startup-cleanup] 跳过: ${e.message}`);
+  }
+})();
 
 async function downloadFile(ctx, fileId, filename) {
   const file = await ctx.api.getFile(fileId);
