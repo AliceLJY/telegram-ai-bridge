@@ -50,7 +50,7 @@ Four different jobs this project does. Each entry point is independent — you d
 | If you want to…                                                        | Start here                                         | Core tech                         |
 |------------------------------------------------------------------------|----------------------------------------------------|-----------------------------------|
 | **Control one Claude Code from your phone**                            | [Quick Start](#quick-start)                        | Single bot, Agent SDK             |
-| **Run N parallel Claude sessions with shared memory (War Room)**       | [Parallel Sessions](#parallel-sessions--desktop-power-phone-form-factor) → [Multi-Instance Deployment](#multi-instance-deployment) | @mention dispatch + Redis shared context |
+| **Run N parallel Claude sessions with shared memory (War Room)**       | [Parallel Sessions](#parallel-sessions--desktop-power-phone-form-factor) → [Multi-Instance Deployment](#multi-instance-deployment) | @mention dispatch + pluggable shared context (SQLite/Redis) |
 | **Let Claude and Codex actively talk to each other in a group**        | [A2A-TG: Heterogeneous agents in one group chat](#a2a-tg-heterogeneous-agents-in-one-group-chat) | A2A-TG envelope + 5-layer loop guard |
 | **Read the protocol / embed A2A-TG in your own bot**                   | [A2A-TG v1 spec](docs/a2a-tg-v1.md)                | HTTP/JSON envelope, generation cap |
 
@@ -112,7 +112,7 @@ Put `@claude-bot` and `@codex-bot` in the same Telegram group. Ask Claude to rev
 
 ### War Room — Multi-CC Command Center
 
-Put all 4 CC bots in one Telegram group. Each bot stays silent until @mentioned — no crosstalk, no chaos. But every bot can read what the others said via shared context (Redis-backed). You orchestrate — they execute.
+Put all 4 CC bots in one Telegram group. Each bot stays silent until @mentioned — no crosstalk, no chaos. But every bot can read what the others said via a pluggable shared context store (SQLite by default, Redis as an option for multi-bot / Docker setups — see [Storage Backend Comparison](#storage-backend-comparison)). You orchestrate — they execute.
 
 Two collaboration modes in one project:
 - **A2A mode** (CC + Codex group): bots auto-respond to each other with loop guards — for brainstorming and debate
@@ -238,7 +238,7 @@ Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-co
 | Switch models on the fly              | &mdash; | &mdash; | Per-bot config | `/model` with inline buttons |
 | Claude + Codex + Gemini backends      | Claude only | Claude only | Provider-locked | All three, per-chat switchable |
 | Tool approval from phone              | Partial (limited UI) | Yes | Yes | Inline buttons: Allow / Deny / Always / YOLO |
-| War Room (multi-agent command center) | &mdash; | &mdash; | &mdash; | @mention dispatch + Redis shared context |
+| War Room (multi-agent command center) | &mdash; | &mdash; | &mdash; | @mention dispatch + pluggable shared context (SQLite/Redis) |
 | Multi-agent group collaboration       | &mdash; | &mdash; | &mdash; | A2A bus + shared context |
 | Cross-agent collaboration             | &mdash; | &mdash; | Gateway channels | A2A broadcast (groups) + MCP/CLI (DMs) |
 | Real-time progress streaming          | Terminal output only | &mdash; | Yes | **Live text preview** (editMessage streaming) + tool icons + 3 verbosity levels |
