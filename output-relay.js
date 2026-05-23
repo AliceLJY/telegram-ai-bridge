@@ -26,6 +26,54 @@ export function extractFilePathsFromText(text, fileList, options = {}) {
   for (const match of text.match(tildePattern) || []) addPath(match);
 }
 
+// 把后端（Codex / Claude SDK）的原始错误 stderr 压成用户能看懂的一句话。
+// 满屏 TLS handshake / rmcp / apply_patch / rollout trace 对用户没有行动价值，
+// 原样发到 Telegram 只会吓人——完整 stderr 只进后台日志，这里只回传归类后的人话。
+const BACKEND_ERROR_PATTERNS = [
+  {
+    re: /tls handshake|failed to connect to websocket|http\/?request failed|transport channel closed|wham\/apps|backend-api\/codex\/responses|websocket|ECONNRESET|ETIMEDOUT|ENOTFOUND|socket hang up/i,
+    msg: "与模型后端的连接中断了一次（网络或 TLS 握手失败）",
+  },
+  {
+    re: /apply_patch verification failed|failed to find expected lines/i,
+    msg: "某次文件修改的上下文已过期，该次改动被自动跳过（不影响其他结果）",
+  },
+  {
+    re: /thread .*not found|failed to record rollout items/i,
+    msg: "会话记录层出现一次短暂不一致（本地会话文件仍在）",
+  },
+  {
+    re: /rate.?limit|\b429\b|quota|usage limit/i,
+    msg: "触发了模型用量限制，建议稍后重试",
+  },
+  {
+    re: /not installed|ENOENT|command not found|cannot find module/i,
+    msg: "后端依赖缺失或未正确安装",
+  },
+  {
+    re: /exited with code|exit code|non-zero|Codex Exec/i,
+    msg: "后端进程异常退出了一次",
+  },
+];
+
+export function sanitizeBackendError(rawText, { maxLen = 200 } = {}) {
+  const raw = String(rawText || "").replace(/\r/g, "").trim();
+  if (!raw) return "后端未返回错误详情";
+
+  const hits = [];
+  for (const { re, msg } of BACKEND_ERROR_PATTERNS) {
+    if (re.test(raw) && !hits.includes(msg)) hits.push(msg);
+  }
+  if (hits.length > 0) {
+    return `${hits.join("；")}。完整日志见后台。`;
+  }
+
+  // 未识别模式：只取首条非空行 + 长度上限，绝不把整屏 trace 回传给用户
+  const firstLine = raw.split("\n").map((l) => l.trim()).find(Boolean) || raw;
+  const short = firstLine.length > maxLen ? `${firstLine.slice(0, maxLen - 3)}...` : firstLine;
+  return `${short}（完整日志见后台）`;
+}
+
 export function estimateCodeRatio(text) {
   const codeBlocks = text.match(/```[\s\S]*?```/g) || [];
   const codeLen = codeBlocks.reduce((sum, block) => sum + block.length, 0);
@@ -134,7 +182,8 @@ export async function sendFinalResult({
 
   if (!resultSuccess) {
     finalizeFailure(summarizeText(text, 240), "RESULT_ERROR");
-    await sendLong(ctx, `${adapterLabel} 错误: ${text}`);
+    // 不把后端整屏 raw stderr 发给用户，只发归类后的人话；完整 stderr 已在 bridge 日志里
+    await sendLong(ctx, `${adapterLabel} 出错：${sanitizeBackendError(text)}`);
     return text;
   }
 

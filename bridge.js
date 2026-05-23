@@ -49,7 +49,7 @@ import { withRetry, classifyError } from "./send-retry.js";
 import { protectFileReferences } from "./file-ref-protect.js";
 import { createStreamingPreview } from "./streaming-preview.js";
 import { markdownToTelegramHTML, hasMarkdownFormatting } from "./markdown-to-tg.js";
-import { extractFilePathsFromText, sendCapturedOutputs, sendFinalResult } from "./output-relay.js";
+import { extractFilePathsFromText, sanitizeBackendError, sendCapturedOutputs, sendFinalResult } from "./output-relay.js";
 import { createTaskFinalizer, finishTurnProgress, saveCapturedSession } from "./turn-state.js";
 import { registerCommands } from "./commands/index.js";
 import { startEntrypointPatcher } from "./scripts/patch-entrypoint.js";
@@ -1530,7 +1530,7 @@ async function processPrompt(ctx, prompt) {
   } catch (e) {
     finalizeFailure(summarizeText(e.message, 240), "BRIDGE_ERROR");
     await progress.finish();
-    await ctx.reply(`桥接错误: ${e.message}`);
+    await ctx.reply(`桥接错误：${sanitizeBackendError(e.message)}`);
   } finally {
     activeProgressTrackers.delete(chatId);
   }
