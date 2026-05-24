@@ -4,6 +4,7 @@ import { readdirSync, statSync, createReadStream } from "fs";
 import { basename, join } from "path";
 import { homedir } from "os";
 import { createInterface } from "readline";
+import { applyNudge } from "./nudge.js";
 
 // SDK 0.2.117+ 砍掉了 SDK 内置的 cli.js，必须显式传 claude CLI 路径。
 // 优先走环境变量（方便 launchd 兜底），否则用 Alice 两台机通用的 ~/.local/bin/claude。
@@ -392,6 +393,7 @@ export function createAdapter(config = {}) {
     },
 
     async *streamQuery(prompt, sessionId, abortSignal, overrides = {}) {
+      prompt = applyNudge(prompt); // plan B：命中研究关键词，拼 research 提醒进 input
       // 排队等前一个 query 完成（Claude SDK 不支持并发子进程）
       let releaseLock;
       const myLock = new Promise((r) => { releaseLock = r; });

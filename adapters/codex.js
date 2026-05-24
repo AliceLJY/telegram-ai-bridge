@@ -2,7 +2,8 @@
 // @openai/codex-sdk — CLI wrapper，sessions 存 ~/.codex/sessions/
 // codex resume <threadId> 终端可直接接续
 
-import { readdirSync, statSync, createReadStream, readFileSync, existsSync } from "fs";
+import { readdirSync, statSync, createReadStream } from "fs";
+import { applyNudge } from "./nudge.js";
 import { basename, join } from "path";
 import { createInterface } from "readline";
 
@@ -27,36 +28,6 @@ try {
 } catch {
   // SDK 未安装时给出友好提示，不阻塞 Claude 后端
   Codex = null;
-}
-
-// ── research 研究主题提醒（plan B：替代 codex UserPromptSubmit hook）──
-// codex exec/SDK 模式下 hook 的 additionalContext 不可靠（trust + 注入），
-// 改在发给 SDK 的 input 前拼提醒。词表复用 CC 同一份（单一真相源；缺失则静默跳过）。
-const research_KEYWORDS_FILE = join(process.env.HOME, ".claude", "hooks", "topic-recall-keywords.txt");
-const research_NUDGE =
-  "这个问题命中了本机 research 研究库的主题关键词；相关积累可用 mcp__research__research_search（research_search）检索后再作答，别只凭印象。";
-let researchKeywordsCache;
-function loadresearchKeywords() {
-  if (researchKeywordsCache !== undefined) return researchKeywordsCache;
-  try {
-    researchKeywordsCache = existsSync(research_KEYWORDS_FILE)
-      ? readFileSync(research_KEYWORDS_FILE, "utf8")
-          .split("\n")
-          .map(l => l.trim())
-          .filter(l => l && !l.startsWith("#"))
-          .map(l => l.toLowerCase())
-      : [];
-  } catch {
-    researchKeywordsCache = [];
-  }
-  return researchKeywordsCache;
-}
-function researchNudgeIfMatch(prompt) {
-  if (!prompt) return null;
-  const kws = loadresearchKeywords();
-  if (kws.length === 0) return null;
-  const lower = String(prompt).toLowerCase();
-  return kws.some(kw => lower.includes(kw)) ? research_NUDGE : null;
 }
 
 export function createAdapter(config = {}) {
@@ -315,12 +286,7 @@ export function createAdapter(config = {}) {
     },
 
     async *streamQuery(prompt, sessionId, abortSignal, overrides = {}) {
-      // plan B：命中研究关键词，把 research 提醒拼进发给 SDK 的 input（绕开 codex hook 的 trust/stdin 限制）。
-      // 用 [系统提示:...] 前缀，session 列表显示时会被 cleanUserTopic 剥离，TG 里仍显示用户原话。
-      const researchNudge = researchNudgeIfMatch(prompt);
-      if (researchNudge) {
-        prompt = `[系统提示:${researchNudge}]\n\n${prompt}`;
-      }
+      prompt = applyNudge(prompt); // plan B：命中研究关键词，拼 research 提醒进 input
       const effectiveModel = (overrides.model && overrides.model !== "__default__") ? overrides.model : defaultModel;
       const sdk = ensureSDK(effectiveModel);
 
