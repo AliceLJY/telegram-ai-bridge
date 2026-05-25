@@ -39,8 +39,6 @@ Delta:    [reads full context, commits]
 
 **4 agents, 1 group, shared memory, zero noise.** The same workflow that takes 4 terminal windows on your desk — now fits in your pocket.
 
-<img src="assets/war-room-demo.png" alt="War Room — 4 CC bots processing in parallel" width="600">
-
 ---
 
 ## Pick your path
@@ -88,8 +86,6 @@ Walk away from your desk. Open Telegram. `/new` starts a fresh session. `/resume
 
 The session picker shows **the last thing you said** as the title — not a truncated UUID. Tap a button or type `/resume 3`. Sessions from all sources (this bot, terminal CLI, other bridges) appear in one unified list.
 
-<img src="assets/sessions-demo.png" alt="Session picker — topic-first, click to resume" width="600">
-
 ### Bidirectional Media — Screenshots & Files Flow Back
 
 Input has always been bidirectional: text, photos, documents, voice all flow to CC. Now **output is too**:
@@ -99,10 +95,6 @@ Input has always been bidirectional: text, photos, documents, voice all flow to 
 - **Long code**: Output >4000 chars with >60% code → sent as a file attachment with preview summary
 
 The bridge captures images from SDK tool results (base64 data from Read/peekaboo/screenshot tools) and scans CC's response text for file paths. No manual copy-paste, no "where did you save it?" — files just appear in the chat.
-
-<img src="assets/screenshot-relay-demo.png" alt="Screenshot relay — CC takes a screenshot, image appears in TG" width="600">
-
-<img src="assets/file-relay-demo.png" alt="File relay — ask CC for a file, it appears as a download" width="600">
 
 > **Reply to cancel**: Task taking too long? Send `/cancel` to abort. Need context from a previous message? Reply to it — the quoted text is automatically included as context.
 
@@ -121,8 +113,6 @@ Two collaboration modes in one project:
 For softer group-chat behavior, allowlist the room with `shared.discussChatIds`. Allowlisted rooms default to Discuss mode: each bot can read an unmentioned human message and independently decide whether it has something useful to add. A bot that is explicitly @mentioned or replied to must answer; the others still self-select. Bots that opt out stay silent; bots that opt in send normal text only. Use `/discuss off` to quiet a room explicitly, and `/discuss on` to re-enable it. The bridge suppresses progress bubbles in this mode but keeps Telegram's native typing indicator, so the room stays quiet without becoming opaque.
 
 Done discussing? `/export` dumps the entire cross-bot conversation as a Markdown file — full audit trail, every bot's contribution timestamped.
-
-<img src="assets/export-demo.png" alt="/export — War Room conversation exported as Markdown" width="600">
 
 ### Always-On, Self-Hosted
 
