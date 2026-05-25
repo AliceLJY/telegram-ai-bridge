@@ -3,7 +3,6 @@
 // codex resume <threadId> 终端可直接接续
 
 import { readdirSync, statSync, createReadStream } from "fs";
-import { applyNudge } from "./nudge.js";
 import { basename, join } from "path";
 import { createInterface } from "readline";
 
@@ -286,7 +285,6 @@ export function createAdapter(config = {}) {
     },
 
     async *streamQuery(prompt, sessionId, abortSignal, overrides = {}) {
-      prompt = applyNudge(prompt); // plan B：命中研究关键词，拼 research 提醒进 input
       const effectiveModel = (overrides.model && overrides.model !== "__default__") ? overrides.model : defaultModel;
       const sdk = ensureSDK(effectiveModel);
 

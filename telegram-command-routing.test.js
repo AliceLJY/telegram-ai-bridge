@@ -24,7 +24,7 @@ describe("Telegram command routing", () => {
 
   test("detects commands addressed to a different bot case-insensitively", () => {
     expect(isCommandForAnotherBot("/new@agent_c_bot", "agent_d_bot")).toBe(true);
-    expect(isCommandForAnotherBot("/new@agent_d_bot", "agentd_bot")).toBe(false);
+    expect(isCommandForAnotherBot("/new@agent_d_bot", "Agent_D_bot")).toBe(false);
     expect(isCommandForAnotherBot("/new", "agent_d_bot")).toBe(false);
     expect(isCommandForAnotherBot("hello @Other_bot", "agent_d_bot")).toBe(false);
   });
@@ -35,7 +35,7 @@ describe("Telegram command routing", () => {
       targetUsername: "agent_d_bot",
       args: "on",
     });
-    expect(parseMentionFirstCommand("@agentd_bot /discuss@agent_d_bot status", "agent_d_bot")).toEqual({
+    expect(parseMentionFirstCommand("@Agent_D_bot /discuss@agent_d_bot status", "agent_d_bot")).toEqual({
       command: "discuss",
       targetUsername: "agent_d_bot",
       args: "status",
