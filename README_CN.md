@@ -453,7 +453,7 @@ Telegram bot
       "enabled": true,
       "telegramBotToken": "...",
       "sessionsDb": "sessions.db",
-      "model": "claude-sonnet-4-6",
+      "model": "claude-sonnet-4-7",
       "permissionMode": "default"
     },
     "codex": {
@@ -524,7 +524,7 @@ cp config.json config-2.json
       "enabled": true,
       "telegramBotToken": "BOTFATHER_给的新_TOKEN",
       "sessionsDb": "sessions-2.db",
-      "model": "claude-opus-4-6",
+      "model": "claude-opus-4-7",
       "permissionMode": "bypassPermissions"
     }
   }
@@ -691,14 +691,12 @@ GitHub Actions 会在每次 push 和 pull request 上运行同一套测试。
 | 项目 | 说明 |
 |------|------|
 | [recallnest](https://github.com/AliceLJY/recallnest) | MCP 记忆工作台（LanceDB + Jina v5） |
-| [content-alchemy](https://github.com/AliceLJY/content-alchemy) | 5 阶段 AI 写作流水线 |
 | [content-publisher](https://github.com/AliceLJY/content-publisher) | AI 配图 + 排版 + 微信公众号发布 |
 | [openclaw-tunnel](https://github.com/AliceLJY/openclaw-tunnel) | Docker ↔ 宿主机 CLI 桥接（/cc /codex /gemini） |
 | [digital-clone-skill](https://github.com/AliceLJY/digital-clone-skill) | 从语料数据构建数字分身 |
-| [telegram-cli-bridge](https://github.com/AliceLJY/telegram-cli-bridge) | Gemini CLI 的 Telegram 桥接 |
 | [claude-code-studio](https://github.com/AliceLJY/claude-code-studio) | Claude Code 多会话协作平台 |
-| [agent-nexus](https://github.com/AliceLJY/agent-nexus) | 一键安装记忆 + 远程控制 |
-| [cc-cabin](https://github.com/AliceLJY/cc-cabin) | Claude Code 完整工作流脚手架 |
+| [cc-empire](https://github.com/AliceLJY/cc-empire) | Claude Code 完整工作流脚手架 |
+| [tg-bridge-channel](https://github.com/AliceLJY/tg-bridge-channel) | 姊妹桥接，基于 Claude Agent View 后台 session（channel/pool 引擎） |
 
 ## 许可证
 
