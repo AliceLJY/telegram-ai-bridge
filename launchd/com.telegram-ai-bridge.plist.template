@@ -20,6 +20,10 @@ __CONFIG_ARG__
   <dict>
     <key>PATH</key>
     <string>__PATH__</string>
+    <!-- 主力 bot 安装时设 __BRIDGE_OWNER__=true，副 bot 设空字符串或省略 -->
+    <!-- BRIDGE_OWNER=true 启用 entrypoint-patch / /sessions /resume 等 owner-only 功能 -->
+    <key>BRIDGE_OWNER</key>
+    <string>__BRIDGE_OWNER__</string>
   </dict>
 
   <key>RunAtLoad</key>
