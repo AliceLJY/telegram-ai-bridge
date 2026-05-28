@@ -79,6 +79,13 @@ export function registerCommands(bot, deps) {
       };
   }
 
+  // 副 bot 不暴露 /sessions /resume —— 强制走主力 bot 看完整聊天记录
+  // owner 通过 plist env BRIDGE_OWNER=true 标记
+  const IS_OWNER = process.env.BRIDGE_OWNER === "true";
+  const NON_OWNER_SESSIONS_HINT =
+    "📋 /sessions 和 /resume 仅在主力 bot 启用。\n" +
+    "Claude 历史去 @ClCObest_bot 或 mccode1；Codex 历史去 mcodex1。";
+
   // ── /help 命令 ──
   bot.command("help", async (ctx) => {
     const adapter = getAdapter(ctx.chat.id);
@@ -181,6 +188,10 @@ export function registerCommands(bot, deps) {
 
   // ── /resume 命令：显式绑定已有 session id（适合终端/TG 手动接续） ──
   bot.command("resume", async (ctx) => {
+    if (!IS_OWNER) {
+      await ctx.reply(NON_OWNER_SESSIONS_HINT);
+      return;
+    }
     let sessionId = ctx.match?.trim();
     if (!sessionId) {
       const backendName = getBackendName(ctx.chat.id);
@@ -248,6 +259,10 @@ export function registerCommands(bot, deps) {
 
   // ── /sessions 命令：统一列出最近会话；点按钮只回显 ID + 片段，不切换当前会话 ──
   bot.command("sessions", async (ctx) => {
+    if (!IS_OWNER) {
+      await ctx.reply(NON_OWNER_SESSIONS_HINT);
+      return;
+    }
     try {
       const adapter = getAdapter(ctx.chat.id);
       const backendName = getBackendName(ctx.chat.id);
