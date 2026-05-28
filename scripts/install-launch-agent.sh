@@ -13,6 +13,7 @@ plist_path=""
 log_path=""
 launch_path="${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
 install_now=false
+bridge_owner="${BRIDGE_OWNER:-}"
 
 usage() {
   cat <<'EOF'
@@ -26,8 +27,13 @@ Options:
   --label <label>    launchd label override
   --plist <path>     plist output path
   --log <path>       log file path
+  --owner            mark this bot as main owner (BRIDGE_OWNER=true)
+                     启用 entrypoint-patch + /sessions /resume 命令；副 bot 省略
   --install          write plist and load it with launchctl
   --help             show this help
+
+Env override:
+  BRIDGE_OWNER=true  same as --owner
 EOF
 }
 
@@ -106,6 +112,10 @@ while [[ $# -gt 0 ]]; do
       log_path="${2:-}"
       shift 2
       ;;
+    --owner)
+      bridge_owner="true"
+      shift
+      ;;
     --install)
       install_now=true
       shift
@@ -182,6 +192,7 @@ sed \
   -e "s/__BACKEND__/$(escape_replacement "$backend")/g" \
   -e "s/__CONFIG_ARG__/$(escape_replacement "$config_arg")/g" \
   -e "s/__PATH__/$(escape_replacement "$launch_path")/g" \
+  -e "s/__BRIDGE_OWNER__/$(escape_replacement "$bridge_owner")/g" \
   -e "s/__LOG__/$(escape_replacement "$log_path")/g" \
   "$TEMPLATE_PATH" > "$plist_path"
 

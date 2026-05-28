@@ -771,7 +771,13 @@ export function registerCommands(bot, deps) {
   });
 
   // ── 按钮回调：恢复会话 ──
+  // non-owner 守护：菜单已隐藏 /sessions /resume，但旧消息里的按钮 callback 仍可被点
+  // 触发。这里加 owner gate 防止绕过命令隐藏（Codex 二审 P1.1, 2026-05-29）
   bot.callbackQuery(/^resume:/, async (ctx) => {
+    if (!IS_OWNER) {
+      await ctx.answerCallbackQuery({ text: "仅主力 bot 可用", show_alert: true });
+      return;
+    }
     const data = ctx.callbackQuery.data.replace("resume:", "");
     // 格式: sessionId:backend
     const lastColon = data.lastIndexOf(":");
