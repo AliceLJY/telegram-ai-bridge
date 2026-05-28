@@ -100,10 +100,11 @@ if (typeof Bun !== "undefined" && PROXY) {
 }
 // [mini-patch] codex 0.121 picker 过滤 source=exec 的 session。
 // bridge 用 SDK 创建的 session 默认被 picker 隐身，每次 save 后把 state DB 里的 exec 改成 cli。
-// 只 codex owner 跑：避免 9 个 bridge 都在 save 后扫整张 state_5.sqlite。
+// 所有 codex bot 都必须跑 —— 否则自己写的 session 下次 resume 会"no rollout found"。
+// 2026-05-29 教训：错误地加 BRIDGE_OWNER gate 后 mcodex2 thread/resume 失败 exit 1。
+// 只 gate claude bot（claude 不该跑这个 SQL），不区分 owner。
 function patchCodexStateDb() {
   if ((process.env.DEFAULT_BACKEND || "claude") !== "codex") return;
-  if (process.env.BRIDGE_OWNER !== "true") return;
   try {
     const dbPath = join(process.env.HOME, ".codex", "state_5.sqlite");
     if (!existsSync(dbPath)) return;
