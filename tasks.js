@@ -9,6 +9,7 @@ const DEFAULT_TASK_RETENTION_MIN_ROWS = Number(process.env.TASK_RETENTION_MIN_RO
 
 const db = new Database(DB_PATH);
 db.exec("PRAGMA journal_mode = WAL");
+db.exec("PRAGMA busy_timeout = 5000"); // 让 SQLite 自己等锁释放，缓解 launchd 快速重启时的 WAL 锁竞争崩溃（对齐 shared-context/sqlite.js）
 db.exec(`
   CREATE TABLE IF NOT EXISTS tasks (
     task_id TEXT PRIMARY KEY,

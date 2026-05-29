@@ -141,11 +141,16 @@ Not a toy — built for all-day use:
 git clone https://github.com/AliceLJY/telegram-ai-bridge.git
 cd telegram-ai-bridge
 bun install
-bun run bootstrap --backend claude
-bun run setup --backend claude
+bun run setup --backend claude   # interactive wizard: prompts for owner ID, bot token, etc.
 bun run check --backend claude
 bun run start --backend claude
 ```
+
+> **Run `setup` on its own — it's interactive.** It's a prompt-driven wizard that waits for your input and writes `config.json` for you, so don't paste the whole block at once.
+>
+> **What `check` verifies (and what it doesn't):** it validates config *shape* — required fields present, token *format* looks plausible. It does **not** confirm the backend CLI is installed and logged in, or that the token is real — a well-formed but fake token passes `check` and only fails at runtime. Make sure the Prerequisites above are actually in place.
+>
+> **Prefer a non-interactive flow?** Run `bun run bootstrap --backend claude` to generate a `config.json` template, then edit it by hand (`ownerTelegramId`, `telegramBotToken`, `tasksDb`) before `check`. See the Configuration section below.
 
 > **Want parallel agents?** Add a second bot in 30 seconds — see [Multi-Instance Deployment](#multi-instance-deployment).
 
@@ -512,7 +517,9 @@ Run N parallel Claude Code instances, each with its own Telegram bot:
 
 ```bash
 cp config.json config-2.json
-# Edit config-2.json: change telegramBotToken, sessionsDb, tasksDb
+# Edit config-2.json: use a brand-new bot token from @BotFather (each instance needs its own),
+#   and change sessionsDb / tasksDb. Never reuse a token already polled by another running
+#   instance or repo — two processes sharing one token both get Telegram 409 Conflict.
 ```
 
 ```json

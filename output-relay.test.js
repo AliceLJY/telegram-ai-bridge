@@ -5,6 +5,7 @@ import {
   estimateCodeRatio,
   extractFilePathsFromText,
   sanitizeBackendError,
+  splitTelegramChunks,
 } from "./output-relay.js";
 
 describe("output relay helpers", () => {
@@ -83,5 +84,42 @@ describe("sanitizeBackendError", () => {
     expect(sanitizeBackendError("")).toBe("后端未返回错误详情");
     expect(sanitizeBackendError(null)).toBe("后端未返回错误详情");
     expect(sanitizeBackendError(undefined)).toBe("后端未返回错误详情");
+  });
+});
+
+describe("splitTelegramChunks (A2A 长回复 / sendLong 共用的分段)", () => {
+  test("returns a single chunk when text is within the limit", () => {
+    expect(splitTelegramChunks("hello", 4000)).toEqual(["hello"]);
+    const exact = "a".repeat(100);
+    expect(splitTelegramChunks(exact, 100)).toEqual([exact]);
+  });
+
+  test("splits over-limit text into multiple chunks, each within the limit (no fences)", () => {
+    const text = "段落。\n\n".repeat(2000);
+    const chunks = splitTelegramChunks(text, 500);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const c of chunks) {
+      expect(c.length).toBeLessThanOrEqual(500);
+    }
+  });
+
+  test("preserves every original line across chunk boundaries", () => {
+    const text = Array.from({ length: 300 }, (_, i) => `行${i}的内容`).join("\n");
+    const chunks = splitTelegramChunks(text, 200);
+    const joined = chunks.join("\n");
+    for (let i = 0; i < 300; i++) {
+      expect(joined).toContain(`行${i}的内容`);
+    }
+  });
+
+  test("repairs unclosed code fences so each chunk has balanced ```", () => {
+    const longCode = "x\n".repeat(2000); // ~4000 字符代码体，强制跨段
+    const text = "前言\n```js\n" + longCode + "```\n结尾";
+    const chunks = splitTelegramChunks(text, 1000);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const c of chunks) {
+      const fences = (c.match(/^```/gm) || []).length;
+      expect(fences % 2).toBe(0); // 每段代码块自洽闭合
+    }
   });
 });
