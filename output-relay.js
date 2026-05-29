@@ -224,4 +224,41 @@ export async function sendFinalResult({
   return text;
 }
 
+// 把长文本按 Telegram 4096 字符限制切成多段：智能切段（优先空行/换行）+ 跨段代码块修补。
+// 纯函数，由 sendLong（带 ctx）和 A2A handler（只有 bot.api，无 ctx）共用——
+// 避免 A2A 回复裸 sendMessage 超长被 Telegram 400 拒绝、用户看不到（与静默吞同类临床问题）。
+export function splitTelegramChunks(text, maxLen = 4000) {
+  if (text.length <= maxLen) return [text];
+  const chunks = [];
+  let remaining = text;
+  let prevUnclosed = false; // 上一段是否有未闭合的代码块
+  while (remaining.length > maxLen) {
+    let cut = remaining.lastIndexOf("\n\n", maxLen); // 优先段落
+    if (cut < maxLen * 0.3) {
+      cut = remaining.lastIndexOf("\n", maxLen);     // 其次换行
+    }
+    if (cut < maxLen * 0.3) {
+      cut = maxLen;                                   // 兜底硬切
+    }
+    let chunk = remaining.slice(0, cut);
+    if (prevUnclosed) {
+      chunk = "```\n" + chunk;
+    }
+    const fenceCount = (chunk.match(/^```/gm) || []).length;
+    if (fenceCount % 2 !== 0) {
+      chunk += "\n```";
+      prevUnclosed = true;
+    } else {
+      prevUnclosed = false;
+    }
+    chunks.push(chunk);
+    remaining = remaining.slice(cut).replace(/^\n+/, "");
+  }
+  if (remaining) {
+    if (prevUnclosed) remaining = "```\n" + remaining;
+    chunks.push(remaining);
+  }
+  return chunks;
+}
+
 export { SENDABLE_EXTS };

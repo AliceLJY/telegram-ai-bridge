@@ -49,7 +49,7 @@ import { withRetry, classifyError } from "./send-retry.js";
 import { protectFileReferences } from "./file-ref-protect.js";
 import { createStreamingPreview } from "./streaming-preview.js";
 import { markdownToTelegramHTML, hasMarkdownFormatting } from "./markdown-to-tg.js";
-import { extractFilePathsFromText, sanitizeBackendError, sendCapturedOutputs, sendFinalResult } from "./output-relay.js";
+import { extractFilePathsFromText, sanitizeBackendError, sendCapturedOutputs, sendFinalResult, splitTelegramChunks } from "./output-relay.js";
 import { createTaskFinalizer, finishTurnProgress, saveCapturedSession } from "./turn-state.js";
 import { registerCommands } from "./commands/index.js";
 import { startEntrypointPatcher } from "./scripts/patch-entrypoint.js";
@@ -336,20 +336,34 @@ ${meta.originalPrompt ? `\n用户的原始问题：${meta.originalPrompt}` : ""}
       }
 
       if (responseText.trim()) {
-        // 发送到 TG
-        await bot.api.sendMessage(meta.chatId, responseText);
+        // 1) 先写共享上下文：即使 TG 发送失败，回复也落到后备通道
+        //    （下方"其他 bot 可通过 shared context 获取"的承诺——必须先写，否则发送一抛错这条后备也跟着丢）
+        let sharedOk = false;
+        try {
+          await writeSharedMessage(meta.chatId, {
+            source: `bot:@${bot.botInfo?.username || DEFAULT_BACKEND}`,
+            backend: DEFAULT_BACKEND,
+            role: "assistant",
+            text: responseText,
+          });
+          sharedOk = true;
+        } catch (err) {
+          console.error(`[A2A] writeSharedMessage failed chatId=${meta.chatId}: ${err.message}`);
+        }
 
-        // 写入共享上下文
-        await writeSharedMessage(meta.chatId, {
-          source: `bot:@${bot.botInfo?.username || DEFAULT_BACKEND}`,
-          backend: DEFAULT_BACKEND,
-          role: "assistant",
-          text: responseText,
-        });
-
-        // 不再广播回 A2A — 避免 CC↔Codex 乒乓死循环
-        // 其他 bot 如需看到回复，可通过 shared context 获取
-        console.log(`[A2A] ${DEFAULT_BACKEND} responded to ${meta.sender} (no re-broadcast)`);
+        // 2) 发送到 TG：分段（>4096 会被 Telegram 400 拒）+ 每段走 withRetry
+        //    classifyError 把 4xx/chat-not-found 归 client_error → 不重试、不会重复发送；network/5xx/429 才重试
+        //    不再广播回 A2A — 避免 CC↔Codex 乒乓死循环；其他 bot 通过上面已写入的 shared context 获取
+        try {
+          for (const chunk of splitTelegramChunks(responseText)) {
+            await withRetry(() => bot.api.sendMessage(meta.chatId, chunk));
+          }
+          console.log(`[A2A] ${DEFAULT_BACKEND} responded to ${meta.sender} (no re-broadcast; shared=${sharedOk})`);
+        } catch (err) {
+          // 发送失败不再静默吞：结构化可检索日志。chat-not-found 多为部署配置失效（bot 不在该群）
+          const category = classifyError(err);
+          console.error(`[A2A][DELIVERY-FAIL] ${category} chatId=${meta.chatId}: ${err.message} — A2A 回复未送达群（shared-context ${sharedOk ? "已写入" : "也未写入"}）`);
+        }
       }
     } catch (err) {
       console.error(`[A2A] Handler error: ${err.message}`);
@@ -659,54 +673,8 @@ function buildQuoteOpts(ctx) {
 async function sendLong(ctx, text) {
   text = protectFileReferences(text);
   const useHTML = hasMarkdownFormatting(text);
-  const maxLen = 4000;
   const quote = buildQuoteOpts(ctx);
-  if (text.length <= maxLen) {
-    if (useHTML) {
-      return await withRetry(
-        () => ctx.reply(markdownToTelegramHTML(text), { parse_mode: "HTML", ...quote }),
-        { onParseFallback: () => ctx.reply(text, quote) },
-      );
-    }
-    return await ctx.reply(text, quote);
-  }
-
-  const chunks = [];
-  let remaining = text;
-  let prevUnclosed = false; // 上一段是否有未闭合的代码块
-
-  while (remaining.length > maxLen) {
-    let cut = remaining.lastIndexOf("\n\n", maxLen); // 优先段落
-    if (cut < maxLen * 0.3) {
-      cut = remaining.lastIndexOf("\n", maxLen);     // 其次换行
-    }
-    if (cut < maxLen * 0.3) {
-      cut = maxLen;                                   // 兜底硬切
-    }
-    let chunk = remaining.slice(0, cut);
-
-    // 如果上一段有未闭合的代码块，当前段开头补上 ```
-    if (prevUnclosed) {
-      chunk = "```\n" + chunk;
-    }
-
-    // 代码块修补：奇数个 ``` → 补一个闭合，标记下一段需要开头补
-    const fenceCount = (chunk.match(/^```/gm) || []).length;
-    if (fenceCount % 2 !== 0) {
-      chunk += "\n```";
-      prevUnclosed = true;
-    } else {
-      prevUnclosed = false;
-    }
-
-    chunks.push(chunk);
-    remaining = remaining.slice(cut).replace(/^\n+/, "");
-  }
-  // 最后一段：如果上一段有未闭合的代码块，补上开头
-  if (remaining) {
-    if (prevUnclosed) remaining = "```\n" + remaining;
-    chunks.push(remaining);
-  }
+  const chunks = splitTelegramChunks(text, 4000);
 
   // 分片场景：仅第一片 quote 原消息，后续片不 quote 避免每片都拉一道引用线
   let isFirstChunk = true;
