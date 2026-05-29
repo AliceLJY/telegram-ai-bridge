@@ -7,6 +7,7 @@ import {
   applyRuntimeEnv,
   bootstrapWorkspace,
   createDefaultConfig,
+  inspectRuntime,
   loadRuntimeConfig,
   resolveCliArgs,
   summarizeRuntime,
@@ -207,5 +208,38 @@ describe("config productization", () => {
     else process.env.ENABLED_BACKENDS = originalEnabledBackends;
     if (originalTelegramToken == null) delete process.env.TELEGRAM_BOT_TOKEN;
     else process.env.TELEGRAM_BOT_TOKEN = originalTelegramToken;
+  });
+
+  test("inspectRuntime warns when the claude CLI binary is missing (claude probes CLAUDE_CLI_PATH via exists)", () => {
+    const repoDir = makeTempDir();
+    const configPath = join(repoDir, "config.json");
+    writeConfig(configPath); // claude enabled by default
+    const runtime = loadRuntimeConfig({ backend: "claude", configPath });
+
+    const missing = inspectRuntime(runtime, { exists: () => false, which: () => null });
+    expect(missing.warnings.some((w) => w.path === "cli:claude")).toBe(true);
+
+    // CLI 存在 → 无 cli warning（claude 用 exists 探路径，不用 which）
+    const present = inspectRuntime(runtime, { exists: () => true, which: () => null });
+    expect(present.warnings.some((w) => w.path.startsWith("cli:"))).toBe(false);
+  });
+
+  test("inspectRuntime CLI probe uses PATH for codex (via which, not exists)", () => {
+    const repoDir = makeTempDir();
+    const configPath = join(repoDir, "config.json");
+    writeConfig(configPath, (config) => {
+      config.backends.claude.enabled = false;
+      config.backends.codex.enabled = true;
+      config.backends.codex.telegramBotToken = "654321:ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    });
+    const runtime = loadRuntimeConfig({ backend: "codex", configPath });
+
+    // codex 不在 PATH（which→null）→ warning；exists 此处无关
+    const codexMissing = inspectRuntime(runtime, { which: () => null, exists: () => true });
+    expect(codexMissing.warnings.some((w) => w.path === "cli:codex")).toBe(true);
+
+    // codex 在 PATH → 无 cli warning
+    const codexPresent = inspectRuntime(runtime, { which: () => "/usr/bin/codex", exists: () => false });
+    expect(codexPresent.warnings.some((w) => w.path.startsWith("cli:"))).toBe(false);
   });
 });
