@@ -104,6 +104,24 @@ function getBackendCredentialWarning(backend) {
   };
 }
 
+// 后端 CLI 探活：两个后端都经 SDK 调底层 CLI 二进制——
+//   claude-agent-sdk 0.2.117+ 需显式 claude CLI 路径（见 adapters/claude.js: CLAUDE_CLI_PATH，默认 ~/.local/bin/claude）；
+//   @openai/codex-sdk 是 CLI wrapper，内部跑 codex exec，需 codex 在 PATH。
+//   gemini 走 Code Assist API，不需本地 CLI。
+// which / exists 可注入，便于测试（默认 Bun.which / existsSync）。
+function checkBackendCliAvailable(backend, options = {}) {
+  const whichFn = options.which || ((cmd) => (typeof Bun !== "undefined" ? Bun.which(cmd) : null));
+  const existsFn = options.exists || existsSync;
+  if (backend === "claude") {
+    const cliPath = process.env.CLAUDE_CLI_PATH || join(homeDir(), ".local", "bin", "claude");
+    return { ok: Boolean(existsFn(cliPath)), name: "claude", probe: cliPath };
+  }
+  if (backend === "codex") {
+    return { ok: Boolean(whichFn("codex")), name: "codex", probe: "codex (PATH)" };
+  }
+  return { ok: true, name: "gemini", probe: "(Code Assist API, no local CLI)" };
+}
+
 function ensureExistingDirectory(issues, pathLabel, targetPath) {
   if (!isNonEmptyString(targetPath)) {
     pushIssue(issues, pathLabel, "must be set.");
@@ -618,7 +636,7 @@ export function formatValidationIssues(issues, heading = "Invalid configuration"
   ].join("\n");
 }
 
-export function inspectRuntime(runtime) {
+export function inspectRuntime(runtime, options = {}) {
   const warnings = [];
   const errors = validateResolvedEnv(runtime.env, { backend: runtime.backend });
   const cwd = isNonEmptyString(runtime.env.CC_CWD) ? runtime.env.CC_CWD : homeDir();
@@ -634,6 +652,15 @@ export function inspectRuntime(runtime) {
     warnings.push({
       path: credentialCheck.path,
       message: credentialCheck.message,
+    });
+  }
+
+  // 后端 CLI 探活：CLI 缺失时 check 给明确 warning，否则配置过了 check、运行时才炸 + KeepAlive 静默崩溃循环
+  const cli = checkBackendCliAvailable(runtime.backend, options);
+  if (!cli.ok) {
+    warnings.push({
+      path: `cli:${cli.name}`,
+      message: `${cli.name} CLI not found (${cli.probe}). The ${runtime.backend} backend invokes it under the hood — check validates config shape only, it cannot confirm the backend will actually start.`,
     });
   }
 
