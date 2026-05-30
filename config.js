@@ -223,7 +223,7 @@ export function createDefaultConfig() {
         enabled: true,
         telegramBotToken: "",
         sessionsDb: "sessions.db",
-        model: "claude-sonnet-4-7",
+        model: "opus",
         defaultEffort: "",
         permissionMode: "default",
       },
@@ -386,7 +386,7 @@ function buildEnvFromConfig(config, backend, configPath) {
   };
 
   if (selectedBackend === "claude") {
-    env.CC_MODEL = backendConfig.model || "claude-sonnet-4-7";
+    env.CC_MODEL = backendConfig.model || "opus";
     env.CC_PERMISSION_MODE = backendConfig.permissionMode || "default";
     env.DEFAULT_EFFORT = backendConfig.defaultEffort || "";
   }
@@ -907,7 +907,7 @@ export async function runSetupWizard(options = {}) {
       );
 
       if (backend === "claude") {
-        current.model = await askText(rl, "Claude model", current.model || "claude-sonnet-4-7");
+        current.model = await askText(rl, "Claude model", current.model || "opus");
         current.defaultEffort = await askText(rl, "Default effort (low/medium/high/xhigh/max, empty=high)", current.defaultEffort || "");
         current.permissionMode = await askText(rl, "Claude permission mode", current.permissionMode || "default");
       }
