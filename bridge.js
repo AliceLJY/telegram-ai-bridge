@@ -19,6 +19,7 @@ import {
   setChatEffort,
   deleteChatEffort,
   sessionBelongsToChat,
+  closeSessionsDb,
 } from "./sessions.js";
 import {
   createTask,
@@ -30,12 +31,13 @@ import {
   failTask,
   recentTasks,
   getActiveTask,
+  closeTasksDb,
 } from "./tasks.js";
 import { createProgressTracker } from "./progress.js";
 import { createBackend, AVAILABLE_BACKENDS } from "./adapters/interface.js";
 import { createExecutor } from "./executor/interface.js";
 import { getBackendProfile } from "./config.js";
-import { initSharedContext, writeSharedMessage, readSharedMessages } from "./shared-context.js";
+import { initSharedContext, writeSharedMessage, readSharedMessages, closeSharedContext } from "./shared-context.js";
 import { adaptTelegramUpdate, reduceContext, renderContext } from "./group-context-pipeline.js";
 import { createA2ABus } from "./a2a/bus.js";
 import { createA2AClaudeOverrides, normalizeA2AToolMode } from "./a2a/tool-mode.js";
@@ -1627,6 +1629,7 @@ registerCommands(bot, {
   getSessionTypeState,
   getSessionProjectLabel,
   getSessionSourceLabel,
+  idleMonitor,
   lastSessionList,
   markTaskApproved,
   markTaskRejected,
@@ -1831,17 +1834,26 @@ await bot.api.setMyCommands([
   { command: "a2a", description: "A2A 跨 bot 状态" },
 ].filter(Boolean)).catch((e) => console.error("[TG] setMyCommands failed:", e.message));
 
-// ── 启动 ──
-console.log("Telegram-AI-Bridge 启动中...");
-console.log(`  实例后端: ${getFallbackBackend()}`);
-console.log(`  工作目录: ${CC_CWD}`);
-console.log(`  进度详细度: ${DEFAULT_VERBOSE}`);
-console.log(`  限流: ${RATE_LIMIT_MAX_REQUESTS}/${Math.round(RATE_LIMIT_WINDOW_MS / 1000)}s`);
-console.log(`  Idle: timeout=${IDLE_TIMEOUT_MS > 0 ? Math.round(IDLE_TIMEOUT_MS / 60000) + "min" : "off"}, reset=${RESET_ON_IDLE_MS > 0 ? Math.round(RESET_ON_IDLE_MS / 60000) + "min" : "off"}`);
-console.log(`  Cron: ${CRON_ENABLED ? "enabled" : "disabled"}`);
-await startBotPolling();
+// ── 全局错误兜底 ──
+// grammy 默认 errorHandler 会 stop 整个 bot 再 rethrow：任何 handler 漏网异常都会停机。
+// 这里改为记日志后继续轮询，单条消息的失败不应打停所有会话。
+bot.catch((err) => {
+  const chatId = err.ctx?.chat?.id ?? "unknown";
+  console.error(`[bridge] handler error (chat=${chatId}):`, err.error ?? err);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[bridge] unhandledRejection:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  // 同步异常后进程状态不可信：记日志后退出，交给 launchd KeepAlive 拉起
+  console.error("[bridge] uncaughtException:", err);
+  process.exit(1);
+});
 
 // ── Graceful Shutdown ──
+// 必须在 await startBotPolling() 之前注册：bot.start() 阻塞到停机，写在它后面的代码运行期间不会执行
 async function shutdown(signal) {
   console.log(`[bridge] ${signal} received, shutting down...`);
 
@@ -1887,9 +1899,24 @@ async function shutdown(signal) {
   // 6. 关闭 idle monitor
   idleMonitor.shutdown?.();
 
+  // 7. 干净关闭 SQLite（checkpoint + close，回收 WAL）
+  closeSessionsDb();
+  closeTasksDb();
+  await closeSharedContext();
+
   console.log("[bridge] clean shutdown complete");
   process.exit(0);
 }
 
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+// ── 启动 ──
+console.log("Telegram-AI-Bridge 启动中...");
+console.log(`  实例后端: ${getFallbackBackend()}`);
+console.log(`  工作目录: ${CC_CWD}`);
+console.log(`  进度详细度: ${DEFAULT_VERBOSE}`);
+console.log(`  限流: ${RATE_LIMIT_MAX_REQUESTS}/${Math.round(RATE_LIMIT_WINDOW_MS / 1000)}s`);
+console.log(`  Idle: timeout=${IDLE_TIMEOUT_MS > 0 ? Math.round(IDLE_TIMEOUT_MS / 60000) + "min" : "off"}, reset=${RESET_ON_IDLE_MS > 0 ? Math.round(RESET_ON_IDLE_MS / 60000) + "min" : "off"}`);
+console.log(`  Cron: ${CRON_ENABLED ? "enabled" : "disabled"}`);
+await startBotPolling();
