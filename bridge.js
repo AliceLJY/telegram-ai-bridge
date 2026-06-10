@@ -1898,8 +1898,8 @@ async function shutdown(signal) {
   // 5. 停止 Cron
   if (cronManager) cronManager.stopAll();
 
-  // 6. 关闭 idle monitor
-  idleMonitor.shutdown?.();
+  // 6. 关闭 idle monitor（idle-monitor.js 暴露的是 destroy；旧写法 shutdown?.() 被 ?. 静默跳过、timer 从未清理）
+  idleMonitor.destroy?.();
 
   // 7. 干净关闭 SQLite（checkpoint + close，回收 WAL）
   closeSessionsDb();
