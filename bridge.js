@@ -1894,7 +1894,7 @@ async function shutdown(signal) {
   if (a2aBus) await a2aBus.stop().catch(() => {});
 
   // 5. 停止 Cron
-  if (cronManager) cronManager.shutdown();
+  if (cronManager) cronManager.stopAll();
 
   // 6. 关闭 idle monitor
   idleMonitor.shutdown?.();
@@ -1908,8 +1908,15 @@ async function shutdown(signal) {
   process.exit(0);
 }
 
-process.on("SIGINT", () => shutdown("SIGINT"));
-process.on("SIGTERM", () => shutdown("SIGTERM"));
+// shutdown 自身抛错也必须退出，否则进程悬到 launchd ExitTimeOut 被 SIGKILL
+function runShutdown(signal) {
+  shutdown(signal).catch((err) => {
+    console.error(`[bridge] shutdown failed (${signal}):`, err);
+    process.exit(1);
+  });
+}
+process.on("SIGINT", () => runShutdown("SIGINT"));
+process.on("SIGTERM", () => runShutdown("SIGTERM"));
 
 // ── 启动 ──
 console.log("Telegram-AI-Bridge 启动中...");
