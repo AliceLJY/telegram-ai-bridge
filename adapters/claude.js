@@ -534,7 +534,14 @@ export function createAdapter(config = {}) {
         systemAppendLen: options.systemPrompt?.append?.length || 0,
       })}`);
 
-      // 双 yield 兜底：先 buffer 第一次的输出，跑完后扫 jsonl 增量看是否触发 SDK 自起伪 user turn。
+      // 全新会话（无 sessionId）：没有 resume 失败回退需求，SDK 也只在 resume 模式下自起伪 user turn，
+      // 无需 buffer-then-rescan —— 直接透传，保住实时进度与流式预览
+      if (!sessionId) {
+        yield* this._runQuery(effectivePrompt, options, abortController);
+        return;
+      }
+
+      // 双 yield 兜底（仅 resume 路径）：先 buffer 第一次的输出，跑完后扫 jsonl 增量看是否触发 SDK 自起伪 user turn。
       // 触发 → 第一次输出基于伪 user 的 "Continue from where you left off." 误读 → 丢弃 → 起第二次直接 yield
       // 没触发 → 第一次正常 → 吐 buffer 给上层
       // 详见 plan-fake-user-double-yield.md
