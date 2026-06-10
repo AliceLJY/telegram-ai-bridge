@@ -77,6 +77,16 @@ export function getSharedContextStatus() {
   };
 }
 
+export async function closeSharedContext() {
+  if (!backend) return;
+  try {
+    await backend.close?.();
+  } catch (error) {
+    console.warn(`[shared-context] close failed: ${error.message}`);
+  }
+  backend = null;
+}
+
 export function __setSharedContextBackendForTest(testBackend, type = "test") {
   backend = testBackend;
   backendType = type;

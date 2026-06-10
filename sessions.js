@@ -331,7 +331,17 @@ export function cleanupExpired() {
   // 历史表仍然定期清理，避免只读预览列表无限增长。
   const historyCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const result = stmtCleanupHistory.run(historyCutoff);
+  // WAL 只在 checkpoint 或干净关闭时回收；长跑进程被 launchd 硬杀从不触发后者，
+  // 实测主库 28K 时 -wal 可涨到 2.7M，借周期清理顺带截断（对齐 tasks.js 范式）
+  db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
   return result.changes;
+}
+
+export function closeSessionsDb() {
+  try {
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    db.close();
+  } catch {}
 }
 
 export function sessionBelongsToChat(chatId, sessionId, backend = null, ownership = null) {

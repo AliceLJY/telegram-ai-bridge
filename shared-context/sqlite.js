@@ -9,6 +9,9 @@ export function createSqliteBackend(config) {
   let db = null;
   const dbPath = config.sharedContextDb || "shared-context.db";
   const busyTimeoutMs = 5000;
+  // WAL 只在 checkpoint 或干净关闭时回收，长跑下会无界增长（实测 -wal 涨到 2.2M），借 read 节流截断
+  const CHECKPOINT_INTERVAL_MS = 30 * 60 * 1000;
+  let lastCheckpointTs = 0;
 
   return {
     async init() {
@@ -51,6 +54,10 @@ export function createSqliteBackend(config) {
       // 清理过期数据
       try {
         db.prepare("DELETE FROM shared_context WHERE chat_id = ? AND ts < ?").run(chatId, minTs);
+        if (Date.now() - lastCheckpointTs > CHECKPOINT_INTERVAL_MS) {
+          db.run("PRAGMA wal_checkpoint(TRUNCATE)");
+          lastCheckpointTs = Date.now();
+        }
       } catch (error) {
         if (!/database is locked/i.test(error.message)) throw error;
         console.warn(`[shared-context:sqlite] cleanup skipped: ${error.message}`);
@@ -63,6 +70,15 @@ export function createSqliteBackend(config) {
       rows.reverse();
 
       return trimByTokens(rows, maxTokens);
+    },
+
+    async close() {
+      if (!db) return;
+      try {
+        db.run("PRAGMA wal_checkpoint(TRUNCATE)");
+        db.close();
+      } catch {}
+      db = null;
     },
   };
 }

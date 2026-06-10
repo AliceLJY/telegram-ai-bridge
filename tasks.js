@@ -193,6 +193,13 @@ export function cleanupOldTasks(options = {}) {
   return { deleted: result.changes, cutoff };
 }
 
+export function closeTasksDb() {
+  try {
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    db.close();
+  } catch {}
+}
+
 cleanupOldTasks();
 const cleanupTimer = setInterval(() => cleanupOldTasks(), 24 * 60 * 60 * 1000);
 cleanupTimer.unref?.();
