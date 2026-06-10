@@ -39,6 +39,7 @@ export function registerCommands(bot, deps) {
     getSessionTypeState,
     getSessionProjectLabel,
     getSessionSourceLabel,
+    idleMonitor,
     lastSessionList,
     markTaskApproved,
     markTaskRejected,
