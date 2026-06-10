@@ -1890,8 +1890,10 @@ async function shutdown(signal) {
   }
   activeProgressTrackers.clear();
 
-  // 4. 关闭 A2A 总线
-  if (a2aBus) await a2aBus.stop().catch(() => {});
+  // 4. 关闭 A2A 总线（bus.stop() 是同步函数，await .catch() 会在 undefined 上炸——codex 复核抓出）
+  if (a2aBus) {
+    try { a2aBus.stop(); } catch {}
+  }
 
   // 5. 停止 Cron
   if (cronManager) cronManager.stopAll();
