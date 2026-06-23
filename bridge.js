@@ -7,6 +7,8 @@ import { mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync, existsSync
 import { basename, join } from "path";
 import {
   getSession,
+  peekSession,
+  getSessionResetAt,
   getSessionTypeState,
   setSession,
   setSessionType,
@@ -1389,6 +1391,9 @@ async function processPrompt(ctx, prompt) {
         backendName,
         sessionType: activeDiscussMode ? "discuss" : effectiveSession.session_type || "normal",
         setSession,
+        peekSession,
+        getResetAt: getSessionResetAt,
+        turnStartedAt: startTime,
         patchCodexStateDb,
       })
       : false;
@@ -1817,7 +1822,8 @@ async function startBotPolling() {
 const IS_BRIDGE_OWNER = process.env.BRIDGE_OWNER === "true";
 await bot.api.setMyCommands([
   { command: "help", description: "查看所有命令" },
-  { command: "new", description: "开启新会话" },
+  { command: "new", description: "开启新会话（停当前任务+清排队）" },
+  { command: "cancel", description: "停止当前任务（保留会话）" },
   IS_BRIDGE_OWNER && { command: "sessions", description: "查看/切换会话" },
   { command: "model", description: "切换模型" },
   { command: "effort", description: "切换思考深度" },

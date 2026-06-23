@@ -241,6 +241,25 @@ export function getSession(chatId) {
   };
 }
 
+// 无 touch 副作用的只读版（getSession 会刷新 last_active；turn 收尾的写回防护不该改活跃时间）
+export function peekSession(chatId) {
+  const row = stmtGet.get(chatId);
+  if (!row) return null;
+  return {
+    session_id: row.session_id,
+    backend: row.backend || "claude",
+    ownership: row.ownership || "owned",
+    session_type: normalizeSessionType(row.session_type),
+  };
+}
+
+// chatId → 最近一次 deleteSession 的时间（内存即可：bridge 重启时在途 turn 的收尾回调一并消失）
+const sessionResetAt = new Map();
+
+export function getSessionResetAt(chatId) {
+  return sessionResetAt.get(chatId) || 0;
+}
+
 export function setSession(
   chatId,
   sessionId,
@@ -264,6 +283,7 @@ export function deleteSession(chatId, source = "unknown") {
   console.log(`[Session Debug] deleteSession(${chatId}) source=${source} existing:`, existing ? `${existing.session_id.slice(0, 8)}...` : "none", new Error().stack?.split("\n").slice(1, 8).join(" ← "));
   stmtArchive.run(chatId);
   stmtDelete.run(chatId);
+  sessionResetAt.set(chatId, Date.now());
 }
 
 export function getHistorySession(sessionId) {

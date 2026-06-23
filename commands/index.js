@@ -87,6 +87,22 @@ export function registerCommands(bot, deps) {
     "📋 /sessions 和 /resume 仅在主力 bot 启用。\n" +
     "Claude 历史去 @ClCObest_bot 或 mccode1；Codex 历史去 mcodex1。";
 
+  // 取消某个 chat 所有挂起的工具审批：cleanup timeout + 标记 rejected + resolve deny + 删除。
+  // 与 perm 回调的 deny 分支同构，供 /new、/cancel、Stop 复用——abort 不会让等待中的审批 Promise 自行结束，
+  // 不清就会留下悬挂 Promise、未触发的 5 分钟超时、以及点了无效的旧审批按钮。
+  function cancelPendingPermsForChat(chatId, reason = "会话已重置") {
+    let count = 0;
+    for (const [permId, pending] of pendingPermissions) {
+      if (pending.chatId !== chatId) continue;
+      pendingPermissions.delete(permId);
+      pending.cleanup();
+      if (pending.taskId) markTaskRejected(pending.taskId, pending.toolName);
+      pending.resolve({ behavior: "deny", message: reason, toolUseID: pending.toolUseID });
+      count++;
+    }
+    return count;
+  }
+
   // ── /help 命令 ──
   bot.command("help", async (ctx) => {
     const adapter = getAdapter(ctx.chat.id);
@@ -95,7 +111,8 @@ export function registerCommands(bot, deps) {
       `*Telegram AI Bridge* — ${adapter.icon} ${adapter.label}`,
       "",
       "📋 *会话管理*",
-      "/new — 开启新会话",
+      "/new — 开启新会话（停当前任务+清排队）",
+      "/cancel — 停止当前任务（保留会话）",
       "/sessions — 查看/切换会话",
       "/resume <id> — 恢复指定会话",
       "/peek \\[n] — 查看会话最后 n 条",
@@ -156,6 +173,7 @@ export function registerCommands(bot, deps) {
   bot.callbackQuery("stop", async (ctx) => {
     const chatId = ctx.chat.id;
     const controller = chatAbortControllers.get(chatId);
+    cancelPendingPermsForChat(chatId, "已停止");
     if (controller) {
       controller.abort();
       chatAbortControllers.delete(chatId);
@@ -179,12 +197,39 @@ export function registerCommands(bot, deps) {
     }
   });
 
-  // ── /new 命令：重置会话 ──
+  // ── /new 命令：硬重置会话（停当前任务 + 清排队 + 解绑映射） ──
   bot.command("new", async (ctx) => {
-    deleteSession(ctx.chat.id, "/new-command");
-    chatPermState.delete(ctx.chat.id);
-    const adapter = getAdapter(ctx.chat.id);
-    await ctx.reply(`会话已重置，下条消息将开启新 ${adapter.label} 会话。`);
+    const chatId = ctx.chat.id;
+    // 1) 停掉正在跑的任务：写回保护是兜底，这里主动 abort 更干净、也省掉无谓算力
+    const controller = chatAbortControllers.get(chatId);
+    if (controller) {
+      controller.abort();
+      chatAbortControllers.delete(chatId);
+    }
+    // 2) 取消挂起的工具审批（abort 不会让等待中的审批 Promise 自行结束）
+    cancelPendingPermsForChat(chatId, "会话已重置");
+    // 3) 清掉还没处理的排队消息，避免旧排队消息灌进新会话
+    const cleared = flushGate.clearBuffer(chatId);
+    // 3) 解绑会话映射（deleteSession 内部记 sessionResetAt，挡住在途旧 turn 的写回）
+    deleteSession(chatId, "/new-command");
+    chatPermState.delete(chatId);
+    const adapter = getAdapter(chatId);
+    const extra = cleared > 0 ? `，已清理 ${cleared} 条排队消息` : "";
+    await ctx.reply(`会话已重置${extra}，下条消息将开启新 ${adapter.label} 会话。`);
+  });
+
+  // ── /cancel 命令：只停当前任务，不动会话映射（停下手头这个、接着聊） ──
+  bot.command("cancel", async (ctx) => {
+    const chatId = ctx.chat.id;
+    const controller = chatAbortControllers.get(chatId);
+    cancelPendingPermsForChat(chatId, "已停止");
+    if (controller) {
+      controller.abort();
+      chatAbortControllers.delete(chatId);
+      await ctx.reply("⏹ 已停止当前任务，会话保留，可继续发消息。");
+    } else {
+      await ctx.reply("当前没有运行中的任务。");
+    }
   });
 
   // ── /resume 命令：显式绑定已有 session id（适合终端/TG 手动接续） ──

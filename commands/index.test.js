@@ -16,6 +16,7 @@ describe("command registration", () => {
       "help",
       "discuss",
       "new",
+      "cancel",
       "resume",
       "peek",
       "sessions",
