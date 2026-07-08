@@ -21,17 +21,30 @@ cd "$REPO_DIR"
 #   Redis ping 扑空 → check exit 1 → 靠 KeepAlive 重启才自愈，每次开机日志先记一条 failed。
 # 处理：check 前先探 Redis 端口就绪（最多 ~60s）。探通再 check，通常一次过；万一 60s
 #   还没起，仍走下面的 check（失败则 set -e 退出、KeepAlive 兜底），不改变最终语义。
-# Redis = 本机 docker 容器（compose 映射 6379）。若 Redis 迁移/改端口，同步改这两行。
-REDIS_PROBE_HOST=127.0.0.1
-REDIS_PROBE_PORT=6379
-for i in $(seq 1 30); do
-  if nc -z "$REDIS_PROBE_HOST" "$REDIS_PROBE_PORT" 2>/dev/null; then
-    echo "[launchd] redis ${REDIS_PROBE_HOST}:${REDIS_PROBE_PORT} ready (attempt ${i})"
-    break
+# Redis = 本机 docker 容器（compose 映射 6379）。sqlite/json 配置不需要等，避免无 Redis 时每次重启白等 60s。
+SHOULD_WAIT_REDIS=1
+if [ -n "$CONFIG" ] && [ -f "$CONFIG" ]; then
+  if grep -Eq '"sharedContextBackend"[[:space:]]*:[[:space:]]*"redis"|"redisUrl"[[:space:]]*:[[:space:]]*"[^"]+' "$CONFIG"; then
+    SHOULD_WAIT_REDIS=1
+  else
+    SHOULD_WAIT_REDIS=0
   fi
-  echo "[launchd] waiting for redis ${REDIS_PROBE_HOST}:${REDIS_PROBE_PORT} (attempt ${i}/30)"
-  sleep 2
-done
+fi
+
+if [ "$SHOULD_WAIT_REDIS" = "1" ]; then
+  REDIS_PROBE_HOST=127.0.0.1
+  REDIS_PROBE_PORT=6379
+  for i in $(seq 1 30); do
+    if nc -z "$REDIS_PROBE_HOST" "$REDIS_PROBE_PORT" 2>/dev/null; then
+      echo "[launchd] redis ${REDIS_PROBE_HOST}:${REDIS_PROBE_PORT} ready (attempt ${i})"
+      break
+    fi
+    echo "[launchd] waiting for redis ${REDIS_PROBE_HOST}:${REDIS_PROBE_PORT} (attempt ${i}/30)"
+    sleep 2
+  done
+else
+  echo "[launchd] redis wait skipped (shared context is not redis)"
+fi
 # -----------------------------------------------------------------------------
 
 if [ -n "$CONFIG" ]; then

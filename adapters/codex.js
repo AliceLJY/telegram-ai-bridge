@@ -5,6 +5,7 @@
 import { readdirSync, statSync, createReadStream } from "fs";
 import { basename, join } from "path";
 import { createInterface } from "readline";
+import { resolveCodexCommand } from "../codex-cli-resolver.js";
 
 // 让 bridge 产生的 session 在 originator 字段上看着像真 TUI（而非 codex_sdk_ts）。
 // SDK 默认会注入 CODEX_INTERNAL_ORIGINATOR_OVERRIDE = "codex_sdk_ts"，
@@ -38,6 +39,15 @@ export function createAdapter(config = {}) {
 
   // 按模型缓存 SDK 实例
   const sdkCache = new Map();
+  let codexResolution = null;
+
+  function resolveCodexOnce() {
+    if (!codexResolution) {
+      codexResolution = resolveCodexCommand();
+      console.log(`[Codex] CLI=${codexResolution.path} (${codexResolution.source}, ${codexResolution.version})`);
+    }
+    return codexResolution;
+  }
 
   function ensureSDK(modelOverride) {
     if (!Codex) {
@@ -51,6 +61,7 @@ export function createAdapter(config = {}) {
       if (m) sdkConfig.model = m;
       if (defaultServiceTier) sdkConfig.service_tier = defaultServiceTier;
       if (Object.keys(sdkConfig).length > 0) opts.config = sdkConfig;
+      opts.codexPathOverride = resolveCodexOnce().path;
       sdkCache.set(key, new Codex(opts));
     }
     return sdkCache.get(key);

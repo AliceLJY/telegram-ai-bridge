@@ -3,6 +3,7 @@ import { resolve, dirname, join, isAbsolute } from "path";
 import { createInterface } from "readline/promises";
 import { stdin as input, stdout as output } from "process";
 import { A2A_TOOL_MODES, normalizeA2AToolMode } from "./a2a/tool-mode.js";
+import { resolveCodexCommand } from "./codex-cli-resolver.js";
 
 const REPO_DIR = import.meta.dir;
 const DEFAULT_CONFIG_PATH = join(REPO_DIR, "config.json");
@@ -106,7 +107,7 @@ function getBackendCredentialWarning(backend) {
 
 // 后端 CLI 探活：两个后端都经 SDK 调底层 CLI 二进制——
 //   claude-agent-sdk 0.2.117+ 需显式 claude CLI 路径（见 adapters/claude.js: CLAUDE_CLI_PATH，默认 ~/.local/bin/claude）；
-//   @openai/codex-sdk 是 CLI wrapper，内部跑 codex exec，需 codex 在 PATH。
+//   @openai/codex-sdk 默认优先 node_modules vendor，因此要验证 bridge 实际会用的 Codex binary。
 //   gemini 走 Code Assist API，不需本地 CLI。
 // which / exists 可注入，便于测试（默认 Bun.which / existsSync）。
 function checkBackendCliAvailable(backend, options = {}) {
@@ -117,7 +118,17 @@ function checkBackendCliAvailable(backend, options = {}) {
     return { ok: Boolean(existsFn(cliPath)), name: "claude", probe: cliPath };
   }
   if (backend === "codex") {
-    return { ok: Boolean(whichFn("codex")), name: "codex", probe: "codex (PATH)" };
+    try {
+      const resolved = resolveCodexCommand({
+        env: options.env || process.env,
+        knownPaths: options.codexKnownPaths,
+        validateTimeoutMs: options.validateTimeoutMs,
+      });
+      return { ok: true, name: "codex", probe: `${resolved.path} (${resolved.version})` };
+    } catch (error) {
+      const fallbackProbe = whichFn("codex") || "codex (validated path)";
+      return { ok: false, name: "codex", probe: `${fallbackProbe}: ${error.message}` };
+    }
   }
   return { ok: true, name: "gemini", probe: "(Code Assist API, no local CLI)" };
 }

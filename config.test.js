@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 
@@ -49,6 +49,12 @@ function writeConfig(configPath, mutate = null) {
   if (mutate) mutate(config, { workspaceDir, dataDir });
   writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   return { config, workspaceDir, dataDir };
+}
+
+function writeExecutable(filePath, body) {
+  mkdirSync(dirname(filePath), { recursive: true });
+  writeFileSync(filePath, body, "utf8");
+  chmodSync(filePath, 0o755);
 }
 
 describe("config productization", () => {
@@ -224,7 +230,7 @@ describe("config productization", () => {
     expect(present.warnings.some((w) => w.path.startsWith("cli:"))).toBe(false);
   });
 
-  test("inspectRuntime CLI probe uses PATH for codex (via which, not exists)", () => {
+  test("inspectRuntime CLI probe skips broken node_modules codex wrappers", () => {
     const repoDir = makeTempDir();
     const configPath = join(repoDir, "config.json");
     writeConfig(configPath, (config) => {
@@ -233,13 +239,33 @@ describe("config productization", () => {
       config.backends.codex.telegramBotToken = "654321:ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     });
     const runtime = loadRuntimeConfig({ backend: "codex", configPath });
+    const binRoot = makeTempDir();
+    const badBin = join(binRoot, "project", "node_modules", ".bin", "codex");
+    const goodBin = join(binRoot, "homebrew", "bin", "codex");
 
-    // codex 不在 PATH（which→null）→ warning；exists 此处无关
-    const codexMissing = inspectRuntime(runtime, { which: () => null, exists: () => true });
+    writeExecutable(
+      badBin,
+      "#!/bin/sh\nprintf 'missing vendor binary\\n' >&2\nexit 1\n",
+    );
+    writeExecutable(
+      goodBin,
+      "#!/bin/sh\nprintf 'codex-cli 9.9.9\\n'\n",
+    );
+
+    const codexMissing = inspectRuntime(runtime, {
+      env: { ...process.env, PATH: dirname(badBin) },
+      codexKnownPaths: [],
+      validateTimeoutMs: 1000,
+      exists: () => true,
+    });
     expect(codexMissing.warnings.some((w) => w.path === "cli:codex")).toBe(true);
 
-    // codex 在 PATH → 无 cli warning
-    const codexPresent = inspectRuntime(runtime, { which: () => "/usr/bin/codex", exists: () => false });
+    const codexPresent = inspectRuntime(runtime, {
+      env: { ...process.env, PATH: `${dirname(badBin)}:${dirname(goodBin)}` },
+      codexKnownPaths: [],
+      validateTimeoutMs: 1000,
+      exists: () => false,
+    });
     expect(codexPresent.warnings.some((w) => w.path.startsWith("cli:"))).toBe(false);
   });
 });
