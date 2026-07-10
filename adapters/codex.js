@@ -286,12 +286,14 @@ export function createAdapter(config = {}) {
 
     availableEfforts() {
       return [
-        { id: "__default__", label: "默认 (medium)", description: "标准思考深度" },
+        { id: "__default__", label: "默认（跟随 Codex 配置）", description: "读取 ~/.codex/config.toml" },
         { id: "minimal", label: "Minimal", description: "最快速，极简思考" },
         { id: "low", label: "Low", description: "轻量思考" },
         { id: "medium", label: "Medium ✦", description: "标准思考深度" },
         { id: "high", label: "High", description: "深度思考" },
-        { id: "xhigh", label: "XHigh", description: "最深度思考" },
+        { id: "xhigh", label: "XHigh", description: "超高强度思考" },
+        { id: "max", label: "Max", description: "最大思考深度" },
+        { id: "ultra", label: "Ultra", description: "最高强度思考 + 自动任务分派" },
       ];
     },
 
@@ -326,10 +328,11 @@ export function createAdapter(config = {}) {
       }
     },
 
-    statusInfo(overrideModel) {
+    statusInfo(overrideModel, overrideEffort) {
       const m = overrideModel || defaultModel;
       return {
-        model: m || "(default)",
+        model: m || "跟随 Codex 配置",
+        effort: overrideEffort || "跟随 Codex 配置",
         cwd,
         mode: "Codex SDK direct",
       };

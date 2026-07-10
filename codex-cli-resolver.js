@@ -9,13 +9,18 @@ const DEFAULT_ENV_KEYS = [
   "CODEX_BIN",
 ];
 
-const DEFAULT_KNOWN_PATHS = process.platform === "darwin"
-  ? [
-      "/Applications/Codex.app/Contents/Resources/codex",
-      "/opt/homebrew/bin/codex",
-      "/usr/local/bin/codex",
-    ]
-  : [];
+export function defaultKnownCodexPaths(platform = process.platform) {
+  return platform === "darwin"
+    ? [
+        "/Applications/ChatGPT.app/Contents/Resources/codex",
+        "/Applications/Codex.app/Contents/Resources/codex",
+        "/opt/homebrew/bin/codex",
+        "/usr/local/bin/codex",
+      ]
+    : [];
+}
+
+const DEFAULT_KNOWN_PATHS = defaultKnownCodexPaths();
 
 function codexBinaryName() {
   return process.platform === "win32" ? "codex.exe" : "codex";
