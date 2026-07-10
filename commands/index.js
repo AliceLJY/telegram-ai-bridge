@@ -790,6 +790,14 @@ export function registerCommands(bot, deps) {
       await ctx.answerCallbackQuery({ text: "已恢复默认 ✓" });
       await ctx.editMessageText(`${adapter.icon} 已恢复默认模型。`);
     } else {
+      const models = typeof adapter.availableModels === "function" ? adapter.availableModels() : [];
+      if (!models.some((model) => model.id === modelId)) {
+        await ctx.answerCallbackQuery({
+          text: "该模型已不可用，请重新打开 /model",
+          show_alert: true,
+        });
+        return;
+      }
       setChatModel(ctx.chat.id, modelId);
       await ctx.answerCallbackQuery({ text: `已切换 ✓` });
       await ctx.editMessageText(`${adapter.icon} 模型已切换为: ${modelId}`);

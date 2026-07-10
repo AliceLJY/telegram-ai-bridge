@@ -5,7 +5,7 @@
 import { readdirSync, statSync, createReadStream } from "fs";
 import { basename, join } from "path";
 import { createInterface } from "readline";
-import { resolveCodexCommand } from "../codex-cli-resolver.js";
+import { listCodexModels, resolveCodexCommand } from "../codex-cli-resolver.js";
 
 // 让 bridge 产生的 session 在 originator 字段上看着像真 TUI（而非 codex_sdk_ts）。
 // SDK 默认会注入 CODEX_INTERNAL_ORIGINATOR_OVERRIDE = "codex_sdk_ts"，
@@ -40,6 +40,7 @@ export function createAdapter(config = {}) {
   // 按模型缓存 SDK 实例
   const sdkCache = new Map();
   let codexResolution = null;
+  let modelOptionsCache = null;
 
   function resolveCodexOnce() {
     if (!codexResolution) {
@@ -65,6 +66,18 @@ export function createAdapter(config = {}) {
       sdkCache.set(key, new Codex(opts));
     }
     return sdkCache.get(key);
+  }
+
+  function listModelsOnce() {
+    if (modelOptionsCache == null) {
+      try {
+        modelOptionsCache = listCodexModels(resolveCodexOnce().path);
+      } catch (error) {
+        console.warn(`[Codex] 模型目录读取失败，仅保留默认选项: ${error.message}`);
+        modelOptionsCache = [];
+      }
+    }
+    return modelOptionsCache;
   }
 
   function listRecentSessionFiles(limit = 10) {
@@ -276,12 +289,11 @@ export function createAdapter(config = {}) {
     icon: "🟢",
 
     availableModels() {
-      return [
-        { id: "__default__", label: `默认${defaultModel ? ` (${defaultModel})` : "（跟随 Codex 配置）"}` },
-        { id: "o3", label: "o3" },
-        { id: "o4-mini", label: "o4-mini" },
-        { id: "codex-mini", label: "Codex Mini" },
-      ];
+      const defaultOption = {
+        id: "__default__",
+        label: `默认${defaultModel ? ` (${defaultModel})` : "（跟随 Codex 配置）"}`,
+      };
+      return [defaultOption, ...listModelsOnce()];
     },
 
     availableEfforts() {

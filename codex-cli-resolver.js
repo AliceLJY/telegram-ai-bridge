@@ -3,6 +3,8 @@ import { accessSync, constants } from "fs";
 import { delimiter, join, sep } from "path";
 
 const DEFAULT_VALIDATE_TIMEOUT_MS = 5000;
+const DEFAULT_MODEL_CATALOG_TIMEOUT_MS = 5000;
+const DEFAULT_MODEL_CATALOG_MAX_BUFFER = 10 * 1024 * 1024;
 const DEFAULT_ENV_KEYS = [
   "TELEGRAM_AI_BRIDGE_CODEX_BIN",
   "CODEX_CLI_PATH",
@@ -65,6 +67,49 @@ export function validateCodexExecutable(candidate, options = {}) {
 
   const version = `${result.stdout || ""}${result.stderr || ""}`.trim();
   return /codex/i.test(version) ? version : null;
+}
+
+export function parseCodexModelCatalog(rawCatalog) {
+  try {
+    const catalog = typeof rawCatalog === "string" ? JSON.parse(rawCatalog) : rawCatalog;
+    if (!Array.isArray(catalog?.models)) return [];
+
+    const seen = new Set();
+    return catalog.models
+      .filter((model) => model?.visibility === "list" && typeof model.slug === "string" && model.slug.trim())
+      .sort((left, right) => {
+        const leftPriority = Number.isFinite(left.priority) ? left.priority : Number.MAX_SAFE_INTEGER;
+        const rightPriority = Number.isFinite(right.priority) ? right.priority : Number.MAX_SAFE_INTEGER;
+        if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+        const leftLabel = String(left.display_name || left.slug);
+        const rightLabel = String(right.display_name || right.slug);
+        return leftLabel.localeCompare(rightLabel);
+      })
+      .flatMap((model) => {
+        const id = model.slug.trim();
+        if (id === "__default__" || seen.has(id)) return [];
+        seen.add(id);
+        return [{ id, label: String(model.display_name || id) }];
+      });
+  } catch {
+    return [];
+  }
+}
+
+export function listCodexModels(candidate, options = {}) {
+  const spawn = options.spawnSyncImpl || spawnSync;
+  try {
+    const result = spawn(candidate, ["debug", "models", "--bundled"], {
+      env: options.env || process.env,
+      encoding: "utf8",
+      timeout: options.timeoutMs || DEFAULT_MODEL_CATALOG_TIMEOUT_MS,
+      maxBuffer: options.maxBuffer || DEFAULT_MODEL_CATALOG_MAX_BUFFER,
+    });
+    if (result.status !== 0) return [];
+    return parseCodexModelCatalog(result.stdout);
+  } catch {
+    return [];
+  }
 }
 
 export function resolveCodexCommand(options = {}) {

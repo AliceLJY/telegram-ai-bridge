@@ -75,4 +75,40 @@ describe("command registration", () => {
     expect(healthCheckCalls[0].idleMonitor).toBe(idleMonitorMarker);
     expect(replies).toEqual(["ok"]);
   });
+
+  test("stale model buttons cannot restore removed model ids", async () => {
+    const registered = { commands: [], callbacks: [] };
+    const bot = {
+      command: (name, handler) => registered.commands.push({ name, handler }),
+      callbackQuery: (pattern, handler) => registered.callbacks.push({ pattern: String(pattern), handler }),
+    };
+    const modelWrites = [];
+    registerCommands(bot, {
+      getAdapter: () => ({
+        icon: "C",
+        availableModels: () => [
+          { id: "__default__", label: "默认" },
+          { id: "gpt-5.6-sol", label: "GPT-5.6-Sol" },
+        ],
+      }),
+      setChatModel: (...args) => modelWrites.push(args),
+    });
+
+    const callback = registered.callbacks.find((entry) => entry.pattern === "/^model:/");
+    const answers = [];
+    const edits = [];
+    await callback.handler({
+      chat: { id: 42 },
+      callbackQuery: { data: "model:o3" },
+      answerCallbackQuery: async (options) => answers.push(options),
+      editMessageText: async (text) => edits.push(text),
+    });
+
+    expect(modelWrites).toEqual([]);
+    expect(edits).toEqual([]);
+    expect(answers).toEqual([{
+      text: "该模型已不可用，请重新打开 /model",
+      show_alert: true,
+    }]);
+  });
 });
