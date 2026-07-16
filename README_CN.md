@@ -7,7 +7,7 @@
 *Claude Code、Codex、Gemini 各自独立的全栈 bot，通过 IM 原生的封装协议（A2A-TG）协作，带硬性代际计数防死循环。常驻运行，自托管，只有你本人能触发。*
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-4.1.0-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
+[![Version](https://img.shields.io/badge/version-5.0.1-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
 [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)
 [![Telegram](https://img.shields.io/badge/Interface-Telegram-26A5E4?logo=telegram)](https://telegram.org/)
 [![A2A-TG spec](https://img.shields.io/badge/A2A--TG-v1-8a2be2)](docs/a2a-tg-v1.md)
@@ -114,7 +114,7 @@ bridge 从 SDK 工具结果中捕获 base64 图片数据，同时扫描 CC 回�
 
 ### 常驻运行，自托管
 
-macOS LaunchAgent 或 Docker 让 bridge 在后台持续运行。会话持久化在 SQLite 里，重启、断网、坐飞机、重开机都不丢。代码和凭证不出本机。默认 owner-only 访问。
+macOS LaunchAgent 或 Docker 让 bridge 在后台持续运行。会话和 bridge 配置保存在宿主机的 SQLite/JSON 文件中。Telegram 消息仍会经过 Telegram；prompt、被选中的代码与工具上下文会按你配置的 Claude、Codex 或 Gemini 后端的数据路径发送。默认只允许 owner 触发，但这不代表模型流量只在本机。
 
 ### 生产级可靠性
 
@@ -134,6 +134,8 @@ macOS LaunchAgent 或 Docker 让 bridge 在后台持续运行。会话持久化�
 ## 快速开始
 
 **前置条件：** [Bun](https://bun.sh) 运行时、一个 Telegram bot token（从 [@BotFather](https://t.me/BotFather) 获取）、以及至少一个后端 CLI：[Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Codex](https://openai.com/index/codex/) 或 [Gemini CLI](https://ai.google.dev/gemini-api/docs/ai-studio-quickstart)。
+
+> **v5 支持的安装方式：** 按下方命令 clone 仓库并使用 Bun。npm 上仍是历史 v3.1.0 快照，不是 v5 的受支持分发渠道；本版本线不要使用 `npm install telegram-ai-bridge`。
 
 ```bash
 git clone https://github.com/AliceLJY/telegram-ai-bridge.git
@@ -206,76 +208,14 @@ bun run start --backend claude
 
 ## 与竞品对比
 
-Claude Code 先后上线了 [Remote Control](https://code.claude.com/docs/en/remote-control)（2026.2）和 [Telegram 频道插件](https://code.claude.com/docs/en/channels)（2026.3）。都能从手机跟 Claude 聊天，但都做不到会话管理、多后端、多 Agent 协作。
+能力快照日期：**2026-07-17**。这些产品变化很快，当前行为请以链接的一手文档为准。
 
-| 核心差异 | Remote Control | Channels | OpenClaw | **本项目** |
-|---------|:-:|:-:|:-:|:-:|
-| 多实例并行 | &mdash; | &mdash; | 1 bot = 1 会话 | **N 个 bot，共享记忆** |
-| 会话管理（new/resume/peek） | &mdash; | &mdash; | &mdash; | ✅ 完整生命周期 |
-| 图片/文件输出回传 | 仅终端 | &mdash; | &mdash; | ✅ 自动发到对话 |
-| War Room 多 Agent 协同 | &mdash; | &mdash; | &mdash; | ✅ @点名 + 共享上下文 |
-| 多后端（Claude/Codex/Gemini） | 仅 Claude | 仅 Claude | 绑定 Provider | ✅ 全部支持 |
-| 后台常驻 | 终端关了就断 | 会话关了就断 | Gateway | ✅ LaunchAgent / Docker |
-| 生产级可靠性 | &mdash; | &mdash; | &mdash; | ✅ 重试、限频、排空 |
+- [Claude Code Remote Control](https://code.claude.com/docs/en/remote-control) 是 Anthropic 官方的 Web/手机远控入口。它的 server mode 可创建多个会话，interactive mode 则是每个本地进程暴露一个会话。
+- [Claude Code Channels](https://code.claude.com/docs/en/channels) 提供官方 Telegram、Discord、iMessage 插件，带发送者 allowlist，并可选择转发权限审批；它是依附运行中 Claude 会话的 Claude-only research preview 路径。
+- [OpenClaw](https://docs.openclaw.ai/providers) 是覆盖多模型供应商和多种频道的通用 gateway，并不是“绑定单一 Provider”。它的产品范围比本仓更宽。
+- **telegram-ai-bridge** 更窄：适合明确需要自托管、Telegram-first、自己维护 `/new`/`resume`/`peek` 生命周期、多 bot 共享上下文，以及跨 Claude/Codex/Gemini 后端使用 A2A-TG 防环协议的场景。
 
-**官方工具的长处：** Remote Control 能实时看完整终端输出。Channels 能原生转发工具授权请求。本项目专注另一件事：**在 Telegram 里做持久化的多 Agent 会话管理。**
-
-<details>
-<summary><strong>完整对比（26 项功能）</strong></summary>
-
-| 功能 | [Remote Control](https://code.claude.com/docs/en/remote-control) | [Channels](https://code.claude.com/docs/en/channels)（TG 插件） | [OpenClaw](https://github.com/openclaw/openclaw) | 本项目 |
-|------|:-:|:-:|:-:|:-:|
-| 多实例并行会话 | &mdash; | &mdash; | 1 bot = 1 会话 | **N 个 bot，N 个并行 CC 实例，共享记忆** |
-| 从手机新建会话 | &mdash; | &mdash; | &mdash; | `/new` |
-| 浏览并恢复历史会话 | &mdash; | &mdash; | &mdash; | `/sessions` `/resume` `/peek` |
-| 随时切换模型 | &mdash; | &mdash; | 按 bot 配置 | `/model` 按钮选择 |
-| Claude + Codex + Gemini 多后端 | 仅 Claude | 仅 Claude | 绑定 Provider | 全部支持，按 chat 切换 |
-| 手机审批工具调用 | 部分（UI 有限） | 支持 | 支持 | 按钮：允许 / 拒绝 / 始终允许 / YOLO |
-| War Room 指挥中心 | &mdash; | &mdash; | &mdash; | @点名派活 + 可插拔共享上下文（SQLite/Redis） |
-| 多 Agent 群聊协作 | &mdash; | &mdash; | &mdash; | A2A 总线 + 共享上下文 |
-| 跨 Agent 协作 | &mdash; | &mdash; | Gateway 频道 | A2A 广播（群聊）+ MCP/CLI（私聊） |
-| 实时进度流式展示 | 终端输出 | &mdash; | 支持 | **实时文本预览**（editMessage 流式更新）+ 工具图标 + 3 级详细度 |
-| 连续消息合并发送 | N/A | &mdash; | &mdash; | FlushGate：800ms 窗口自动合并 |
-| 图片 / 文件 / 语音输入 | &mdash; | 仅文字 | 支持 | 自动下载 + 注入 prompt |
-| **图片 / 文件输出回传** | 仅终端 | &mdash; | &mdash; | **截图和文件自动发送到 TG 对话** |
-| 取消正在运行的任务 | 终端 Ctrl+C | &mdash; | &mdash; | `/cancel` — 手机上中断 |
-| 消息引用上下文 | N/A | &mdash; | &mdash; | 回复消息 → 引用内容自动带入上下文 |
-| 智能快捷回复按钮 | &mdash; | &mdash; | &mdash; | 是否类 + 数字选项（支持 1. 1、 1) 格式） |
-| 后台常驻运行 | 终端关了就断 | 会话关了就断 | Gateway 常驻 | LaunchAgent / Docker |
-| 断网恢复 | 10 分钟超时断开 | 跟随会话生命周期 | Gateway 重连 | SQLite + Redis 持久化 |
-| 跨实例共享记忆 | N/A | N/A | 按 bot 隔离 | **所有实例共享 CLAUDE.md + MCP 记忆** |
-| 每 bot 独立人格 | N/A | N/A | SOUL.md 按 bot | 工作空间 `CLAUDE.md` + 共享全局规则 |
-| 群聊上下文压缩 | N/A | N/A | N/A | 三级：近期原文 / 中期截断 / 远期关键词 |
-| 共享上下文后端 | N/A | N/A | N/A | SQLite / JSON / Redis（可插拔） |
-| 任务审计追踪 | &mdash; | &mdash; | &mdash; | SQLite：状态、费用、耗时、审批记录 |
-| bot 间对话防环 | N/A | N/A | N/A | 五层：代数上限 + AI 自我拒答 + 不再广播 + 指纹去重 + peer 熔断 |
-| 生产级可靠性 | &mdash; | &mdash; | &mdash; | 指数重试、滑动窗口限频、FlushGate 聚合、优雅排空 |
-| 稳定版本 | 是 | research preview | 是 | 是（v4.1） |
-
-</details>
-
-<details>
-<summary><strong>从 OpenClaw 迁移？</strong></summary>
-
-OpenClaw 的每个功能，这里都有直接对应——大部分就是 CC 原生在跑：
-
-| OpenClaw 功能 | 本项目怎么做的 |
-|---|---|
-| **IM 接入**（Telegram/WhatsApp） | grammy Telegram bot + Claude Code Agent SDK——跑的是完整 CC，不是 API 套壳 |
-| **多 Agent 路由** | A2A 总线（自动辩论）+ War Room（@点名派活） |
-| **Skills 技能包** | CC 原生 skill（`~/.claude/skills/`）——不需要转换 |
-| **记忆系统** | CC 原生（`CLAUDE.md` + MCP 记忆如 memory-store）——所有实例自动共享 |
-| **定时任务（cron）** | CC 原生 cron——在 agent 内部运行，结果投递到 TG |
-| **工具调用**（bash/fs/web） | CC 原生工具——Bash、Read、Write、Edit、Glob、Grep、WebFetch 等 |
-| **外部 Agent（ACP）** | CC 子 agent + MCP 服务器 |
-| **Hooks 钩子** | CC 原生 hooks（`~/.claude/settings.json`） |
-| **Web UI 管理** | **Telegram 就是 UI**——内联按钮、推送通知、多设备、零部署 |
-| **SOUL.md 人格** | 每 bot 独立 `CLAUDE.md` 工作空间 + 共享全局规则 |
-| **工作空间记忆** | 项目级 `CLAUDE.md` + MCP 记忆——CC 自动加载 |
-
-**核心区别：** OpenClaw 在 API 之上重新实现这些功能。本项目跑的是**真正的 Claude Code**——CC 有的能力，你全部自动获得。
-
-</details>
+想要最小、官方支持的 Claude-only 方案，优先选 Anthropic 官方路径；想要通用 gateway，选 OpenClaw；想要本仓这套特定的 Telegram 多 bot 工作流，再选 telegram-ai-bridge。这里是定位说明，不声称其它产品的所有功能在本仓都有一一对应。
 
 ---
 
@@ -391,24 +331,11 @@ A2A-TG 保留 A2A 的精神（agent 对等通信、带 correlation/idempotency �
 A2A_STATUS_URLS='mini-claude=http://mini.local:18810/a2a/status' ./scripts/status-all.sh
 ```
 
-#### A2A-TG 在多 agent 赛道里的位置
-
-几个项目都在做"让多个 AI agent 协作"这件事，但各自挑了一个轴专精。下面的表只限多 agent 编排赛道（不包括 CC 远程控制那条线，那条前面已经比过了）。
-
-| 项目                                                                                       | 异构 agent             | 专门的协议层                    | 以 IM 为主 UI    | 自托管 |
-|--------------------------------------------------------------------------------------------|:----------------------:|---------------------------------|:----------------:|:------:|
-| [golutra](https://github.com/golutra/golutra)                                              | 支持（手工转发）       | GUI 管道，人在环里              | 桌面 GUI         | 是     |
-| [claude-code-studio](https://github.com/AliceLJY/claude-code-studio)                       | 仅 CC（同构）          | Redis + 文件系统 watcher        | Web UI           | 是     |
-| **telegram-ai-bridge**（本项目）                                                           | 支持（CC + Codex + Gemini） | A2A-TG 封装 + 防环         | Telegram         | 是     |
-
-不是说别人做得差——各自为不同任务而生。golutra 的长处是精准的人工路由，claude-code-studio 的长处是深度的同构 CC 编排。本项目的长处是 IM 里跑起来的异构自动协同，一个已经装在口袋里的 UI。
-
----
-
 ## 安全与信任模型
 
 这座桥用你本地的凭证跑完整 Claude Code / Codex，所以值得把"它保护什么、不保护什么"说清楚。
 
+- **并非所有数据都留在本机。** 配置、session 状态与 A2A-TG 信封保存在宿主机；Telegram 流量经过 Telegram，各 AI 后端也会按对应服务与设置发送 prompt 和被选中的上下文。
 - **Owner 白名单管的是触发权限，不是内容。** `ownerTelegramId` 控制谁能触发 bot。它**不会**过滤回复内容、共享上下文或 A2A-TG 信封。已经进了授权群的任何人，都能看到 bot 说的所有话。
 - **群聊会写进共享存储。** 每条群内 bot 回复都会写入共享上下文存储（SQLite / JSON / Redis）。不要把 bot 拉进你控制不了的群——对话会持久化在你磁盘上，群里任何一个 bot 被 @ 时都能读到。
 - **A2A-TG 广播只走 loopback，只在群聊。** 信封从不离开 `127.0.0.1`，入站/出站两端都拒绝 `chat_id > 0`（即 DM）。两个人各自 DM 不同 bot 不会互相泄漏。

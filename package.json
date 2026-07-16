@@ -1,6 +1,7 @@
 {
   "name": "telegram-ai-bridge",
-  "version": "5.0.0",
+  "version": "5.0.1",
+  "private": true,
   "description": "Self-hosted Telegram bridge for heterogeneous AI coding agents (Claude Code, Codex, Gemini) with the A2A-TG envelope protocol for safe multi-agent collaboration in group chats.",
   "type": "module",
   "main": "bridge.js",
@@ -87,12 +88,19 @@
     "check-configs": "bun scripts/check-configs.js"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.117",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.141",
     "@openai/codex-sdk": "0.125.0",
-    "croner": "^9.0.0",
-    "google-auth-library": "^9.0.0",
-    "grammy": "^1.40.0",
+    "croner": "^9.1.0",
+    "google-auth-library": "^9.15.1",
+    "grammy": "^1.45.0",
     "https-proxy-agent": "^7.0.6",
-    "ioredis": "^5.10.0"
+    "ioredis": "^5.11.1"
+  },
+  "overrides": {
+    "@hono/node-server": "^1.19.13",
+    "fast-uri": "^3.1.3",
+    "hono": "^4.12.30",
+    "ip-address": "^10.2.0",
+    "qs": "^6.15.3"
   }
 }

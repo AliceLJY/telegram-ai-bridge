@@ -7,7 +7,7 @@
 *Claude Code, Codex, and Gemini as independent full-stack bots, coordinated over a Telegram-native envelope protocol (A2A-TG) with generation-counted loop guards. Always-on, self-hosted, owner-gated.*
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-4.1.0-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
+[![Version](https://img.shields.io/badge/version-5.0.1-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
 [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)
 [![Telegram](https://img.shields.io/badge/Interface-Telegram-26A5E4?logo=telegram)](https://telegram.org/)
 [![A2A-TG spec](https://img.shields.io/badge/A2A--TG-v1-8a2be2)](docs/a2a-tg-v1.md)
@@ -116,7 +116,7 @@ Done discussing? `/export` dumps the entire cross-bot conversation as a Markdown
 
 ### Always-On, Self-Hosted
 
-macOS LaunchAgent or Docker keeps the bridge running in the background. Sessions persist in SQLite across restarts and reboots — pick up where you left off after a reboot, a network drop, or a flight. Code and credentials never leave your machine. Owner-only access by default.
+macOS LaunchAgent or Docker keeps the bridge running in the background. Sessions and bridge configuration stay on the host in SQLite/JSON files. Telegram messages still pass through Telegram, and prompts plus selected code/tool context follow the data path of the Claude, Codex, or Gemini backend you configure. Owner-only triggering is the default; it is not a guarantee that model traffic remains local.
 
 ### Production-Grade Reliability
 
@@ -136,6 +136,8 @@ Not a toy — built for all-day use:
 ## Quick Start
 
 **Prerequisites:** [Bun](https://bun.sh) runtime, a Telegram bot token (from [@BotFather](https://t.me/BotFather)), and at least one backend CLI: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://openai.com/index/codex/), or [Gemini CLI](https://ai.google.dev/gemini-api/docs/ai-studio-quickstart).
+
+> **Supported v5 install path:** clone this repository and use Bun as shown below. The npm package is still a historical v3.1.0 snapshot and is not a supported v5 distribution channel; do not use `npm install telegram-ai-bridge` for this release line.
 
 ```bash
 git clone https://github.com/AliceLJY/telegram-ai-bridge.git
@@ -208,76 +210,14 @@ Sessions are sticky: messages continue the current session until you explicitly 
 
 ## How It Compares
 
-Claude Code now ships [Remote Control](https://code.claude.com/docs/en/remote-control) (Feb 2026) and a [Telegram channel plugin](https://code.claude.com/docs/en/channels) (Mar 2026). Both let you talk to Claude from your phone. Neither gives you session management, multi-backend support, or agent-to-agent collaboration.
+Comparison snapshot: **2026-07-17**. These products evolve quickly; follow the linked official documentation for current behavior.
 
-| Key differentiator | Remote Control | Channels | OpenClaw | **This project** |
-|--------------------|:-:|:-:|:-:|:-:|
-| Parallel sessions | &mdash; | &mdash; | 1 bot = 1 session | **N bots, shared memory** |
-| Session management (new/resume/peek) | &mdash; | &mdash; | &mdash; | ✅ Full lifecycle |
-| Image & file output relay | Terminal only | &mdash; | &mdash; | ✅ Auto-sent to chat |
-| War Room (multi-agent) | &mdash; | &mdash; | &mdash; | ✅ @mention + shared context |
-| Multi-backend (Claude/Codex/Gemini) | Claude only | Claude only | Provider-locked | ✅ All three |
-| Always-on daemon | Terminal must stay open | Session-tied | Gateway | ✅ LaunchAgent / Docker |
-| Production reliability | &mdash; | &mdash; | &mdash; | ✅ Retry, rate-limit, drain |
+- [Claude Code Remote Control](https://code.claude.com/docs/en/remote-control) is Anthropic's supported web/mobile window into local Claude Code. Its server mode can create multiple sessions, while interactive mode exposes one local session per process.
+- [Claude Code Channels](https://code.claude.com/docs/en/channels) supplies official Telegram, Discord, and iMessage plugins with sender allowlists and optional permission relay. It is a Claude-only, research-preview path tied to a running session.
+- [OpenClaw](https://docs.openclaw.ai/providers) is a broad multi-provider, multi-channel gateway. It is not provider-locked and serves a wider platform role than this repository.
+- **telegram-ai-bridge** is the narrower choice when you specifically want a self-hosted Telegram-first bridge with its own `/new`/`resume`/`peek` lifecycle, multi-bot shared context, and the repository's A2A-TG loop-suppression protocol across Claude, Codex, and Gemini backends.
 
-**What official tools do better:** Remote Control streams full terminal output. Channels relay tool-approval dialogs natively. This project optimizes for a different job: **persistent, multi-agent session management entirely from Telegram.**
-
-<details>
-<summary><strong>Full comparison (26 features)</strong></summary>
-
-| Feature | [Remote Control](https://code.claude.com/docs/en/remote-control) | [Channels](https://code.claude.com/docs/en/channels) (TG plugin) | [OpenClaw](https://github.com/openclaw/openclaw) | This project |
-|---------|:-:|:-:|:-:|:-:|
-| Parallel sessions (multi-instance)    | &mdash; | &mdash; | 1 bot = 1 session | **N bots, N parallel CC instances, shared memory** |
-| Create new sessions from phone        | &mdash; | &mdash; | &mdash; | `/new` |
-| Browse & resume past sessions         | &mdash; | &mdash; | &mdash; | `/sessions` `/resume` `/peek` |
-| Switch models on the fly              | &mdash; | &mdash; | Per-bot config | `/model` with inline buttons |
-| Claude + Codex + Gemini backends      | Claude only | Claude only | Provider-locked | All three, per-chat switchable |
-| Tool approval from phone              | Partial (limited UI) | Yes | Yes | Inline buttons: Allow / Deny / Always / YOLO |
-| War Room (multi-agent command center) | &mdash; | &mdash; | &mdash; | @mention dispatch + pluggable shared context (SQLite/Redis) |
-| Multi-agent group collaboration       | &mdash; | &mdash; | &mdash; | A2A bus + shared context |
-| Cross-agent collaboration             | &mdash; | &mdash; | Gateway channels | A2A broadcast (groups) + MCP/CLI (DMs) |
-| Real-time progress streaming          | Terminal output only | &mdash; | Yes | **Live text preview** (editMessage streaming) + tool icons + 3 verbosity levels |
-| Rapid message batching                | N/A | &mdash; | &mdash; | FlushGate: 800ms window, auto-merge |
-| Photo / document / voice input        | &mdash; | Text only | Yes | Auto-download + reference in prompt |
-| **Image / file output relay**         | Terminal only | &mdash; | &mdash; | **Screenshots & files auto-sent to TG chat** |
-| Cancel running task                   | Ctrl+C in terminal | &mdash; | &mdash; | `/cancel` — abort from phone |
-| Message reply context                 | N/A | &mdash; | &mdash; | Reply to any message → quoted text as context |
-| Smart quick-reply buttons             | &mdash; | &mdash; | &mdash; | Yes/No + numbered options (1. 1、 1) formats) |
-| Runs as background daemon             | Terminal must stay open | Session must be open | Yes (Gateway) | LaunchAgent / Docker |
-| Survives network interruptions        | 10-min timeout kills session | Tied to session lifecycle | Gateway reconnect | SQLite + Redis persistence |
-| Memory shared across instances        | N/A | N/A | Per-bot isolated | **All instances share CLAUDE.md + MCP memory** |
-| Per-bot persona                       | N/A | N/A | SOUL.md per bot | Per-bot `CLAUDE.md` workspace + shared global rules |
-| Group context compression             | N/A | N/A | N/A | 3-tier: recent full / middle truncated / old keywords |
-| Shared context backend                | N/A | N/A | N/A | SQLite / JSON / Redis (pluggable) |
-| Task audit trail                      | &mdash; | &mdash; | &mdash; | SQLite: status, cost, duration, approval log |
-| Loop guard for bot-to-bot             | N/A | N/A | N/A | 5-layer: generation cap + AI self-decline + no-rebroadcast + idempotency + circuit breaker |
-| Production reliability                | &mdash; | &mdash; | &mdash; | Exponential retry, rate-limit, FlushGate batching, graceful drain |
-| Stable release                        | Yes | Research preview | Yes | Yes (v4.1) |
-
-</details>
-
-<details>
-<summary><strong>Migrating from OpenClaw?</strong></summary>
-
-Every OpenClaw feature has a direct equivalent — most of them are just CC running natively behind the bridge:
-
-| OpenClaw feature | How this project handles it |
-|---|---|
-| **IM integration** (Telegram/WhatsApp) | grammy Telegram bot + Claude Code Agent SDK — runs full CC, not an API wrapper |
-| **Multi-agent routing** | A2A bus (auto-debate) + War Room (@mention dispatch) |
-| **Skills** | CC native skills (`~/.claude/skills/`) — no conversion needed |
-| **Memory system** | CC native (`CLAUDE.md` + MCP memory like memory-store) — shared across all instances |
-| **Cron / scheduled tasks** | CC native cron — runs inside the agent, results delivered to TG |
-| **Tool execution** (bash/fs/web) | CC native tools — Bash, Read, Write, Edit, Glob, Grep, WebFetch, etc. |
-| **External agents (ACP)** | CC subagents + MCP servers |
-| **Hooks** | CC native hooks (`~/.claude/settings.json`) |
-| **Web UI** | **Telegram IS the UI** — inline buttons, notifications, multi-device, zero deployment |
-| **SOUL.md persona** | Per-bot `CLAUDE.md` workspace + shared global rules |
-| **Workspace memory** | Per-project `CLAUDE.md` + MCP memory — CC loads both automatically |
-
-**The difference:** OpenClaw reimplements these features on top of an API. This project runs **actual Claude Code** — every feature CC has, you get for free.
-
-</details>
+Choose the official Claude paths for the smallest supported Claude-only setup, OpenClaw for a general gateway, and this project for its specific Telegram multi-bot workflow. This is positioning, not a claim that every feature in the alternatives has an exact equivalent here.
 
 ---
 
@@ -393,24 +333,11 @@ For all local LaunchAgent instances plus optional mini targets:
 A2A_STATUS_URLS='mini-claude=http://mini.local:18810/a2a/status' ./scripts/status-all.sh
 ```
 
-#### Where A2A-TG sits in the multi-agent landscape
-
-Several projects solve *some* part of "make multiple AI agents work together." They tend to pick one axis and specialize. The table below is scoped to the multi-agent orchestration lane (not CC-remote-control, which is a different lane covered earlier).
-
-| Project                                                                                   | Heterogeneous agents | Dedicated protocol layer       | IM as primary UI | Self-hosted |
-|-------------------------------------------------------------------------------------------|:--------------------:|--------------------------------|:----------------:|:-----------:|
-| [golutra](https://github.com/golutra/golutra)                                             | Yes (manual)         | GUI pipe, human-in-the-loop    | Desktop GUI      | Yes         |
-| [claude-code-studio](https://github.com/AliceLJY/claude-code-studio)                      | CC only (homogeneous) | Redis + filesystem watcher    | Web UI           | Yes         |
-| **telegram-ai-bridge** (this project)                                                     | Yes (CC + Codex + Gemini) | A2A-TG envelope + loop guards | Telegram         | Yes         |
-
-The point is not that the others are worse — they are built for different tasks. golutra's strength is precise human routing; claude-code-studio's is deep homogeneous CC choreography. This project's strength is heterogeneous auto-coordination inside an IM surface you already carry in your pocket.
-
----
-
 ## Security & trust model
 
 This bridge runs full Claude Code / Codex with your local credentials, so it is worth being explicit about what it does and does not protect against.
 
+- **Data does not all stay local.** Config, session state, and A2A-TG envelopes stay on the host, but Telegram traffic goes through Telegram and each AI backend sends prompts plus selected context according to that provider's service and settings.
 - **Owner gating protects the trigger, not the content.** `ownerTelegramId` controls who can invoke a bot. It does **not** sanitize the content of replies, shared context, or A2A-TG envelopes. Anyone already in an authorized group chat can see whatever the bots say.
 - **Group chats write to shared storage.** Every bot reply in a group is written to the shared-context store (SQLite / JSON / Redis). Do not add the bots to a group you do not control — conversations persist on your disk, and any bot in the group can read them when next @mentioned.
 - **A2A-TG broadcasts are loopback-only and group-scoped.** Envelopes never leave `127.0.0.1`, and the inbound/outbound filters reject `chat_id > 0` (DMs). Two people DMing two bots cannot leak into each other's context.
