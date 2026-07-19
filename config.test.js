@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 
@@ -67,11 +67,23 @@ describe("config productization", () => {
     expect(result.created).toBe(true);
     expect(existsSync(configPath)).toBe(true);
     expect(existsSync(join(repoDir, "files"))).toBe(true);
+    expect(statSync(configPath).mode & 0o777).toBe(0o600);
 
     const written = JSON.parse(readFileSync(configPath, "utf8"));
     expect(written.backends.codex.enabled).toBe(true);
     expect(written.backends.claude.enabled).toBe(false);
     expect(written.backends.codex.telegramBotToken).toBe("123456:replace-me");
+  });
+
+  test("bootstrapWorkspace tightens an overwritten config to owner-only", () => {
+    const repoDir = makeTempDir();
+    const configPath = join(repoDir, "config.json");
+    writeFileSync(configPath, "{}\n", { mode: 0o644 });
+    chmodSync(configPath, 0o644);
+
+    bootstrapWorkspace({ backend: "claude", configPath, force: true });
+
+    expect(statSync(configPath).mode & 0o777).toBe(0o600);
   });
 
   test("validateConfig reports invalid shared fields and duplicate bot tokens", () => {

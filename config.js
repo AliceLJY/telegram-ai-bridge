@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs";
 import { resolve, dirname, join, isAbsolute } from "path";
 import { createInterface } from "readline/promises";
 import { stdin as input, stdout as output } from "process";
@@ -316,6 +316,15 @@ function parseJsonConfig(configPath) {
   const raw = readFileSync(configPath, "utf8");
   const parsed = JSON.parse(raw);
   return mergeConfig(createDefaultConfig(), parsed);
+}
+
+function writePrivateConfig(configPath, config) {
+  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  // The mode option only applies when creating a file. Tighten existing configs too.
+  chmodSync(configPath, 0o600);
 }
 
 function buildEnvFromConfig(config, backend, configPath) {
@@ -709,7 +718,7 @@ export function bootstrapWorkspace(options = {}) {
   }
 
   const config = createBootstrapConfig(selectedBackend);
-  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  writePrivateConfig(configPath, config);
   mkdirSync(filesDir, { recursive: true });
 
   return {
@@ -944,6 +953,6 @@ export async function runSetupWizard(options = {}) {
     throw new Error(formatValidationIssues(issues, "Setup aborted because the config is still incomplete"));
   }
 
-  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  writePrivateConfig(configPath, config);
   return { configPath, config };
 }
