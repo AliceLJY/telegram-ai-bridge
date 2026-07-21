@@ -64,7 +64,7 @@ export function saveCapturedSession({
   logger.log(`[Session Debug] Saving session: chatId=${chatId} sessionId=${capturedSessionId.slice(0, 8)}... backend=${backendName} (was=${sessionId?.slice(0, 8) || "null"})`);
   setSession(chatId, capturedSessionId, displayName, backendName, "owned", sessionType);
   if (backendName === "codex") {
-    setTimeout(patchCodexStateDb, 1000);
+    setTimeout(() => patchCodexStateDb(capturedSessionId), 1000);
   }
   return true;
 }

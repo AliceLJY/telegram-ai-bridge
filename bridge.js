@@ -102,21 +102,22 @@ if (typeof Bun !== "undefined" && PROXY) {
   };
   console.error("[fetch-patch] bun + HTTPS_PROXY detected, global fetch wrapped");
 }
-// [mini-patch] codex 0.121 picker 过滤 source=exec 的 session。
-// bridge 用 SDK 创建的 session 默认被 picker 隐身，每次 save 后把 state DB 里的 exec 改成 cli。
-// 所有 codex bot 都必须跑 —— 否则自己写的 session 下次 resume 会"no rollout found"。
+// [mini-patch] codex picker 过滤 source=exec 的 session。
+// bridge 用 SDK 创建的 session 默认被 picker 隐身，每次 save 后只把本次 thread 改成 cli。
+// 不做全库 UPDATE，避免把其他工具创建的 exec thread 一并改写。
 // 2026-05-29 教训：错误地加 BRIDGE_OWNER gate 后 mcodex2 thread/resume 失败 exit 1。
 // 只 gate claude bot（claude 不该跑这个 SQL），不区分 owner。
-function patchCodexStateDb() {
+function patchCodexStateDb(threadId) {
   if ((process.env.DEFAULT_BACKEND || "claude") !== "codex") return;
+  if (!threadId) return;
   try {
     const dbPath = join(process.env.HOME, ".codex", "state_5.sqlite");
     if (!existsSync(dbPath)) return;
     const db = new Database(dbPath);
-    const r = db.prepare("UPDATE threads SET source = 'cli' WHERE source = 'exec'").run();
+    const r = db.prepare("UPDATE threads SET source = 'cli' WHERE id = ? AND source = 'exec'").run(threadId);
     db.close();
     if (r.changes > 0) {
-      console.log(`[codex-state-patch] reclassified ${r.changes} exec session(s) as cli`);
+      console.log(`[codex-state-patch] reclassified bridge thread ${threadId.slice(0, 8)}... as cli`);
     }
   } catch (e) {
     console.error("[codex-state-patch] failed:", e.message);
