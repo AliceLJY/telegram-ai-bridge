@@ -426,7 +426,7 @@ Inspect resolved config: `bun run config --backend claude` (secrets redacted).
 **Codex:**
 - Requires local login state under `~/.codex/`
 - Optional `model` override; empty string uses Codex defaults
-- `transport: "sdk"` keeps the stable non-interactive SDK path. `transport: "app-server"` is an experimental desktop-visible path: its threads are indexed by the Codex app and can appear in the app task list while the Telegram turn is running.
+- `transport: "sdk"` keeps the stable non-interactive SDK path. `transport: "app-server"` is experimental: it writes App-compatible threads that shared thread inventory can index, but it does not make the desktop sidebar live-subscribe to externally created turns.
 
 **Gemini:**
 - Positioned as the "quiet scribe" in a multi-agent group — a good role for overnight summarization, not for front-line coding

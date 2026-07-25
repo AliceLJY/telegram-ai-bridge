@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { createInterface } from "node:readline";
 
 function writeMessage(child, message) {
@@ -160,6 +161,13 @@ export async function* streamAppServerEvents({
   } finally {
     if (abortSignal) abortSignal.removeEventListener("abort", abort);
     lines.close();
-    if (!child.killed) child.kill("SIGTERM");
+    if (child.exitCode == null && !child.killed) {
+      child.stdin.end();
+      await Promise.race([
+        once(child, "exit"),
+        new Promise(resolve => setTimeout(resolve, 2000)),
+      ]);
+      if (child.exitCode == null) child.kill("SIGTERM");
+    }
   }
 }

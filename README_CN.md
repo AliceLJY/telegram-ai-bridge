@@ -424,7 +424,7 @@ Telegram bot
 **Codex：**
 - 需要本地登录状态 `~/.codex/`
 - `model` 可留空，使用 Codex 默认模型
-- `transport: "sdk"` 保留稳定的非交互 SDK 路径；`transport: "app-server"` 是实验性的桌面可见路径，Telegram turn 执行时对应线程会进入 Codex App 的任务列表。
+- `transport: "sdk"` 保留稳定的非交互 SDK 路径；`transport: "app-server"` 是实验路径：它写出的线程可被共享 thread inventory 索引，但不会让桌面 App 侧边栏实时订阅外部创建的 turn。
 
 **Gemini：**
 - 定位是多 agent 群里的"书记员"——夜间纪要角色合适，不是前线编码主力
