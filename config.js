@@ -11,6 +11,7 @@ const DEFAULT_PLACEHOLDER_TELEGRAM_TOKEN = "123456:replace-me";
 export const AVAILABLE_BACKENDS = ["claude", "codex", "gemini"];
 export const AVAILABLE_EXECUTORS = ["direct", "local-agent"];
 export const CLAUDE_PERMISSION_MODES = ["default", "bypassPermissions"];
+export const CODEX_TRANSPORTS = ["sdk", "app-server"];
 const BACKEND_PROFILES = {
   claude: {
     label: "Claude",
@@ -245,6 +246,7 @@ export function createDefaultConfig() {
         model: "",
         serviceTier: "",
         defaultEffort: "",
+        transport: "sdk",
       },
       gemini: {
         enabled: false,
@@ -414,6 +416,7 @@ function buildEnvFromConfig(config, backend, configPath) {
   if (selectedBackend === "codex") {
     env.CODEX_MODEL = backendConfig.model || "";
     env.CODEX_SERVICE_TIER = backendConfig.serviceTier || "";
+    env.CODEX_TRANSPORT = backendConfig.transport || "sdk";
     env.DEFAULT_EFFORT = backendConfig.defaultEffort || "";
   }
 
@@ -529,6 +532,9 @@ export function validateConfig(config, options = {}) {
         "backends.claude.permissionMode",
         `must be one of: ${CLAUDE_PERMISSION_MODES.join(", ")}.`,
       );
+    }
+    if (backend === "codex" && !CODEX_TRANSPORTS.includes(String(backendConfig.transport || "sdk").trim())) {
+      pushIssue(issues, `backends.${backend}.transport`, `must be one of: ${CODEX_TRANSPORTS.join(", ")}.`);
     }
 
     if (backend === "gemini") {
@@ -934,6 +940,7 @@ export async function runSetupWizard(options = {}) {
 
       if (backend === "codex") {
         current.model = await askText(rl, "Codex model (optional)", current.model || "");
+        current.transport = await askText(rl, "Codex transport (sdk/app-server)", current.transport || "sdk");
       }
 
       if (backend === "gemini") {

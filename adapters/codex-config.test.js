@@ -31,4 +31,12 @@ describe("Codex adapter configuration", () => {
       effort: "ultra",
     });
   });
+
+  test("reports app-server transport mode", () => {
+    const adapter = createAdapter({ cwd: "/tmp", transport: "app-server" });
+
+    expect(adapter.statusInfo()).toMatchObject({
+      mode: "Codex app-server",
+    });
+  });
 });

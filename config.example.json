@@ -55,7 +55,8 @@
       "sessionsDb": "sessions-codex.db",
       "model": "",
       "serviceTier": "",
-      "defaultEffort": ""
+      "defaultEffort": "",
+      "transport": "sdk"
     },
     "gemini": {
       "enabled": false,

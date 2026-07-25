@@ -6,6 +6,7 @@ import { readdirSync, statSync, createReadStream } from "fs";
 import { basename, join } from "path";
 import { createInterface } from "readline";
 import { listCodexModels, resolveCodexCommand } from "../codex-cli-resolver.js";
+import { streamAppServerEvents } from "./codex-app-server.js";
 
 // 让 bridge 产生的 session 在 originator 字段上看着像真 TUI（而非 codex_sdk_ts）。
 // SDK 默认会注入 CODEX_INTERNAL_ORIGINATOR_OVERRIDE = "codex_sdk_ts"，
@@ -36,6 +37,7 @@ export function createAdapter(config = {}) {
   // service_tier: "fast" | "flex" | ""（空 = 跟随 ~/.codex/config.toml）
   // fast = 1.5x 速度，2x credits；flex = 省钱慢速；两者和 reasoning effort 正交
   const defaultServiceTier = config.serviceTier || process.env.CODEX_SERVICE_TIER || "";
+  const transport = config.transport || process.env.CODEX_TRANSPORT || "sdk";
 
   // 按模型缓存 SDK 实例
   const sdkCache = new Map();
@@ -311,9 +313,37 @@ export function createAdapter(config = {}) {
 
     async *streamQuery(prompt, sessionId, abortSignal, overrides = {}) {
       const effectiveModel = (overrides.model && overrides.model !== "__default__") ? overrides.model : defaultModel;
+      const effectiveCwd = overrides.cwd || cwd;
+
+      if (transport === "app-server") {
+        const effort = overrides.effort && overrides.effort !== "__default__"
+          ? overrides.effort
+          : "";
+        const eventState = createCodexEventState();
+        let thread = {};
+        for await (const streamed of streamAppServerEvents({
+          codexPath: resolveCodexOnce().path,
+          prompt,
+          sessionId,
+          cwd: effectiveCwd,
+          model: effectiveModel,
+          effort,
+          serviceTier: defaultServiceTier,
+          abortSignal,
+        })) {
+          thread = streamed.thread;
+          for (const mapped of mapCodexEvent(streamed.event, eventState, thread)) {
+            yield mapped;
+          }
+        }
+        for (const mapped of finalizeCodexEventMapping(eventState, thread)) {
+          yield mapped;
+        }
+        return;
+      }
+
       const sdk = ensureSDK(effectiveModel);
 
-      const effectiveCwd = overrides.cwd || cwd;
       const threadOpts = { workingDirectory: effectiveCwd, skipGitRepoCheck: true };
       if (overrides.effort) {
         threadOpts.modelReasoningEffort = overrides.effort;
@@ -346,7 +376,7 @@ export function createAdapter(config = {}) {
         model: m || "跟随 Codex 配置",
         effort: overrideEffort || "跟随 Codex 配置",
         cwd,
-        mode: "Codex SDK direct",
+        mode: transport === "app-server" ? "Codex app-server" : "Codex SDK direct",
       };
     },
 

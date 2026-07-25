@@ -394,7 +394,8 @@ Each bot instance keeps its own Telegram token, SQLite DBs, credential directory
       "enabled": true,
       "telegramBotToken": "...",
       "sessionsDb": "sessions-codex.db",
-      "model": ""
+      "model": "",
+      "transport": "sdk"
     },
     "gemini": {
       "enabled": false,
@@ -425,6 +426,7 @@ Inspect resolved config: `bun run config --backend claude` (secrets redacted).
 **Codex:**
 - Requires local login state under `~/.codex/`
 - Optional `model` override; empty string uses Codex defaults
+- `transport: "sdk"` keeps the stable non-interactive SDK path. `transport: "app-server"` is an experimental desktop-visible path: its threads are indexed by the Codex app and can appear in the app task list while the Telegram turn is running.
 
 **Gemini:**
 - Positioned as the "quiet scribe" in a multi-agent group — a good role for overnight summarization, not for front-line coding

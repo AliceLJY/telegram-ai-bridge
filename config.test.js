@@ -116,6 +116,18 @@ describe("config productization", () => {
     expect(issues.map((issue) => issue.path)).toContain("shared.a2aToolMode");
   });
 
+  test("validateConfig rejects unknown Codex transports", () => {
+    const config = createDefaultConfig();
+    config.backends.claude.enabled = false;
+    config.backends.codex.enabled = true;
+    config.backends.codex.telegramBotToken = "654321:ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    config.backends.codex.transport = "unknown";
+
+    const issues = validateConfig(config, { backend: "codex" });
+
+    expect(issues.map((issue) => issue.path)).toContain("backends.codex.transport");
+  });
+
   test("loadRuntimeConfig resolves config paths and summarizeRuntime redacts secrets", () => {
     const repoDir = makeTempDir();
     const configPath = join(repoDir, "config.json");
@@ -251,6 +263,7 @@ describe("config productization", () => {
       config.backends.codex.telegramBotToken = "654321:ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     });
     const runtime = loadRuntimeConfig({ backend: "codex", configPath });
+    expect(runtime.env.CODEX_TRANSPORT).toBe("sdk");
     const binRoot = makeTempDir();
     const badBin = join(binRoot, "project", "node_modules", ".bin", "codex");
     const goodBin = join(binRoot, "homebrew", "bin", "codex");
