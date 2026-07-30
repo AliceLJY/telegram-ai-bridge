@@ -80,7 +80,7 @@ export function createCliAgentAdapter(spec, config = {}) {
     });
   }
 
-  return {
+  const api = {
     name: spec.name,
     label: spec.label,
     icon: spec.icon,
@@ -165,9 +165,45 @@ export function createCliAgentAdapter(spec, config = {}) {
       };
     },
 
-    // listSessions / resolveSession / inspectSession 有意不实现：
-    // bridge.js 三处调用点都有 optional 保护（`if (!adapter?.listSessions) return []` 等），
-    // 缺失时只是「不支持外部会话浏览/预览」，不影响正常对话。CLI 的会话文件格式
-    // （agy: ~/.gemini/antigravity-cli/conversations/、kimi: ~/.kimi-code/）真有需要再补。
+    // inspectSession 仍不实现：那是「只读预览某会话的历史消息」，要解析各 CLI 的内部
+    // 消息格式（agy 的 step_payload 是 blob、kimi 是自有目录结构），成本高且随 CLI 升级易碎。
+    // bridge 的 sendSessionPeek 有 `if (!adapter.inspectSession)` 保护，会友好提示不支持。
   };
+
+  // ── 下面几项按 spec 的声明条件暴露 ──────────────────────────────
+  // 关键：宁可不暴露方法，也不要暴露一个「返回空/假数据」的方法。
+  // bridge 对这几项都是「有函数就用、没有就走自己的默认」，所以缺失比骗它更安全——
+  // 例：/effort 若见到 availableEfforts 就完全采信其返回值，kimi 明明不支持逐次指定
+  // effort，若让它 fallback 到 bridge 的默认列表(low/medium/high)，用户选了却毫无作用。
+  if (spec.efforts) {
+    api.availableEfforts = () => spec.efforts;
+  }
+
+  if (typeof spec.enumerateSessions === "function") {
+    // 轻量版会话浏览（2026-07-30 Alice 选定）：只用各 CLI 现成的索引 + 文件 mtime，
+    // 不解析内部 .db / 消息体。代价是列表没有"首条消息"当标题，只能靠时间和工作目录认；
+    // 换来的是不依赖任何 CLI 内部 schema，agy / kimi 升级改格式也不会把这里弄坏。
+    api.listSessions = async (limit = 10) => {
+      try {
+        const rows = await spec.enumerateSessions(limit);
+        return (rows || []).slice(0, limit).map((r) => ({ ...r, backend: spec.name }));
+      } catch {
+        return [];
+      }
+    };
+
+    api.resolveSession = async (sessionId) => {
+      if (!sessionId) return null;
+      try {
+        // 多取一些再按 id 找：会话可能不在最近 N 条里
+        const rows = (await spec.enumerateSessions(200)) || [];
+        const hit = rows.find((r) => r.session_id === sessionId);
+        return hit ? { ...hit, backend: spec.name, cwd: hit.cwd || cwd } : null;
+      } catch {
+        return null;
+      }
+    };
+  }
+
+  return api;
 }

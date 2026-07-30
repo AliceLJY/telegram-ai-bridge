@@ -9,11 +9,14 @@
 // 权限模式：-p 与 --auto/--yolo 互斥（0.27.0 实证 OptionConflictError），所以一律不传，
 // 权限吃 config.toml 的 default_permission_mode（当前 = yolo）。要限制就在 prompt 里说。
 
-import { join } from "path";
+import { readFileSync, statSync } from "fs";
+import { join, basename } from "path";
 import { createCliAgentAdapter } from "./cli-agent.js";
 
 const BIN =
   process.env.KIMI_BIN || join(process.env.HOME || "", ".kimi-code", "bin", "kimi");
+// kimi 自带会话索引，每行一条 {sessionId, sessionDir, workDir}——不用扫目录
+const SESSION_INDEX = join(process.env.HOME || "", ".kimi-code", "session_index.jsonl");
 
 export function createAdapter(config = {}) {
   return createCliAgentAdapter(
@@ -33,6 +36,54 @@ export function createAdapter(config = {}) {
         { id: "kimi-code/kimi-for-coding", label: "K2.7 Coding" },
         { id: "kimi-code/kimi-for-coding-highspeed", label: "K2.7 Coding Highspeed" },
       ],
+
+      // ⚠️ 只给"默认"一档，且明说原因。kimi CLI 没有 --effort（thinking effort 在
+      // ~/.kimi-code/config.toml 的 [thinking] 段，是全局设定，不能逐次指定）。
+      // 若不声明这项，bridge 的 /effort 会 fallback 到它自己的 low/medium/high 默认列表——
+      // 那对 kimi 是假选项：用户选了、界面也确认了，实际一点作用都没有。
+      efforts: [
+        {
+          id: "__default__",
+          label: "默认（kimi 不支持逐次指定）",
+          description: "thinking effort 跟随 ~/.kimi-code/config.toml 的 [thinking] 段，当前 high",
+        },
+      ],
+
+      // 轻量会话枚举：直接读 kimi 自带的 session_index.jsonl，用 sessionDir 的 mtime
+      // 当最后活跃时间；workDir 的 basename 当标题（比纯 id 有信息）。不解析会话内容。
+      enumerateSessions(limit = 10) {
+        let lines;
+        try {
+          lines = readFileSync(SESSION_INDEX, "utf8").split("\n").filter(Boolean);
+        } catch {
+          return [];
+        }
+        const rows = [];
+        for (const ln of lines) {
+          let o;
+          try {
+            o = JSON.parse(ln);
+          } catch {
+            continue;
+          }
+          if (!o.sessionId) continue;
+          let mtime = 0;
+          try {
+            if (o.sessionDir) mtime = statSync(o.sessionDir).mtimeMs;
+          } catch {
+            /* 目录可能已被清理，仍保留索引条目，时间按 0 排到最后 */
+          }
+          const wd = o.workDir ? basename(o.workDir) : "";
+          rows.push({
+            session_id: o.sessionId,
+            display_name: `kimi ${o.sessionId.replace(/^session_/, "").slice(0, 8)}${wd ? ` @${wd}` : ""}`,
+            last_active: mtime,
+            cwd: o.workDir || undefined,
+          });
+        }
+        rows.sort((a, b) => b.last_active - a.last_active);
+        return rows.slice(0, Math.max(limit, 1));
+      },
 
       buildArgs({ prompt, sessionId, model }) {
         // stream-json 而非 text：text 模式把 thinking 和答案都渲染成 "• xxx" 段落，

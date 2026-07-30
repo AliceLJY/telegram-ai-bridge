@@ -11,9 +11,13 @@
 // `gemini` CLI 已合并进 agy，不再单独存在——本仓另有一个 gemini backend，那是直连
 // Code Assist API 的实现，和这里走 CLI 的路径无关，别混。
 
+import { readdirSync, statSync } from "fs";
+import { join } from "path";
 import { createCliAgentAdapter } from "./cli-agent.js";
 
 const BIN = process.env.AGY_BIN || "/opt/homebrew/bin/agy";
+// agy 每个 conversation 落一个 sqlite：~/.gemini/antigravity-cli/conversations/<uuid>.db
+const CONV_DIR = join(process.env.HOME || "", ".gemini", "antigravity-cli", "conversations");
 // agy 只认 low|medium|high。这里要挡的是 config 里沿用 codex 的 "ultra"——传过去会被 CLI 拒。
 const AGY_EFFORTS = ["low", "medium", "high"];
 
@@ -37,6 +41,42 @@ export function createAdapter(config = {}) {
         { id: "gemini-3.6-flash-medium", label: "Gemini 3.6 Flash (Medium)" },
         { id: "gemini-3.5-flash-high", label: "Gemini 3.5 Flash (High)" },
       ],
+
+      // agy 支持逐次指定 --effort（low|medium|high），所以给出真实档位
+      efforts: [
+        { id: "__default__", label: "默认 (high)", description: "跟随 adapter 默认档" },
+        { id: "low", label: "Low", description: "轻量思考，最快" },
+        { id: "medium", label: "Medium", description: "中等思考深度" },
+        { id: "high", label: "High", description: "深度思考，最慢" },
+      ],
+
+      // 轻量会话枚举：只列 conversation 文件 + mtime，不打开 .db。
+      // 内部表是 trajectory_meta / steps / *_blob，step_payload 是 blob——解析它才能拿到
+      // "首条消息"当标题，但那是 agy 内部格式，升级即碎，故按 YAGNI 不做。
+      enumerateSessions(limit = 10) {
+        let files;
+        try {
+          files = readdirSync(CONV_DIR).filter((f) => f.endsWith(".db"));
+        } catch {
+          return [];
+        }
+        const rows = [];
+        for (const f of files) {
+          try {
+            const st = statSync(join(CONV_DIR, f));
+            const id = f.replace(/\.db$/, "");
+            rows.push({
+              session_id: id,
+              display_name: `agy 会话 ${id.slice(0, 8)}`,
+              last_active: st.mtimeMs,
+            });
+          } catch {
+            /* 单个文件读不到就跳过，不影响其余 */
+          }
+        }
+        rows.sort((a, b) => b.last_active - a.last_active);
+        return rows.slice(0, Math.max(limit, 1));
+      },
 
       buildArgs({ prompt, sessionId, model, effort, timeoutMs }) {
         const args = ["-p", prompt, "--output-format", "json"];
