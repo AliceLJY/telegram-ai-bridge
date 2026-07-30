@@ -21,6 +21,20 @@ const CONV_DIR = join(process.env.HOME || "", ".gemini", "antigravity-cli", "con
 // agy 只认 low|medium|high。这里要挡的是 config 里沿用 codex 的 "ultra"——传过去会被 CLI 拒。
 const AGY_EFFORTS = ["low", "medium", "high"];
 
+// agy 的模型 id 自带档位后缀（-high / -medium / -low），CLI 会校验它与 --effort 是否一致，
+// 不一致就整轮拒掉：
+//   invalid model selection (--model "gemini-3.1-pro-high" --effort "low"):
+//   --model gemini-3.1-pro-high conflicts with --effort=low        （2026-07-30 实测）
+// 而本 adapter 的 models 菜单里同时摆着 pro-high / pro-low / flash-medium 等多个档位，
+// defaultEffort 又固定是 high——用户用 /model 切到任何非 high 档，effort 还停在 high 上，
+// 下一句话必然撞这个冲突。所以档位以 model id 自带的后缀为准（它更具体、且是 CLI 的校验基准），
+// 只有 model 没带档位后缀时才采用显式 effort。
+export function resolveAgyEffort(model, effort) {
+  const fromModel = AGY_EFFORTS.find((e) => typeof model === "string" && model.endsWith(`-${e}`));
+  if (fromModel) return fromModel;
+  return effort && AGY_EFFORTS.includes(effort) ? effort : null;
+}
+
 // agy 的 result JSON 除 status 外还带一个 error 字段（实测），早期版本只取 status，于是 TG 侧
 // 永远只看到光秃秃的 "agy status=ERROR"，真因全丢——而真因恰恰都在 error 里，实测见过三类：
 //   · "Encountered retryable error from model provider: There was a network issue..."（长会话高发）
@@ -113,7 +127,8 @@ export function createAdapter(config = {}) {
         args.push("--print-timeout", "3600s"); // 打破十分钟天花板
         if (sessionId) args.push("--conversation", sessionId);
         if (model) args.push("--model", model);
-        if (effort && AGY_EFFORTS.includes(effort)) args.push("--effort", effort);
+        const eff = resolveAgyEffort(model, effort);
+        if (eff) args.push("--effort", eff);
         return args;
       },
 
