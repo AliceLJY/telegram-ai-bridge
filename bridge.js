@@ -805,7 +805,15 @@ function formatLocalTimeShort(ms) {
 
 function buildSessionButtonLabel(sessionMeta, backend, isCurrent) {
   const icon =
-    backend === "codex" ? "🟢" : backend === "gemini" ? "🔵" : backend === "agy" ? "🟠" : "🟣";
+    backend === "codex"
+      ? "🟢"
+      : backend === "gemini"
+        ? "🔵"
+        : backend === "agy"
+          ? "🟠"
+          : backend === "kimi"
+            ? "🌙"
+            : "🟣";
   const time = formatLocalTimeShort(sessionMeta.last_active);
   const topic = getTopicSnippet(sessionMeta);
   // 只在非 home 目录时显示项目名

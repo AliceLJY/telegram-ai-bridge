@@ -8,7 +8,7 @@ import { resolveCodexCommand } from "./codex-cli-resolver.js";
 const REPO_DIR = import.meta.dir;
 const DEFAULT_CONFIG_PATH = join(REPO_DIR, "config.json");
 const DEFAULT_PLACEHOLDER_TELEGRAM_TOKEN = "123456:replace-me";
-export const AVAILABLE_BACKENDS = ["claude", "codex", "gemini", "agy"];
+export const AVAILABLE_BACKENDS = ["claude", "codex", "gemini", "agy", "kimi"];
 export const AVAILABLE_EXECUTORS = ["direct", "local-agent"];
 export const CLAUDE_PERMISSION_MODES = ["default", "bypassPermissions"];
 export const CODEX_TRANSPORTS = ["sdk", "app-server"];
@@ -32,6 +32,11 @@ const BACKEND_PROFILES = {
     label: "Agy",
     maturity: "experimental",
     summary: "Antigravity CLI (Gemini models) via one-shot -p calls.",
+  },
+  kimi: {
+    label: "Kimi",
+    maturity: "experimental",
+    summary: "Kimi Code CLI (Moonshot models) via one-shot -p calls.",
   },
 };
 
@@ -114,6 +119,12 @@ function getBackendCredentialWarning(backend) {
         "Agy backend keeps credentials in the macOS keychain; it only resolves under a GUI/launchd session (not plain ssh).",
     };
   }
+  if (backend === "kimi") {
+    return {
+      path: join(homeDir(), ".kimi-code", "credentials"),
+      message: "Kimi backend expects credentials under ~/.kimi-code/credentials.",
+    };
+  }
   return {
     path: join(homeDir(), ".gemini", "oauth_creds.json"),
     message: "Gemini backend expects oauth_creds.json under ~/.gemini.",
@@ -151,6 +162,11 @@ function checkBackendCliAvailable(backend, options = {}) {
     // 真正的登录态由首次实际对话暴露，别在 check 阶段假装验过。
     const cliPath = process.env.AGY_BIN || "/opt/homebrew/bin/agy";
     return { ok: Boolean(existsFn(cliPath)), name: "agy", probe: cliPath };
+  }
+  if (backend === "kimi") {
+    // kimi 装在 ~/.kimi-code/bin，不在 PATH——用 which 探会误判「没装」。
+    const cliPath = process.env.KIMI_BIN || join(homeDir(), ".kimi-code", "bin", "kimi");
+    return { ok: Boolean(existsFn(cliPath)), name: "kimi", probe: cliPath };
   }
   return { ok: true, name: "gemini", probe: "(Code Assist API, no local CLI)" };
 }
@@ -227,7 +243,7 @@ export function createDefaultConfig() {
       sessionTimeoutMs: 900000,
       // A2A 配置
       a2aEnabled: false,
-      a2aPorts: { claude: 18810, codex: 18811, gemini: 18812, agy: 18813 },
+      a2aPorts: { claude: 18810, codex: 18811, gemini: 18812, agy: 18813, kimi: 18814 },
       a2aToolMode: "read-only",
       a2aCooldownMs: 60000,
       a2aMaxResponsesPerWindow: 3,
@@ -278,6 +294,21 @@ export function createDefaultConfig() {
         oauthClientSecret: "",
         googleCloudProject: "",
       },
+      agy: {
+        enabled: false,
+        telegramBotToken: "",
+        sessionsDb: "sessions-agy.db",
+        model: "gemini-3.1-pro-high",
+        defaultEffort: "high",
+      },
+      kimi: {
+        enabled: false,
+        telegramBotToken: "",
+        sessionsDb: "sessions-kimi.db",
+        // 留空 = 吃 ~/.kimi-code/config.toml 的 default_model
+        model: "",
+        defaultEffort: "",
+      },
     },
   };
 }
@@ -288,6 +319,10 @@ export function createBootstrapConfig(backend = "claude") {
 
   config.shared.ownerTelegramId = "123456789";
   for (const name of AVAILABLE_BACKENDS) {
+    // guard：AVAILABLE_BACKENDS 可能领先于传入 config 里实际存在的 backend 块
+    // （新增 backend 时，用户手上的旧 config.json 还没有对应块）。少了就跳过，
+    // 别让「注册了新 backend」这件事把 bootstrap 路径整条炸掉。
+    if (!config.backends[name]) continue;
     config.backends[name].enabled = name === selectedBackend;
     if (name !== selectedBackend) {
       config.backends[name].telegramBotToken = "";

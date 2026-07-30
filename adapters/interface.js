@@ -11,6 +11,7 @@ import { createAdapter as createClaudeAdapter } from "./claude.js";
 import { createAdapter as createCodexAdapter } from "./codex.js";
 import { createAdapter as createGeminiAdapter } from "./gemini.js";
 import { createAdapter as createAgyAdapter } from "./agy.js";
+import { createAdapter as createKimiAdapter } from "./kimi.js";
 
 const ADAPTERS = {
   claude: createClaudeAdapter,
@@ -19,6 +20,8 @@ const ADAPTERS = {
   // agy = Antigravity CLI（Gemini 系模型）。走 CLI 子进程，与上面那个直连 Code Assist API 的
   // gemini backend 是两条独立路径，别因为同属 Google 就以为可以互相替代。
   agy: createAgyAdapter,
+  // kimi = Kimi Code CLI（Moonshot 系模型）。与 agy 共用 cli-agent.js 工厂。
+  kimi: createKimiAdapter,
 };
 
 export function createBackend(name, config = {}) {
