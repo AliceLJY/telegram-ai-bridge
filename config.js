@@ -8,7 +8,7 @@ import { resolveCodexCommand } from "./codex-cli-resolver.js";
 const REPO_DIR = import.meta.dir;
 const DEFAULT_CONFIG_PATH = join(REPO_DIR, "config.json");
 const DEFAULT_PLACEHOLDER_TELEGRAM_TOKEN = "123456:replace-me";
-export const AVAILABLE_BACKENDS = ["claude", "codex", "gemini"];
+export const AVAILABLE_BACKENDS = ["claude", "codex", "gemini", "agy"];
 export const AVAILABLE_EXECUTORS = ["direct", "local-agent"];
 export const CLAUDE_PERMISSION_MODES = ["default", "bypassPermissions"];
 export const CODEX_TRANSPORTS = ["sdk", "app-server"];
@@ -27,6 +27,11 @@ const BACKEND_PROFILES = {
     label: "Gemini",
     maturity: "experimental",
     summary: "Experimental compatibility backend. Claude/Codex are the primary paths.",
+  },
+  agy: {
+    label: "Agy",
+    maturity: "experimental",
+    summary: "Antigravity CLI (Gemini models) via one-shot -p calls.",
   },
 };
 
@@ -100,6 +105,15 @@ function getBackendCredentialWarning(backend) {
       message: "Codex backend expects local login state under ~/.codex.",
     };
   }
+  if (backend === "agy") {
+    // agy 的登录态在 macOS keychain（svce=gemini / acct=antigravity），没有可 stat 的文件。
+    // 指向 CLI 自己的状态目录只是为了给出「装过没」的线索；真正的可用性由 checkBackendCliAvailable 探。
+    return {
+      path: join(homeDir(), ".gemini", "antigravity-cli"),
+      message:
+        "Agy backend keeps credentials in the macOS keychain; it only resolves under a GUI/launchd session (not plain ssh).",
+    };
+  }
   return {
     path: join(homeDir(), ".gemini", "oauth_creds.json"),
     message: "Gemini backend expects oauth_creds.json under ~/.gemini.",
@@ -130,6 +144,13 @@ function checkBackendCliAvailable(backend, options = {}) {
       const fallbackProbe = whichFn("codex") || "codex (validated path)";
       return { ok: false, name: "codex", probe: `${fallbackProbe}: ${error.message}` };
     }
+  }
+  if (backend === "agy") {
+    // 只验二进制在不在。登录态验不了：agy 的凭证在 keychain，而 check 跑在 launchd 之外的
+    // 上下文里也能解开（同属 GUI 会话），所以「这里能解」不代表 bridge 能解，反之亦然——
+    // 真正的登录态由首次实际对话暴露，别在 check 阶段假装验过。
+    const cliPath = process.env.AGY_BIN || "/opt/homebrew/bin/agy";
+    return { ok: Boolean(existsFn(cliPath)), name: "agy", probe: cliPath };
   }
   return { ok: true, name: "gemini", probe: "(Code Assist API, no local CLI)" };
 }
@@ -206,7 +227,7 @@ export function createDefaultConfig() {
       sessionTimeoutMs: 900000,
       // A2A 配置
       a2aEnabled: false,
-      a2aPorts: { claude: 18810, codex: 18811, gemini: 18812 },
+      a2aPorts: { claude: 18810, codex: 18811, gemini: 18812, agy: 18813 },
       a2aToolMode: "read-only",
       a2aCooldownMs: 60000,
       a2aMaxResponsesPerWindow: 3,

@@ -776,6 +776,9 @@ function buildResumeHint(backend, sessionId, cwdHint = "") {
     // 必须先 cd 到写入 jsonl 时的 cwd（默认 ~），resume 才能定位到 session
     return `cd ${cwdHint || CC_CWD} && claude --resume ${sessionId}`;
   }
+  if (backend === "agy") {
+    return `agy --conversation ${sessionId}`;
+  }
   return "";
 }
 
@@ -801,7 +804,8 @@ function formatLocalTimeShort(ms) {
 }
 
 function buildSessionButtonLabel(sessionMeta, backend, isCurrent) {
-  const icon = backend === "codex" ? "🟢" : backend === "gemini" ? "🔵" : "🟣";
+  const icon =
+    backend === "codex" ? "🟢" : backend === "gemini" ? "🔵" : backend === "agy" ? "🟠" : "🟣";
   const time = formatLocalTimeShort(sessionMeta.last_active);
   const topic = getTopicSnippet(sessionMeta);
   // 只在非 home 目录时显示项目名
