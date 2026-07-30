@@ -10,12 +10,13 @@
 // 在这里由 stdio[0] = "ignore" 等价满足。
 //
 // 两种消费模式（由 spec 决定，实测两个 CLI 的 stream-json 行为不同）：
-//   ① 流式（spec.streamParse 存在，agy 用）：--output-format stream-json 边读 stdout 边 yield
-//      text 增量 → bridge 的 streamPreview 实时 editMessage，体验同 CC「边写边出」。
+//   ① 流式（spec.streamParse 存在，agy / kimi 都用）：--output-format stream-json 边读 stdout
+//      边 yield text 增量 → bridge 的 streamPreview 实时 editMessage，体验同 CC「边写边出」。
 //      实测 agy stream-json 的 step_update 事件带 text_delta（增量，拼接=完整 response，已逐字节验证）。
-//   ② 缓冲（无 streamParse，kimi 用）：等 CLI 跑完拿完整 stdout 再 parseResult。
-//      kimi -p 即使 --output-format stream-json 也把整段憋到最后一次性吐（实测只有 1 个 assistant
-//      行、无增量），流式对它无意义，故保持一次性。
+//      kimi 的流式是 step 粒度（2026-07-30 实测）：多 step 任务的中间帧按 step 边界刷出，
+//      单条 LLM 生成内部不做 token 级流式——工具进度可见，最终答案那段仍是一次性到。
+//   ② 缓冲（无 streamParse）：等 CLI 跑完拿完整 stdout 再 parseResult。当前无 backend 用，
+//      保留给「CLI 的流式输出不可靠」时的回退。
 //
 // 契约（与 claude.js 一致，防最终消息翻倍）：流式路径逐 delta yield {type:"text"} 只驱动预览，
 //   收尾 yield {type:"result", text:<完整 response>}；bridge 主路径用 result.text 当最终消息、

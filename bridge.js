@@ -125,6 +125,8 @@ function patchCodexStateDb(threadId) {
 }
 
 const CC_CWD = process.env.CC_CWD || process.env.HOME;
+// 单次查询硬超时（毫秒）：config.js 从 backends.<name>.timeoutMs 注入；未设/非法 → undefined → adapter 默认
+const BACKEND_TIMEOUT_MS = Number(process.env.BACKEND_TIMEOUT_MS) || undefined;
 const DEFAULT_VERBOSE = Number(process.env.DEFAULT_VERBOSE_LEVEL || 1);
 const DEFAULT_BACKEND = process.env.DEFAULT_BACKEND || "claude";
 const REQUESTED_BACKENDS = String(process.env.ENABLED_BACKENDS || AVAILABLE_BACKENDS.join(","))
@@ -381,7 +383,7 @@ ${meta.originalPrompt ? `\n用户的原始问题：${meta.originalPrompt}` : ""}
 const adapters = {};
 for (const name of REQUESTED_BACKENDS) {
   try {
-    adapters[name] = createBackend(name, { cwd: CC_CWD });
+    adapters[name] = createBackend(name, { cwd: CC_CWD, timeoutMs: BACKEND_TIMEOUT_MS });
   } catch (e) {
     console.warn(`[适配器] ${name} 初始化失败: ${e.message}`);
   }

@@ -13,8 +13,21 @@ import { readFileSync, statSync } from "fs";
 import { join, basename } from "path";
 import { createCliAgentAdapter } from "./cli-agent.js";
 
-const BIN =
-  process.env.KIMI_BIN || join(process.env.HOME || "", ".kimi-code", "bin", "kimi");
+// 从 tool_call 的 arguments（JSON 字符串）里挑一个最说明问题的字段当进度摘要，
+// 字段优先级照 progress.js 的 input 摘要习惯；解析失败静默返回空（进度条少一行字而已）。
+function summarizeToolArgs(argsJson) {
+  if (typeof argsJson !== "string" || !argsJson) return "";
+  try {
+    const a = JSON.parse(argsJson);
+    if (!a || typeof a !== "object") return "";
+    const v = a.command || a.file_path || a.path || a.description || a.pattern || a.query || "";
+    return typeof v === "string" ? v.slice(0, 60) : "";
+  } catch {
+    return "";
+  }
+}
+
+const DEFAULT_BIN = join(process.env.HOME || "", ".kimi-code", "bin", "kimi");
 // kimi 自带会话索引，每行一条 {sessionId, sessionDir, workDir}——不用扫目录
 const SESSION_INDEX = join(process.env.HOME || "", ".kimi-code", "session_index.jsonl");
 
@@ -24,7 +37,8 @@ export function createAdapter(config = {}) {
       name: "kimi",
       label: "Kimi",
       icon: "🌙",
-      bin: BIN,
+      // 在 createAdapter 内读 env（而非模块级常量）：测试可以逐用例换假 CLI
+      bin: process.env.KIMI_BIN || DEFAULT_BIN,
       // 留空 = 吃 config.toml 的 default_model（当前 kimi-code/k3）。
       // 不硬编码，这样改 config.toml 立刻生效，不用动代码。
       defaultModel: process.env.KIMI_MODEL || "",
@@ -94,12 +108,47 @@ export function createAdapter(config = {}) {
         return args;
       },
 
+      // 流式解析（2026-07-30 补，实测修正）：kimi stream-json 按 agent 循环的 step 边界刷帧——
+      // 多 step 任务（工具调用链）的中间帧在 turn 结束前就写出，只是单条 LLM 生成内部不做
+      // token 级流式。所以正文靠完整消息帧累积，工具调用帧转 progress 事件喂 progress.js。
+      // 帧清单（实测 + 官方文档）：assistant(content|tool_calls) / tool / meta(session.resume_hint)；
+      // thinking 不写 JSONL，工具进度走 stderr，错误 = stderr 明文 + exit≠0（无 error 帧）。
+      streamParse(line) {
+        if (!line.startsWith("{")) return null;
+        let o;
+        try {
+          o = JSON.parse(line);
+        } catch {
+          return null; // 半行/噪音容忍
+        }
+        if (o.role === "assistant") {
+          // 正文帧是完整消息（非增量）；全部累积 = 完整 response，与下方 parseResult 语义一致
+          if (typeof o.content === "string" && o.content) {
+            return { kind: "text", delta: o.content };
+          }
+          if (Array.isArray(o.tool_calls) && o.tool_calls.length) {
+            const call = o.tool_calls[0];
+            return {
+              kind: "progress",
+              toolName: call?.function?.name || "tool",
+              detail: summarizeToolArgs(call?.function?.arguments),
+            };
+          }
+          return null;
+        }
+        // tool 结果帧不转事件：不进最终答案，刷 progress 只有噪音
+        if (o.role === "meta" && o.session_id) {
+          // 收尾帧：text 置 null → cli-agent 回退用累积正文
+          return { kind: "result", success: true, text: null, sessionId: o.session_id };
+        }
+        return null;
+      },
+
+      // 一次性解析：保留给非流式 fallback / 手动调用（当前 streamParse 存在则不走这里）。
       // stream-json 是 JSON Lines，实测形如：
       //   {"role":"assistant","content":"SJ_OK"}
       //   {"role":"meta","type":"session.resume_hint","session_id":"session_be0a...","command":"kimi -r ..."}
       // 只取 assistant 的 content 拼答案，meta 行取 session_id 供下一轮 -S 续接。
-      // 其他 role（thinking / tool 等）忽略——simplified: 不转成 progress 事件，
-      // 需要工具调用可视化时再补，届时改这里 yield progress 即可。
       parseResult({ stdout, stderr, code }) {
         let text = "";
         let sessionId = null;

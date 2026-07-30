@@ -66,6 +66,13 @@
       "oauthClientId": "",
       "oauthClientSecret": "",
       "googleCloudProject": ""
+    },
+    "kimi": {
+      "enabled": false,
+      "telegramBotToken": "",
+      "sessionsDb": "sessions-kimi.db",
+      "model": "",
+      "timeoutMs": 1800000
     }
   }
 }

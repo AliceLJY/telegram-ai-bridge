@@ -421,6 +421,9 @@ function buildEnvFromConfig(config, backend, configPath) {
     GROUP_CONTEXT_TTL_MS: String(shared.groupContextTtlMs ?? 1200000),
     TRIGGER_DEDUP_TTL_MS: String(shared.triggerDedupTtlMs ?? 300000),
     SESSION_TIMEOUT_MS: String(shared.sessionTimeoutMs ?? 900000),
+    // 单次查询硬超时（毫秒）：backends.<name>.timeoutMs，留空 = adapter 默认（cli-agent 600s）。
+    // kimi 长任务（mutual-review 实测 12–15min）建议 1800000。
+    BACKEND_TIMEOUT_MS: String(backendConfig.timeoutMs ?? ""),
     SESSIONS_DB: resolvePathMaybe(baseDir, backendConfig.sessionsDb || `${selectedBackend}.db`),
     TASKS_DB: resolvePathMaybe(baseDir, shared.tasksDb || `tasks-${selectedBackend}.db`),
     TASK_RETENTION_DAYS: String(shared.taskRetentionDays ?? 14),
