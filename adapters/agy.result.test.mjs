@@ -1,7 +1,7 @@
 // normalizeAgyResult 的最小检查：`node adapters/agy.result.test.mjs`（无框架，assert 级）
 // 三条 fixture 都是从真实 agy 输出抄下来的形态，2026-07-30 实测。
 import assert from "assert";
-import { normalizeAgyResult } from "./agy.js";
+import { normalizeAgyResult, resolveAgyEffort } from "./agy.js";
 
 // 1. 正常成功
 const ok = normalizeAgyResult({
@@ -41,4 +41,18 @@ const empty = normalizeAgyResult({});
 assert.strictEqual(empty.success, false);
 assert.ok(empty.error.includes("(未知)"));
 
-console.log("normalizeAgyResult: 4/4 通过");
+// ── resolveAgyEffort：模型 id 自带档位时必须压过显式 effort，否则 CLI 直接拒整轮 ──
+
+// 5. 冲突场景（真实撞过）：菜单切到 pro-low，effort 还停在默认 high
+assert.strictEqual(resolveAgyEffort("gemini-3.1-pro-low", "high"), "low");
+// 6. 反向：pro-high 配 low
+assert.strictEqual(resolveAgyEffort("gemini-3.1-pro-high", "low"), "high");
+// 7. medium 档
+assert.strictEqual(resolveAgyEffort("gemini-3.6-flash-medium", "high"), "medium");
+// 8. model 没带档位后缀 → 采用显式 effort
+assert.strictEqual(resolveAgyEffort("some-future-model", "medium"), "medium");
+// 9. 都没有 → null（不传 --effort）
+assert.strictEqual(resolveAgyEffort("some-future-model", null), null);
+assert.strictEqual(resolveAgyEffort(undefined, "nonsense"), null);
+
+console.log("normalizeAgyResult + resolveAgyEffort: 10/10 通过");
