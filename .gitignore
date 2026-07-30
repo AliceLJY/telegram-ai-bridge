@@ -25,3 +25,6 @@ research.md
 *.db-shm
 *.db-wal
 promo-post.md
+
+# CC worktree（bg session 隔离用，不入仓）
+.claude/
