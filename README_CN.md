@@ -4,7 +4,7 @@
 
 **异构 AI agent 在 Telegram 群里真正接话——带代际防环，不是把两个 bot 扔一块那种。**
 
-*Claude Code、Codex、Gemini 各自独立的全栈 bot，通过 IM 原生的封装协议（A2A-TG）协作，带硬性代际计数防死循环。常驻运行，自托管，只有你本人能触发。*
+*Claude Code、Codex、Agy、Kimi 各自独立的全栈 bot，通过 IM 原生的封装协议（A2A-TG）协作，带硬性代际计数防死循环。常驻运行，自托管，只有你本人能触发。*
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-5.0.1-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
@@ -114,7 +114,7 @@ bridge 从 SDK 工具结果中捕获 base64 图片数据，同时扫描 CC 回�
 
 ### 常驻运行，自托管
 
-macOS LaunchAgent 或 Docker 让 bridge 在后台持续运行。会话和 bridge 配置保存在宿主机的 SQLite/JSON 文件中。Telegram 消息仍会经过 Telegram；prompt、被选中的代码与工具上下文会按你配置的 Claude、Codex 或 Gemini 后端的数据路径发送。默认只允许 owner 触发，但这不代表模型流量只在本机。
+macOS LaunchAgent 或 Docker 让 bridge 在后台持续运行。会话和 bridge 配置保存在宿主机的 SQLite/JSON 文件中。Telegram 消息仍会经过 Telegram；prompt、被选中的代码与工具上下文会按你配置的 Claude、Codex、Agy 或 Kimi 后端的数据路径发送。默认只允许 owner 触发，但这不代表模型流量只在本机。
 
 ### 生产级可靠性
 
@@ -133,7 +133,7 @@ macOS LaunchAgent 或 Docker 让 bridge 在后台持续运行。会话和 bridge
 
 ## 快速开始
 
-**前置条件：** [Bun](https://bun.sh) 运行时、一个 Telegram bot token（从 [@BotFather](https://t.me/BotFather) 获取）、以及至少一个后端 CLI：[Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Codex](https://openai.com/index/codex/) 或 [Gemini CLI](https://ai.google.dev/gemini-api/docs/ai-studio-quickstart)。
+**前置条件：** [Bun](https://bun.sh) 运行时、一个 Telegram bot token（从 [@BotFather](https://t.me/BotFather) 获取）、以及至少一个后端 CLI：[Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Codex](https://openai.com/index/codex/)、[Antigravity CLI](https://antigravity.google)（`agy`）或 [Kimi Code](https://moonshotai.github.io/kimi-code/)。
 
 > **v5 支持的安装方式：** 按下方命令 clone 仓库并使用 Bun。npm 上仍是历史 v3.1.0 快照，不是 v5 的受支持分发渠道；本版本线不要使用 `npm install telegram-ai-bridge`。
 
@@ -167,13 +167,14 @@ bun run start --backend claude
 
 支持的后端：
 
-| 后端 | SDK | 状态 |
-|------|-----|------|
-| `claude` | Claude Code（通过 Agent SDK） | 主推荐 |
-| `codex` | Codex CLI（通过 Codex SDK） | 主推荐 |
-| `gemini` | Gemini Code Assist API | "旁听书记员"——见下方说明 |
+| 后端 | CLI / SDK | 能力 |
+|------|-----------|------|
+| `claude` | Claude Code（通过 Agent SDK） | 完整原生工具链、skills、hooks、MCP；流式输出；effort 档位；`/sessions` `/resume` |
+| `codex` | Codex CLI（app-server 传输） | reasoning effort 档位、sandbox 模式；`/sessions` `/resume` |
+| `agy` | Antigravity CLI（Gemini 系模型） | 流式输出；`--effort` low/medium/high；`/sessions` `/resume` |
+| `kimi` | Kimi Code CLI | 流式输出；`/sessions` `/resume`；thinking effort 是 CLI 全局设定，不能按次指定 |
 
-> **Gemini 在这套体系里的位置。** 适合当多 agent 群里的"书记员"——让 Claude 和 Codex 头脑风暴，Gemini 在旁边读完，按时段（比如深夜）做纪要。三个后端里它最少主动发言，这种"克制"刚好匹配书记员的角色。*代码里并没有强制的只读开关*——这种行为是通过 per-bot `CLAUDE.md` / prompt 约束出来的。它走 Gemini Code Assist API，不是完整 CLI 终端控制，能力比 Claude Code / Codex 窄。
+> **关于 `agy`。** `agy` 是 [Antigravity CLI](https://antigravity.google)——Google 的统一 CLI（独立的 `gemini` 命令已被合并进它），也是本 bridge 现在接触 Gemini 系模型的方式。它取代了旧的 `gemini` 后端（后者走 Gemini Code Assist API 而非真正的 CLI）。旧 adapter 仍在代码里、仍可选用，但不再是推荐路径。
 
 > **核心规则：** 一个 bot = 一个独立进程 = 一个独立 Agent。想开几个开几个。
 
@@ -213,7 +214,7 @@ bun run start --backend claude
 - [Claude Code Remote Control](https://code.claude.com/docs/en/remote-control) 是 Anthropic 官方的 Web/手机远控入口。它的 server mode 可创建多个会话，interactive mode 则是每个本地进程暴露一个会话。
 - [Claude Code Channels](https://code.claude.com/docs/en/channels) 提供官方 Telegram、Discord、iMessage 插件，带发送者 allowlist，并可选择转发权限审批；它是依附运行中 Claude 会话的 Claude-only research preview 路径。
 - [OpenClaw](https://docs.openclaw.ai/providers) 是覆盖多模型供应商和多种频道的通用 gateway，并不是“绑定单一 Provider”。它的产品范围比本仓更宽。
-- **telegram-ai-bridge** 更窄：适合明确需要自托管、Telegram-first、自己维护 `/new`/`resume`/`peek` 生命周期、多 bot 共享上下文，以及跨 Claude/Codex/Gemini 后端使用 A2A-TG 防环协议的场景。
+- **telegram-ai-bridge** 更窄：适合明确需要自托管、Telegram-first、自己维护 `/new`/`resume`/`peek` 生命周期、多 bot 共享上下文，以及跨 Claude/Codex/Agy/Kimi 后端使用 A2A-TG 防环协议的场景。
 
 想要最小、官方支持的 Claude-only 方案，优先选 Anthropic 官方路径；想要通用 gateway，选 OpenClaw；想要本仓这套特定的 Telegram 多 bot 工作流，再选 telegram-ai-bridge。这里是定位说明，不声称其它产品的所有功能在本仓都有一一对应。
 
@@ -341,7 +342,7 @@ A2A_STATUS_URLS='mini-claude=http://mini.local:18810/a2a/status' ./scripts/statu
 - **A2A-TG 广播只走 loopback，只在群聊。** 信封从不离开 `127.0.0.1`，入站/出站两端都拒绝 `chat_id > 0`（即 DM）。两个人各自 DM 不同 bot 不会互相泄漏。
 - **`bypassPermissions` 会关掉工具授权确认。** 启用这个模式后，bot 不再询问就执行 Bash / Write / Edit。自己本地用很方便，但如果别人能访问到 bot 就危险了——影响半径请心里有数。
 - **配置里的密钥。** `config.json` 已在 `.gitignore`。`bun run config` 输出时会隐藏敏感字段。不要把 bridge 日志原样分享出去——日志里可能有工具输出的敏感路径。
-- **上游信任传递。** Bridge 继承本地 Claude Code / Codex / Gemini 的全部能力——MCP 服务器、hooks、skills。装了不可信的 skill 或 MCP，bot 一样继承风险。
+- **上游信任传递。** Bridge 继承本地 Claude Code / Codex / Agy / Kimi 的全部能力——MCP 服务器、hooks、skills。装了不可信的 skill 或 MCP，bot 一样继承风险。
 
 ---
 
@@ -353,7 +354,7 @@ Telegram bot
   → config.json
   → bridge.js
   → executor（direct | local-agent）
-  → backend adapter（claude | codex | gemini）
+  → backend adapter（claude | codex | agy | kimi）
   → 本地凭证和 session 文件
 ```
 
@@ -395,14 +396,21 @@ Telegram bot
       "model": "",
       "transport": "sdk"
     },
-    "gemini": {
+    "agy": {
       "enabled": false,
       "telegramBotToken": "",
-      "sessionsDb": "sessions-gemini.db",
-      "model": "gemini-2.5-pro",
-      "oauthClientId": "",
-      "oauthClientSecret": "",
-      "googleCloudProject": ""
+      "sessionsDb": "sessions-agy.db",
+      "model": "gemini-3.1-pro-high",
+      "defaultEffort": "high",
+      "timeoutMs": 1800000
+    },
+    "kimi": {
+      "enabled": false,
+      "telegramBotToken": "",
+      "sessionsDb": "sessions-kimi.db",
+      "model": "",
+      "defaultEffort": "",
+      "timeoutMs": 1800000
     }
   }
 }
@@ -426,11 +434,21 @@ Telegram bot
 - `model` 可留空，使用 Codex 默认模型
 - `transport: "sdk"` 保留稳定的非交互 SDK 路径；`transport: "app-server"` 是实验路径：它写出的线程可被共享 thread inventory 索引，但不会让桌面 App 侧边栏实时订阅外部创建的 turn。
 
-**Gemini：**
-- 定位是多 agent 群里的"书记员"——夜间纪要角色合适，不是前线编码主力
+**Agy：**
+- 需要 [Antigravity CLI](https://antigravity.google)（`agy`）及其自身登录态
+- `defaultEffort`：`low` / `medium` / `high`
+- 流式输出——回复逐段到达，工具执行中的步骤也会作为进度行显示
+- `timeoutMs` 设置单次查询硬超时；不填则回落到 600000（10 分钟）
+
+**Kimi：**
+- 需要 [Kimi Code CLI](https://moonshotai.github.io/kimi-code/) 及其自身登录态
+- 流式输出
+- 没有按次生效的 effort 参数——thinking effort 在该 CLI 自己的 `config.toml` 里是全局设定，因此这个后端有意只暴露"默认"一档，而不是给出一个选了也不会生效的列表
+- `timeoutMs` 同上；长任务一般需要 1800000
+
+**Gemini（旧路径，已由 `agy` 取代）：**
+- 仍可选用，但走 Gemini Code Assist API 而非真正的 CLI，能力更窄
 - 需要 `~/.gemini/oauth_creds.json`、`oauthClientId`、`oauthClientSecret`
-- 走 Gemini Code Assist API 模式，不是完整 CLI 终端控制
-- "旁听"行为通过 prompt / 工作空间 `CLAUDE.md` 塑造，代码层没有强制只读开关
 
 </details>
 
@@ -507,7 +525,7 @@ bun run check-configs config.example.json config-2.json
 包装层会先跑 `bun run check` 再跑 `bun run start`，配置有问题直接失败。
 日志写入 `~/Library/Logs/telegram-ai-bridge/`，轮转 agent 每天 03:00 copy-truncate。
 
-默认 label：`com.telegram-ai-bridge`、`com.telegram-ai-bridge-codex`、`com.telegram-ai-bridge-gemini`。
+默认 label：`com.telegram-ai-bridge`、`com.telegram-ai-bridge-codex`、`com.telegram-ai-bridge-agy`、`com.telegram-ai-bridge-kimi`。
 
 ```bash
 launchctl print gui/$(id -u)/com.telegram-ai-bridge

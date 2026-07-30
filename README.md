@@ -4,7 +4,7 @@
 
 **Heterogeneous AI agents talking to each other in a Telegram group — with real loop-suppression, not just "put two bots in a chat."**
 
-*Claude Code, Codex, and Gemini as independent full-stack bots, coordinated over a Telegram-native envelope protocol (A2A-TG) with generation-counted loop guards. Always-on, self-hosted, owner-gated.*
+*Claude Code, Codex, Agy, and Kimi as independent full-stack bots, coordinated over a Telegram-native envelope protocol (A2A-TG) with generation-counted loop guards. Always-on, self-hosted, owner-gated.*
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-5.0.1-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
@@ -116,7 +116,7 @@ Done discussing? `/export` dumps the entire cross-bot conversation as a Markdown
 
 ### Always-On, Self-Hosted
 
-macOS LaunchAgent or Docker keeps the bridge running in the background. Sessions and bridge configuration stay on the host in SQLite/JSON files. Telegram messages still pass through Telegram, and prompts plus selected code/tool context follow the data path of the Claude, Codex, or Gemini backend you configure. Owner-only triggering is the default; it is not a guarantee that model traffic remains local.
+macOS LaunchAgent or Docker keeps the bridge running in the background. Sessions and bridge configuration stay on the host in SQLite/JSON files. Telegram messages still pass through Telegram, and prompts plus selected code/tool context follow the data path of the Claude, Codex, Agy, or Kimi backend you configure. Owner-only triggering is the default; it is not a guarantee that model traffic remains local.
 
 ### Production-Grade Reliability
 
@@ -135,7 +135,7 @@ Not a toy — built for all-day use:
 
 ## Quick Start
 
-**Prerequisites:** [Bun](https://bun.sh) runtime, a Telegram bot token (from [@BotFather](https://t.me/BotFather)), and at least one backend CLI: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://openai.com/index/codex/), or [Gemini CLI](https://ai.google.dev/gemini-api/docs/ai-studio-quickstart).
+**Prerequisites:** [Bun](https://bun.sh) runtime, a Telegram bot token (from [@BotFather](https://t.me/BotFather)), and at least one backend CLI: [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://openai.com/index/codex/), [Antigravity CLI](https://antigravity.google) (`agy`), or [Kimi Code](https://moonshotai.github.io/kimi-code/).
 
 > **Supported v5 install path:** clone this repository and use Bun as shown below. The npm package is still a historical v3.1.0 snapshot and is not a supported v5 distribution channel; do not use `npm install telegram-ai-bridge` for this release line.
 
@@ -169,13 +169,14 @@ Each Claude instance shares memory automatically. No configuration needed — CC
 
 Supported backends:
 
-| Backend | SDK | Status |
-|---------|-----|--------|
-| `claude` | Claude Code (via Agent SDK) | Recommended |
-| `codex` | Codex CLI (via Codex SDK) | Recommended |
-| `gemini` | Gemini Code Assist API | The "quiet scribe" — see note below |
+| Backend | CLI / SDK | Capabilities |
+|---------|-----------|--------------|
+| `claude` | Claude Code (via Agent SDK) | Full native toolchain, skills, hooks, MCP; streaming output; effort tiers; `/sessions` `/resume` |
+| `codex` | Codex CLI (via app-server transport) | Reasoning-effort tiers, sandbox modes; `/sessions` `/resume` |
+| `agy` | Antigravity CLI (Gemini-family models) | Streaming output; `--effort` low/medium/high; `/sessions` `/resume` |
+| `kimi` | Kimi Code CLI | Streaming output; `/sessions` `/resume`; thinking effort is a global CLI setting, not per-call |
 
-> **Gemini's niche in this setup.** The Gemini backend is best used as an overnight note-taker in a multi-agent group: let Claude and Codex brainstorm, and have Gemini read along and summarize the conversation on a schedule. It is the least chatty of the three backends, which turns out to be a fit for that role. *Nothing in the code enforces a read-only mode* — you shape the behavior through the per-bot `CLAUDE.md` / prompt. It runs through Gemini Code Assist API, not a full CLI terminal, so capabilities are narrower than Claude Code or Codex.
+> **On `agy`.** `agy` is the [Antigravity CLI](https://antigravity.google) — Google's unified CLI (the standalone `gemini` command was folded into it) and the current way this bridge reaches Gemini-family models. It supersedes the older `gemini` backend, which went through the Gemini Code Assist API rather than a real CLI. That older adapter is still in the codebase and still selectable, but it is no longer the recommended path.
 
 > **Core rule:** One bot = one process = one independent agent. Run as many as you need.
 
@@ -215,7 +216,7 @@ Comparison snapshot: **2026-07-17**. These products evolve quickly; follow the l
 - [Claude Code Remote Control](https://code.claude.com/docs/en/remote-control) is Anthropic's supported web/mobile window into local Claude Code. Its server mode can create multiple sessions, while interactive mode exposes one local session per process.
 - [Claude Code Channels](https://code.claude.com/docs/en/channels) supplies official Telegram, Discord, and iMessage plugins with sender allowlists and optional permission relay. It is a Claude-only, research-preview path tied to a running session.
 - [OpenClaw](https://docs.openclaw.ai/providers) is a broad multi-provider, multi-channel gateway. It is not provider-locked and serves a wider platform role than this repository.
-- **telegram-ai-bridge** is the narrower choice when you specifically want a self-hosted Telegram-first bridge with its own `/new`/`resume`/`peek` lifecycle, multi-bot shared context, and the repository's A2A-TG loop-suppression protocol across Claude, Codex, and Gemini backends.
+- **telegram-ai-bridge** is the narrower choice when you specifically want a self-hosted Telegram-first bridge with its own `/new`/`resume`/`peek` lifecycle, multi-bot shared context, and the repository's A2A-TG loop-suppression protocol across Claude, Codex, Agy, and Kimi backends.
 
 Choose the official Claude paths for the smallest supported Claude-only setup, OpenClaw for a general gateway, and this project for its specific Telegram multi-bot workflow. This is positioning, not a claim that every feature in the alternatives has an exact equivalent here.
 
@@ -343,7 +344,7 @@ This bridge runs full Claude Code / Codex with your local credentials, so it is 
 - **A2A-TG broadcasts are loopback-only and group-scoped.** Envelopes never leave `127.0.0.1`, and the inbound/outbound filters reject `chat_id > 0` (DMs). Two people DMing two bots cannot leak into each other's context.
 - **`bypassPermissions` disables tool approval prompts.** With this mode enabled, the bot executes Bash / Write / Edit tools without asking. That is convenient for personal use on your own machine; it is dangerous if anyone else can reach the bot. Keep it off unless you understand the blast radius.
 - **Secrets in config.** `config.json` is `.gitignore`'d. `bun run config` redacts secrets when printing. Do not share bridge logs raw — they can contain tool outputs with sensitive paths.
-- **Upstream trust.** The bridge inherits whatever your local Claude Code / Codex / Gemini can do — MCP servers, hooks, skills. If you install an untrusted skill or MCP, the bot inherits the risk.
+- **Upstream trust.** The bridge inherits whatever your local Claude Code / Codex / Agy / Kimi can do — MCP servers, hooks, skills. If you install an untrusted skill or MCP, the bot inherits the risk.
 
 ---
 
@@ -355,7 +356,7 @@ Telegram bot
   → config.json
   → bridge.js
   → executor (direct | local-agent)
-  → backend adapter (claude | codex | gemini)
+  → backend adapter (claude | codex | agy | kimi)
   → local credentials and session files
 ```
 
@@ -397,14 +398,21 @@ Each bot instance keeps its own Telegram token, SQLite DBs, credential directory
       "model": "",
       "transport": "sdk"
     },
-    "gemini": {
+    "agy": {
       "enabled": false,
       "telegramBotToken": "",
-      "sessionsDb": "sessions-gemini.db",
-      "model": "gemini-2.5-pro",
-      "oauthClientId": "",
-      "oauthClientSecret": "",
-      "googleCloudProject": ""
+      "sessionsDb": "sessions-agy.db",
+      "model": "gemini-3.1-pro-high",
+      "defaultEffort": "high",
+      "timeoutMs": 1800000
+    },
+    "kimi": {
+      "enabled": false,
+      "telegramBotToken": "",
+      "sessionsDb": "sessions-kimi.db",
+      "model": "",
+      "defaultEffort": "",
+      "timeoutMs": 1800000
     }
   }
 }
@@ -428,11 +436,21 @@ Inspect resolved config: `bun run config --backend claude` (secrets redacted).
 - Optional `model` override; empty string uses Codex defaults
 - `transport: "sdk"` keeps the stable non-interactive SDK path. `transport: "app-server"` is experimental: it writes App-compatible threads that shared thread inventory can index, but it does not make the desktop sidebar live-subscribe to externally created turns.
 
-**Gemini:**
-- Positioned as the "quiet scribe" in a multi-agent group — a good role for overnight summarization, not for front-line coding
+**Agy:**
+- Requires the [Antigravity CLI](https://antigravity.google) (`agy`) with its own login state
+- `defaultEffort`: `low` / `medium` / `high`
+- Streams output — replies arrive incrementally, and active tool steps surface as progress lines
+- `timeoutMs` sets the single-query hard timeout; omit it to fall back to 600000 (10 min)
+
+**Kimi:**
+- Requires [Kimi Code CLI](https://moonshotai.github.io/kimi-code/) with its own login state
+- Streams output
+- No per-call effort flag — thinking effort lives in the CLI's own `config.toml` as a global setting, so this backend deliberately exposes only a single "default" tier rather than a list that would not take effect
+- `timeoutMs` as above; long-running tasks generally want 1800000
+
+**Gemini (legacy, superseded by `agy`):**
+- Still selectable, but runs through the Gemini Code Assist API rather than a real CLI, so capabilities are narrower
 - Requires `~/.gemini/oauth_creds.json`, `oauthClientId`, `oauthClientSecret`
-- Uses Gemini Code Assist API mode, not full CLI terminal control
-- Behavior is shaped through prompt/workspace `CLAUDE.md`, not a code-level read-only switch
 
 </details>
 
@@ -509,7 +527,7 @@ Generate and install:
 The wrapper runs `bun run check` before `bun run start`, so bad config fails fast.
 Logs are written under `~/Library/Logs/telegram-ai-bridge/` and the rotation agent copy-truncates them daily at 03:00.
 
-Default labels: `com.telegram-ai-bridge`, `com.telegram-ai-bridge-codex`, `com.telegram-ai-bridge-gemini`.
+Default labels: `com.telegram-ai-bridge`, `com.telegram-ai-bridge-codex`, `com.telegram-ai-bridge-agy`, `com.telegram-ai-bridge-kimi`.
 
 ```bash
 launchctl print gui/$(id -u)/com.telegram-ai-bridge
