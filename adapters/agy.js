@@ -21,6 +21,35 @@ const CONV_DIR = join(process.env.HOME || "", ".gemini", "antigravity-cli", "con
 // agy 只认 low|medium|high。这里要挡的是 config 里沿用 codex 的 "ultra"——传过去会被 CLI 拒。
 const AGY_EFFORTS = ["low", "medium", "high"];
 
+// agy 的 result JSON 除 status 外还带一个 error 字段（实测），早期版本只取 status，于是 TG 侧
+// 永远只看到光秃秃的 "agy status=ERROR"，真因全丢——而真因恰恰都在 error 里，实测见过三类：
+//   · "Encountered retryable error from model provider: There was a network issue..."（长会话高发）
+//   · "invalid model selection (--model X --effort Y): ... conflicts with ..."（参数打架）
+//   · 配额 / 登录态类
+// 另有一种实测形态：status=ERROR 但 response 非空——模型其实答完了，只是中途撞过一次 retryable
+// 错误没自愈，agy 就把整个 result 标 ERROR。旧逻辑走 success=false 分支，cli-agent 会丢掉
+// finalResult.text，用户白等一场还什么都拿不到。这里按"有正文就算部分成功"处理，正文照给，
+// 顶部贴一行 agy 自己的错误原话，让人自己判断这轮可不可信。
+export function normalizeAgyResult(r = {}) {
+  const status = r.status || "(未知)";
+  const text = r.response || "";
+  const detail = r.error ? `\n${r.error}` : "";
+  const sessionId = r.conversation_id || null;
+
+  if (status === "SUCCESS") {
+    return { success: true, text, sessionId, error: null };
+  }
+  if (text.trim()) {
+    return {
+      success: true,
+      text: `⚠️ agy status=${status}（正文已生成，但这轮报过错，内容可能不完整）${detail}\n\n---\n\n${text}`,
+      sessionId,
+      error: null,
+    };
+  }
+  return { success: false, text: "", sessionId, error: `agy status=${status}${detail}` };
+}
+
 export function createAdapter(config = {}) {
   return createCliAgentAdapter(
     {
@@ -118,15 +147,7 @@ export function createAdapter(config = {}) {
           return out;
         }
         if (ev === "result") {
-          const r = o.result || {};
-          const ok = r.status === "SUCCESS";
-          return {
-            kind: "result",
-            success: ok,
-            text: r.response || "",
-            sessionId: r.conversation_id || null,
-            error: ok ? null : `agy status=${r.status || "(未知)"}`,
-          };
+          return { kind: "result", ...normalizeAgyResult(o.result) };
         }
         if (ev === "init") {
           const init = o.init || {};
@@ -157,14 +178,7 @@ export function createAdapter(config = {}) {
           };
         }
 
-        const data = JSON.parse(jsonLine);
-        const ok = data.status === "SUCCESS";
-        return {
-          success: ok,
-          text: data.response || "",
-          sessionId: data.conversation_id || null,
-          error: ok ? null : `agy status=${data.status || "(未知)"}`,
-        };
+        return normalizeAgyResult(JSON.parse(jsonLine));
       },
     },
     config
