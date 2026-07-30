@@ -83,9 +83,14 @@ export function registerCommands(bot, deps) {
   // 副 bot 不暴露 /sessions /resume —— 强制走主力 bot 看完整聊天记录
   // owner 通过 plist env BRIDGE_OWNER=true 标记
   const IS_OWNER = process.env.BRIDGE_OWNER === "true";
+  // 2026-07-30 订正：原文案两处错——① 指路去 @ClCObest_bot（=mccode3），但它自己就是副 bot、
+  // 同样没有 /sessions ② 说"Codex 历史去 mcodex1"，而 mcodex1 自当日起跑的是 kimi。
+  // 现只列真正带 BRIDGE_OWNER=true 的实例（实测：仅 mini 的 mccode1 与 mcodex1）。
   const NON_OWNER_SESSIONS_HINT =
     "📋 /sessions 和 /resume 仅在主力 bot 启用。\n" +
-    "Claude 历史去 @ClCObest_bot 或 mccode1；Codex 历史去 mcodex1。";
+    "· Claude 历史 → @mccode1_bot\n" +
+    "· Kimi 历史 → @mcodex1_bot（原 codex 槽位，07-30 起跑 kimi）\n" +
+    "· agy 暂无会话浏览（adapter 未实现 listSessions）";
 
   // 取消某个 chat 所有挂起的工具审批：cleanup timeout + 标记 rejected + resolve deny + 删除。
   // 与 perm 回调的 deny 分支同构，供 /new、/cancel、Stop 复用——abort 不会让等待中的审批 Promise 自行结束，
