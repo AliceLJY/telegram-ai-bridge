@@ -79,7 +79,8 @@ export function createAdapter(config = {}) {
       },
 
       buildArgs({ prompt, sessionId, model, effort, timeoutMs }) {
-        const args = ["-p", prompt, "--output-format", "json"];
+        // stream-json 而非 json：走 cli-agent 的流式路径，边生成边往 TG 推（体验同 CC）。
+        const args = ["-p", prompt, "--output-format", "stream-json"];
         args.push("--print-timeout", `${Math.round(timeoutMs / 1000)}s`);
         if (sessionId) args.push("--conversation", sessionId);
         if (model) args.push("--model", model);
@@ -87,9 +88,52 @@ export function createAdapter(config = {}) {
         return args;
       },
 
-      // json 模式返回单行：
-      // {"conversation_id":"...","status":"SUCCESS","response":"...","duration_seconds":5.8,
-      //  "num_turns":1,"usage":{"input_tokens":...,"output_tokens":...,"total_tokens":...}}
+      // 流式解析：agy stream-json 每行一个 JSON 事件（实测结构）：
+      //   {"event":"init", "init":{cwd,tools,permission_mode}}                      ← 无 conv_id
+      //   {"event":"step_update","step_update":{conversation_id, step_index, state,
+      //       step_type, text_delta?, ...}}   ← step_type=="agent_response" 且带 text_delta 才是正文增量
+      //   {"event":"result","result":{conversation_id, status, response, ...}}      ← 收尾，response=完整
+      // text_delta 已逐字节验证是增量 delta（全部拼接 == result.response）。
+      streamParse(line) {
+        if (!line.startsWith("{")) return null;
+        let o;
+        try {
+          o = JSON.parse(line);
+        } catch {
+          return null;
+        }
+        const ev = o.event;
+        if (ev === "step_update") {
+          const su = o.step_update || {};
+          const out = { sessionId: su.conversation_id || null };
+          // 只有 agent_response 的 text_delta 是给用户看的正文；thinking/工具步忽略
+          if (su.step_type === "agent_response" && typeof su.text_delta === "string" && su.text_delta) {
+            out.kind = "text";
+            out.delta = su.text_delta;
+          }
+          return out;
+        }
+        if (ev === "result") {
+          const r = o.result || {};
+          const ok = r.status === "SUCCESS";
+          return {
+            kind: "result",
+            success: ok,
+            text: r.response || "",
+            sessionId: r.conversation_id || null,
+            error: ok ? null : `agy status=${r.status || "(未知)"}`,
+          };
+        }
+        if (ev === "init") {
+          const init = o.init || {};
+          // init 事件不带 conversation_id（实测），无正文，纯忽略
+          return init.conversation_id ? { sessionId: init.conversation_id } : null;
+        }
+        return null;
+      },
+
+      // 一次性 json 解析：保留给非流式 fallback / 手动调用（当前 streamParse 存在则不走这里）。
+      // {"conversation_id":"...","status":"SUCCESS","response":"...","duration_seconds":5.8,...}
       parseResult({ stdout, stderr, code }) {
         const trimmed = stdout.trim();
         // 保险：agy 偶尔在 JSON 前打日志行，从后往前找第一个 { 开头的行
