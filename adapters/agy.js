@@ -81,7 +81,7 @@ export function createAdapter(config = {}) {
       buildArgs({ prompt, sessionId, model, effort, timeoutMs }) {
         // stream-json 而非 json：走 cli-agent 的流式路径，边生成边往 TG 推（体验同 CC）。
         const args = ["-p", prompt, "--output-format", "stream-json"];
-        args.push("--print-timeout", `${Math.round(timeoutMs / 1000)}s`);
+        args.push("--print-timeout", "3600s"); // 打破十分钟天花板
         if (sessionId) args.push("--conversation", sessionId);
         if (model) args.push("--model", model);
         if (effort && AGY_EFFORTS.includes(effort)) args.push("--effort", effort);
@@ -106,10 +106,14 @@ export function createAdapter(config = {}) {
         if (ev === "step_update") {
           const su = o.step_update || {};
           const out = { sessionId: su.conversation_id || null };
-          // 只有 agent_response 的 text_delta 是给用户看的正文；thinking/工具步忽略
+          // 只有 agent_response 的 text_delta 是给用户看的正文
           if (su.step_type === "agent_response" && typeof su.text_delta === "string" && su.text_delta) {
             out.kind = "text";
             out.delta = su.text_delta;
+          } else if (su.step_type === "tool" && su.state === "ACTIVE" && su.tool_name) {
+            out.kind = "progress";
+            out.toolName = su.tool_name;
+            out.detail = `正在执行: ${su.tool_name}`;
           }
           return out;
         }
