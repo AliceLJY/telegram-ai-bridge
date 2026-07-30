@@ -1358,6 +1358,12 @@ async function processPrompt(ctx, prompt) {
           const costStr = event.cost != null ? ` 花费 $${event.cost.toFixed(4)}` : "";
           const durStr = event.duration != null ? ` 耗时 ${event.duration}ms` : "";
           console.log(`[${adapter.label}] 结果: ${resultSuccess ? "success" : "error"}${durStr}${costStr}`);
+          // 失败时把错误正文也落日志。此前只打 "error" 两个字，详情只随消息发给用户，
+          // 事后排障时日志里查无实据——2026-07-30 agy bot 出现"用几轮就要 /new"的现象，
+          // 就是因为这行缺失而无法定性（只能看到第 4 轮 error，看不到 agy 报了什么）。
+          if (!resultSuccess && resultText) {
+            console.error(`[${adapter.label}] 失败详情: ${resultText.slice(0, 600).replace(/\n/g, " ⏎ ")}`);
+          }
         }
       }
     } catch (err) {
