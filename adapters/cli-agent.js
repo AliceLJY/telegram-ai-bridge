@@ -173,7 +173,25 @@ export function createCliAgentAdapter(spec, config = {}) {
     const duration = Date.now() - started;
 
     if (killed) {
-      yield { type: "result", success: false, text: `${spec.label} 调用被中断（超时或取消）。`, duration };
+      // 被砍时把已经流下来的正文交出去，别让它跟着进程一起烧掉。
+      //
+      // 实测场景（2026-07-30）：让 agy 去跑 CC / Kimi 这类长子任务时，它在等子进程的整段
+      // 时间里既没有正文增量、也不再发 tool ACTIVE，心跳没人按 → 撞 idle-monitor 的 30 分钟
+      // 闸被 abort。旧逻辑直接丢掉 accumulated，于是 31 分钟的产出只换回一句"调用被中断"。
+      // 主动点 Stop 同理：用户要的是停下来，不是把已经写好的东西作废。
+      //
+      // 注意这里只解决"产出别丢"。中断后本函数仍可能白等一段才走到这行——CLI 的孙子进程
+      // （agy 起的 claude -p）继承了 stdout/stderr 写端，管道不关则 readline 与 'close' 都
+      // 不结束。那要改 spawn 的进程组语义（detached + 杀整组），影响所有 backend，另开一轮做。
+      const partial = accumulated.trim();
+      yield partial
+        ? {
+          type: "result",
+          success: true,
+          text: `⚠️ ${spec.label} 调用被中断（超时或取消）。以下是中断前已生成的内容，可能不完整：\n\n---\n\n${accumulated}`,
+          duration,
+        }
+        : { type: "result", success: false, text: `${spec.label} 调用被中断（超时或取消）。`, duration };
       return;
     }
 
