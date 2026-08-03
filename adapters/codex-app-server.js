@@ -30,6 +30,47 @@ function normalizeItem(item = {}) {
   return { ...item, type: typeMap[item.type] || item.type };
 }
 
+function getNotificationScope(message = {}) {
+  const params = message.params || {};
+  return {
+    threadId: params.threadId || params.thread?.id || null,
+    turnId: params.turnId || params.turn?.id || null,
+  };
+}
+
+function mappedNotificationScope(message) {
+  const { threadId, turnId } = getNotificationScope(message);
+  return {
+    ...(threadId ? { thread_id: threadId } : {}),
+    ...(turnId ? { turn_id: turnId } : {}),
+  };
+}
+
+export function isExpectedAppServerTurn(message, expectedThreadId, expectedTurnId) {
+  const method = message?.method || "";
+  const { threadId, turnId } = getNotificationScope(message);
+
+  // Item/turn notifications are multiplexed across parent and sub-agent threads
+  // on one app-server connection. Fail closed unless both provenance fields match.
+  if (method === "item/completed" || method === "turn/completed") {
+    return threadId === expectedThreadId && turnId === expectedTurnId;
+  }
+
+  // Connection-level errors may have no provenance. Scoped errors must match.
+  if (method === "error") {
+    if (threadId && threadId !== expectedThreadId) return false;
+    if (turnId && turnId !== expectedTurnId) return false;
+  }
+
+  return true;
+}
+
+function createAbortError(message = "Codex turn aborted") {
+  const error = new Error(message);
+  error.name = "AbortError";
+  return error;
+}
+
 export function mapAppServerNotification(message) {
   const { method, params = {} } = message;
 
@@ -43,6 +84,7 @@ export function mapAppServerNotification(message) {
     if (params.item?.type === "userMessage") return null;
     return {
       type: "item.completed",
+      ...mappedNotificationScope(message),
       item: normalizeItem(params.item),
     };
   }
@@ -50,14 +92,26 @@ export function mapAppServerNotification(message) {
     if (params.turn?.status === "failed") {
       return {
         type: "turn.failed",
+        ...mappedNotificationScope(message),
         error: params.turn.error,
       };
     }
-    return { type: "turn.completed" };
+    if (["interrupted", "cancelled", "canceled"].includes(params.turn?.status)) {
+      return {
+        type: "turn.interrupted",
+        ...mappedNotificationScope(message),
+      };
+    }
+    return {
+      type: "turn.completed",
+      ...mappedNotificationScope(message),
+      status: params.turn?.status || "completed",
+    };
   }
   if (method === "error") {
     return {
       type: "error",
+      ...mappedNotificationScope(message),
       message: params.error?.message || params.message || "Codex app-server error",
     };
   }
@@ -73,8 +127,9 @@ export async function* streamAppServerEvents({
   effort,
   serviceTier,
   abortSignal,
+  spawnProcess = spawn,
 }) {
-  const child = spawn(codexPath, ["app-server", "--stdio"], {
+  const child = spawnProcess(codexPath, ["app-server", "--stdio"], {
     stdio: ["pipe", "pipe", "pipe"],
   });
   const lines = createInterface({ input: child.stdout });
@@ -82,6 +137,7 @@ export async function* streamAppServerEvents({
   let stderr = "";
   let spawnError = null;
   let nextId = 1;
+  let aborted = abortSignal?.aborted === true;
 
   child.on("error", error => {
     spawnError = error;
@@ -91,7 +147,10 @@ export async function* streamAppServerEvents({
     stderr = `${stderr}${chunk}`.slice(-8000);
   });
 
-  const abort = () => child.kill("SIGTERM");
+  const abort = () => {
+    aborted = true;
+    child.kill("SIGTERM");
+  };
   if (abortSignal) {
     if (abortSignal.aborted) abort();
     else abortSignal.addEventListener("abort", abort, { once: true });
@@ -103,6 +162,7 @@ export async function* streamAppServerEvents({
     while (true) {
       const { value, done } = await iterator.next();
       if (done) {
+        if (aborted) throw createAbortError();
         throw new Error(spawnError?.message || stderr.trim() || `Codex app-server exited before ${method} responded`);
       }
       const message = JSON.parse(value);
@@ -146,18 +206,39 @@ export async function* streamAppServerEvents({
     if (model) turnParams.model = model;
     if (effort) turnParams.effort = effort;
     if (serviceTier) turnParams.serviceTier = serviceTier;
-    await request("turn/start", turnParams);
+    const turnResult = await request("turn/start", turnParams);
+    const turnId = turnResult?.turn?.id;
+    if (!turnId) throw new Error("Codex app-server did not return a turn id");
+
+    const ignoredTurns = new Set();
 
     for await (const line of iterator) {
+      if (aborted || abortSignal?.aborted) throw createAbortError();
       const message = JSON.parse(line);
       if (rejectUnsupportedServerRequest(child, message)) continue;
+      if (!isExpectedAppServerTurn(message, thread.id, turnId)) {
+        const scope = getNotificationScope(message);
+        const key = `${scope.threadId || "unknown"}:${scope.turnId || "unknown"}`;
+        if (!ignoredTurns.has(key)) {
+          ignoredTurns.add(key);
+          console.warn(
+            `[Codex app-server] ignored off-turn notification thread=${scope.threadId || "unknown"} turn=${scope.turnId || "unknown"} expected=${thread.id}:${turnId}`,
+          );
+        }
+        continue;
+      }
       const event = mapAppServerNotification(message);
       if (!event || event.type === "thread.started") continue;
+      if (event.type === "turn.interrupted") throw createAbortError("Codex turn interrupted");
       yield { event, thread };
       if (event.type === "turn.completed" || event.type === "turn.failed") return;
     }
 
+    if (aborted || abortSignal?.aborted) throw createAbortError();
     throw new Error(stderr.trim() || "Codex app-server exited before the turn completed");
+  } catch (error) {
+    if (aborted || abortSignal?.aborted) throw createAbortError();
+    throw error;
   } finally {
     if (abortSignal) abortSignal.removeEventListener("abort", abort);
     lines.close();
