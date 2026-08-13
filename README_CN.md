@@ -7,7 +7,7 @@
 *Claude Code、Codex、Agy、Kimi 各自独立的全栈 bot，通过 IM 原生的封装协议（A2A-TG）协作，带硬性代际计数防死循环。常驻运行，自托管，只有你本人能触发。*
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.0.1-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
+[![Version](https://img.shields.io/badge/version-5.1.0-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
 [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)
 [![Telegram](https://img.shields.io/badge/Interface-Telegram-26A5E4?logo=telegram)](https://telegram.org/)
 [![A2A-TG spec](https://img.shields.io/badge/A2A--TG-v1-8a2be2)](docs/a2a-tg-v1.md)
@@ -145,6 +145,18 @@ bun run setup --backend claude   # 交互式向导：逐项提示填 owner ID、
 bun run check --backend claude
 bun run start --backend claude
 ```
+
+### 从 v5.0.1 升级
+
+```bash
+git pull --ff-only
+bun install --frozen-lockfile
+bun run check --backend claude  # 每个已配置的后端都检查一次
+```
+
+现有 Claude、Codex 和旧 Gemini 配置仍然有效。Agy、Kimi 只有在配置块中启用后才会运行；
+Codex 继续默认使用原有 `sdk` 传输，`app-server` 需要主动选择。session 和数据库都不需要迁移。
+准备完成后，可在你决定启用新版本时再重启进程。
 
 > **`setup` 要单独运行——它是交互式的。** 这是个逐项提示、等你输入的向导，会帮你写好 `config.json`，别把整段命令一次性粘贴进去。
 >

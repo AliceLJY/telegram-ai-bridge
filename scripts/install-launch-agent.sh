@@ -21,7 +21,7 @@ Usage:
   ./scripts/install-launch-agent.sh [options]
 
 Options:
-  --backend <name>   claude | codex | gemini
+  --backend <name>   claude | codex | gemini | agy | kimi
   --instance <name>  instance suffix, e.g. 2 -> com.telegram-ai-bridge-2
   --config <path>    config file path passed to start.js
   --label <label>    launchd label override
@@ -139,7 +139,7 @@ else
 fi
 
 case "$backend" in
-  claude|codex|gemini)
+  claude|codex|gemini|agy|kimi)
     ;;
   *)
     echo "Unsupported backend: $backend" >&2

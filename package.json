@@ -1,8 +1,8 @@
 {
   "name": "telegram-ai-bridge",
-  "version": "5.0.1",
+  "version": "5.1.0",
   "private": true,
-  "description": "Self-hosted Telegram bridge for heterogeneous AI coding agents (Claude Code, Codex, Gemini) with the A2A-TG envelope protocol for safe multi-agent collaboration in group chats.",
+  "description": "Self-hosted Telegram bridge for Claude Code, Codex, Agy, and Kimi with the A2A-TG envelope protocol for safe multi-agent collaboration in group chats.",
   "type": "module",
   "main": "bridge.js",
   "bin": {
@@ -63,7 +63,10 @@
     "claude",
     "claude-code",
     "codex",
+    "agy",
+    "antigravity",
     "gemini",
+    "kimi",
     "ai-agent",
     "multi-agent",
     "agent-to-agent",

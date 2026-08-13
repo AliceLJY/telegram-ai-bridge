@@ -7,7 +7,7 @@
 *Claude Code, Codex, Agy, and Kimi as independent full-stack bots, coordinated over a Telegram-native envelope protocol (A2A-TG) with generation-counted loop guards. Always-on, self-hosted, owner-gated.*
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.0.1-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
+[![Version](https://img.shields.io/badge/version-5.1.0-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
 [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)
 [![Telegram](https://img.shields.io/badge/Interface-Telegram-26A5E4?logo=telegram)](https://telegram.org/)
 [![A2A-TG spec](https://img.shields.io/badge/A2A--TG-v1-8a2be2)](docs/a2a-tg-v1.md)
@@ -147,6 +147,20 @@ bun run setup --backend claude   # interactive wizard: prompts for owner ID, bot
 bun run check --backend claude
 bun run start --backend claude
 ```
+
+### Upgrade from v5.0.1
+
+```bash
+git pull --ff-only
+bun install --frozen-lockfile
+bun run check --backend claude  # repeat for each configured backend
+```
+
+Existing Claude, Codex, and legacy Gemini configurations remain valid. Agy and
+Kimi are disabled unless you add and enable their backend blocks. Codex keeps
+the existing `sdk` transport by default; `app-server` is opt-in. No session or
+database migration is required. Restart processes only when you are ready to
+put the prepared version into service.
 
 > **Run `setup` on its own — it's interactive.** It's a prompt-driven wizard that waits for your input and writes `config.json` for you, so don't paste the whole block at once.
 >

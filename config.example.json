@@ -20,7 +20,7 @@
     "triggerDedupTtlMs": 300000,
     "sessionTimeoutMs": 900000,
     "a2aEnabled": false,
-    "a2aPorts": { "claude": 18810, "codex": 18811, "gemini": 18812 },
+    "a2aPorts": { "claude": 18810, "codex": 18811, "gemini": 18812, "agy": 18813, "kimi": 18814 },
     "a2aToolMode": "read-only",
     "a2aCooldownMs": 60000,
     "a2aMaxResponsesPerWindow": 3,
@@ -66,6 +66,14 @@
       "oauthClientId": "",
       "oauthClientSecret": "",
       "googleCloudProject": ""
+    },
+    "agy": {
+      "enabled": false,
+      "telegramBotToken": "",
+      "sessionsDb": "sessions-agy.db",
+      "model": "gemini-3.1-pro-high",
+      "defaultEffort": "high",
+      "timeoutMs": 1800000
     },
     "kimi": {
       "enabled": false,
