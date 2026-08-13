@@ -6,6 +6,8 @@
 
 *Claude Code、Codex、Agy、Kimi 各自独立的全栈 bot，通过 IM 原生的封装协议（A2A-TG）协作，带硬性代际计数防死循环。常驻运行，自托管，只有你本人能触发。*
 
+这四个是当前内置并端到端验证的 adapter，不是封闭的 provider 名单。Telegram 路由、session、流式、A2A-TG 和安全闸都收在一个很小的 adapter 边界之外；其他有可调用 CLI 或 SDK 的 agent，可以沿同一边界接入，不必重写整套编排。
+
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-5.1.0-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
 [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)

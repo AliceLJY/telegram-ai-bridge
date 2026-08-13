@@ -1,8 +1,14 @@
-# v5.1.0 — Agy and Kimi join the bridge
+# v5.1.0 — Agy and Kimi join an extensible bridge
 
 This backward-compatible minor release expands the supported backend set and
 makes Codex App-visible sessions practical without changing the default path
 for existing installations.
+
+The four primary adapters are what this repository currently bundles and tests
+end to end, not a closed provider list. Telegram routing, sessions, streaming,
+A2A-TG, and safety gates stay behind the adapter boundary, so another agent
+with a callable CLI or SDK can be added without rebuilding the orchestration
+layer.
 
 ## Highlights
 
@@ -44,6 +50,3 @@ not a supported v5 package.
 - 173 automated tests in an environment-neutral run
 - Package dry-run and config schema smoke without starting a Telegram bot
 - GitHub Actions CI
-
-No service is restarted and no tag, package, or GitHub Release is created by
-this preparation commit.

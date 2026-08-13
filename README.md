@@ -6,6 +6,8 @@
 
 *Claude Code, Codex, Agy, and Kimi as independent full-stack bots, coordinated over a Telegram-native envelope protocol (A2A-TG) with generation-counted loop guards. Always-on, self-hosted, owner-gated.*
 
+Those four are the adapters bundled and tested here, not a closed provider list. Telegram routing, sessions, streaming, A2A-TG, and safety gates sit behind a small adapter boundary, so another agent with a callable CLI or SDK can be added without rebuilding the orchestration layer.
+
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-5.1.0-green.svg)](https://github.com/AliceLJY/telegram-ai-bridge/releases)
 [![Bun](https://img.shields.io/badge/Runtime-Bun-f9f1e1?logo=bun)](https://bun.sh)
