@@ -15,7 +15,6 @@ import { readdirSync, statSync } from "fs";
 import { join } from "path";
 import { createCliAgentAdapter } from "./cli-agent.js";
 
-const BIN = process.env.AGY_BIN || "/opt/homebrew/bin/agy";
 // agy 每个 conversation 落一个 sqlite：~/.gemini/antigravity-cli/conversations/<uuid>.db
 const CONV_DIR = join(process.env.HOME || "", ".gemini", "antigravity-cli", "conversations");
 // agy 只认 low|medium|high。这里要挡的是 config 里沿用 codex 的 "ultra"——传过去会被 CLI 拒。
@@ -70,7 +69,10 @@ export function createAdapter(config = {}) {
       name: "agy",
       label: "Agy",
       icon: "🟠",
-      bin: BIN,
+      // Resolve at adapter creation rather than module import. Bun may share the
+      // ESM module cache across test files, and runtime callers may inject a
+      // canary binary without depending on import order.
+      bin: config.bin || process.env.AGY_BIN || "/opt/homebrew/bin/agy",
       defaultModel: process.env.AGY_MODEL || "gemini-3.1-pro-high",
       defaultEffort: "high",
       modeLabel: "Antigravity CLI (Gemini)",

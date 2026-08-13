@@ -47,17 +47,15 @@ const textFrame = (delta) =>
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "agy-fake-"));
-  process.env.AGY_BIN = join(dir, BIN_NAME);
   ({ createAdapter } = await import("./agy.js"));
 });
 
 afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
-  delete process.env.AGY_BIN;
 });
 
-// ⚠️ AGY_BIN 在 agy.js 模块加载时就读进 const 了，测试中途改 process.env 无效。所以两个用例
-// 复写的都是同一个文件名 BIN_NAME，靠改写内容切换行为，而不是换路径。
+// 两个用例复写同一个文件名，靠改写内容切换行为；binary 通过 adapter config 注入，
+// 不依赖 Bun 在多测试文件之间复用 ESM module cache 时的导入顺序。
 const BIN_NAME = "agy-hang";
 
 /** 收事件，攒到 minTextEvents 条正文后主动 abort（模拟超时闸/Stop）。 */
@@ -76,7 +74,7 @@ describe("agy 被中断时的部分产出", () => {
   test("已生成的正文必须随中断一起交出，而不是被丢弃", async () => {
     fakeAgy(BIN_NAME, [textFrame("第一段结论。"), textFrame("第二段推导。")].join("\n"));
 
-    const events = await collectThenAbort(createAdapter({ cwd: "/tmp" }));
+    const events = await collectThenAbort(createAdapter({ cwd: "/tmp", bin: join(dir, BIN_NAME) }));
     const result = events.at(-1);
 
     expect(result.type).toBe("result");
@@ -94,7 +92,7 @@ describe("agy 被中断时的部分产出", () => {
     const controller = new AbortController();
     const events = [];
     setTimeout(() => controller.abort(), 300);
-    for await (const ev of createAdapter({ cwd: "/tmp" }).streamQuery("测试", null, controller.signal)) {
+    for await (const ev of createAdapter({ cwd: "/tmp", bin: join(dir, BIN_NAME) }).streamQuery("测试", null, controller.signal)) {
       events.push(ev);
     }
 
