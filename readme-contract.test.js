@@ -29,8 +29,8 @@ describe("public documentation contract", () => {
     expect(configExample.shared.a2aPorts.kimi).toBeNumber();
     expect(readme).toContain("Claude Code, Codex, Agy, and Kimi");
     expect(readmeCn).toContain("Claude Code、Codex、Agy、Kimi");
-    expect(startCli).toContain("claude | codex | gemini (experimental) | agy | kimi");
-    expect(launchAgentInstaller).toContain("claude | codex | gemini | agy | kimi");
+    expect(startCli).toContain("claude | codex | agy | kimi   (gemini: disabled, see README)");
+    expect(launchAgentInstaller).toContain("claude | codex | agy | kimi   (gemini: disabled)");
     expect(launchAgentInstaller).toContain("claude|codex|gemini|agy|kimi)");
   });
 
