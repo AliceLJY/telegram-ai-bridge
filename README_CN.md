@@ -674,11 +674,11 @@ GitHub Actions 会在每次 push 和 pull request 上运行同一套测试。
 | 项目 | 说明 |
 |------|------|
 | [recallnest](https://github.com/AliceLJY/recallnest) | MCP 记忆工作台（LanceDB + Jina v5） |
-| [content-publisher](https://github.com/AliceLJY/content-publisher) | AI 配图 + 排版 + 微信公众号发布 |
-| [openclaw-tunnel](https://github.com/AliceLJY/openclaw-tunnel) | Docker ↔ 宿主机 CLI 桥接（/cc /codex /gemini） |
+| content-publisher *(private)* | AI 配图 + 排版 + 微信公众号发布 |
+| [openclaw-tunnel](https://github.com/AliceLJY/openclaw-tunnel) | Docker ↔ 宿主机 CLI 桥接（/cc /codex） |
 | [digital-clone-skill](https://github.com/AliceLJY/digital-clone-skill) | 从语料数据构建数字分身 |
 | [claude-code-studio](https://github.com/AliceLJY/claude-code-studio) | Claude Code 多会话协作平台 |
-| [cc-empire](https://github.com/AliceLJY/cc-empire) | Claude Code 完整工作流脚手架 |
+| cc-empire *(private)* | Claude Code 完整工作流脚手架 |
 | [tg-bridge-channel](https://github.com/AliceLJY/tg-bridge-channel) | 姊妹桥接，基于 Claude Agent View 后台 session（channel/pool 引擎） |
 
 ## 许可证

@@ -679,11 +679,11 @@ Part of the **小试AI** open-source AI workflow:
 | Project | Description |
 |---------|-------------|
 | [recallnest](https://github.com/AliceLJY/recallnest) | MCP memory workbench (LanceDB + Jina v5) |
-| [content-publisher](https://github.com/AliceLJY/content-publisher) | Image generation + layout + WeChat publishing |
-| [openclaw-tunnel](https://github.com/AliceLJY/openclaw-tunnel) | Docker ↔ host CLI bridge (/cc /codex /gemini) |
+| content-publisher *(private)* | Image generation + layout + WeChat publishing |
+| [openclaw-tunnel](https://github.com/AliceLJY/openclaw-tunnel) | Docker ↔ host CLI bridge (/cc /codex) |
 | [digital-clone-skill](https://github.com/AliceLJY/digital-clone-skill) | Build digital clones from corpus data |
 | [claude-code-studio](https://github.com/AliceLJY/claude-code-studio) | Multi-session collaboration platform for Claude Code |
-| [cc-empire](https://github.com/AliceLJY/cc-empire) | Complete Claude Code workflow scaffold |
+| cc-empire *(private)* | Complete Claude Code workflow scaffold |
 | [tg-bridge-channel](https://github.com/AliceLJY/tg-bridge-channel) | Sister bridge using Claude Agent View background sessions (channel/pool engine) |
 
 ## License
