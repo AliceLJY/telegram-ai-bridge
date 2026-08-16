@@ -192,7 +192,9 @@ Supported backends:
 | `agy` | Antigravity CLI (Gemini-family models) | Streaming output; `--effort` low/medium/high; `/sessions` `/resume` |
 | `kimi` | Kimi Code CLI | Streaming output; `/sessions` `/resume`; thinking effort is a global CLI setting, not per-call |
 
-> **On `agy`.** `agy` is the [Antigravity CLI](https://antigravity.google) — Google's unified CLI (the standalone `gemini` command was folded into it) and the current way this bridge reaches Gemini-family models. It supersedes the older `gemini` backend, which went through the Gemini Code Assist API rather than a real CLI. That older adapter is still in the codebase and still selectable, but it is no longer the recommended path.
+> **On `agy`.** `agy` is the [Antigravity CLI](https://antigravity.google) — Google's unified CLI (the standalone `gemini` command was folded into it) and the current way this bridge reaches Gemini-family models. It supersedes the older `gemini` backend, which went through the Gemini Code Assist API rather than a real CLI.
+>
+> **The legacy `gemini` backend is retired for personal accounts — do not use it.** Google stopped serving the standalone CLI for free / AI Pro / AI Ultra accounts on 2026-06-18, so `~/.gemini/oauth_creds.json` is no longer produced and that adapter cannot authenticate. Google has also stated that using Gemini CLI OAuth credentials from third-party software is a policy-violating use case that may trigger abuse detection or account restrictions. The adapter remains in the codebase for Code Assist Standard/Enterprise deployments authenticating through their own supported path.
 
 > **Core rule:** One bot = one process = one independent agent. Run as many as you need.
 
@@ -464,9 +466,10 @@ Inspect resolved config: `bun run config --backend claude` (secrets redacted).
 - No per-call effort flag — thinking effort lives in the CLI's own `config.toml` as a global setting, so this backend deliberately exposes only a single "default" tier rather than a list that would not take effect
 - `timeoutMs` as above; long-running tasks generally want 1800000
 
-**Gemini (legacy, superseded by `agy`):**
-- Still selectable, but runs through the Gemini Code Assist API rather than a real CLI, so capabilities are narrower
+**Gemini (legacy, superseded by `agy` — retired for personal accounts):**
+- Runs through the Gemini Code Assist API rather than a real CLI, so capabilities are narrower
 - Requires `~/.gemini/oauth_creds.json`, `oauthClientId`, `oauthClientSecret`
+- **Personal accounts cannot use this path.** The credentials file is written by the standalone `gemini` CLI login, which Google retired on 2026-06-18; using Gemini CLI OAuth credentials from third-party software is also a policy-violating use case per Google. Use `agy` instead.
 
 </details>
 
