@@ -190,7 +190,19 @@ Codex 继续默认使用原有 `sdk` 传输，`app-server` 需要主动选择。
 
 > **关于 `agy`。** `agy` 是 [Antigravity CLI](https://antigravity.google)——Google 的统一 CLI（独立的 `gemini` 命令已被合并进它），也是本 bridge 现在接触 Gemini 系模型的方式。它取代了旧的 `gemini` 后端（后者走 Gemini Code Assist API 而非真正的 CLI）。
 >
-> **旧的 `gemini` 后端对个人账号已停用，请不要使用。** Google 已于 2026-06-18 对免费 / AI Pro / AI Ultra 账号停止独立 CLI 服务，`~/.gemini/oauth_creds.json` 不再产生，该 adapter 无法完成认证。Google 另有明确表态：第三方软件使用 Gemini CLI 的 OAuth 凭证属于违反政策的用法，可能触发滥用检测或账号限制。adapter 保留在代码里，是给通过自身受支持路径认证的 Code Assist Standard/Enterprise 部署使用的。
+> **请不要使用旧的 `gemini` 后端。这是账号安全问题，不只是功能失效。**
+>
+> 该 adapter 读取 `~/.gemini/oauth_creds.json`，复用 Gemini CLI 自己的 OAuth client 去访问 Code Assist
+> 内部端点。Google 官方 FAQ 点的正是这种用法：*"Using third-party software, tools, or services to harvest
+> or piggyback on Gemini CLI's OAuth authentication to access our backend services is a direct violation of
+> our applicable terms and policies"*，并称其 *"may be grounds for immediate suspension or termination of
+> your account"*（可构成立即暂停或终止账号的理由）。已有付费订阅用户因此失去访问权限的报告。
+> **这与你的套餐等级无关——被禁的是这个机制本身，不是账号类型。**
+>
+> 另外，Google 已于 2026-06-18 对个人账号停止独立 `gemini` CLI 服务，`oauth_creds.json` 不再产生，
+> 该 adapter 在个人账号上也已无法完成认证。
+>
+> 第三方软件访问 Gemini 模型的受支持方式是 **Vertex AI 或 Google AI Studio API key**。请改用 `agy` 后端。
 
 > **核心规则：** 一个 bot = 一个独立进程 = 一个独立 Agent。想开几个开几个。
 
@@ -465,7 +477,7 @@ Telegram bot
 **Gemini（旧路径，已由 `agy` 取代——个人账号已停用）：**
 - 走 Gemini Code Assist API 而非真正的 CLI，能力更窄
 - 需要 `~/.gemini/oauth_creds.json`、`oauthClientId`、`oauthClientSecret`
-- **个人账号无法走这条路。** 该凭证文件由独立的 `gemini` CLI 登录写入，而 Google 已于 2026-06-18 停止该服务；且按 Google 表态，第三方软件使用 Gemini CLI 的 OAuth 凭证属违反政策的用法。请改用 `agy`。
+- **不要走这条路——见上方账号安全说明。** 按 Google 官方 FAQ，第三方软件 piggyback Gemini CLI 的 OAuth 认证属直接违反条款，可构成暂停或终止账号的理由，**与套餐等级无关**。另外它需要的凭证文件自 2026-06-18 CLI 停服后在个人账号上已不再产生。请改用 `agy`，或 Vertex AI / AI Studio API key。
 
 </details>
 

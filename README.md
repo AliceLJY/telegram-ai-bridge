@@ -194,7 +194,20 @@ Supported backends:
 
 > **On `agy`.** `agy` is the [Antigravity CLI](https://antigravity.google) — Google's unified CLI (the standalone `gemini` command was folded into it) and the current way this bridge reaches Gemini-family models. It supersedes the older `gemini` backend, which went through the Gemini Code Assist API rather than a real CLI.
 >
-> **The legacy `gemini` backend is retired for personal accounts — do not use it.** Google stopped serving the standalone CLI for free / AI Pro / AI Ultra accounts on 2026-06-18, so `~/.gemini/oauth_creds.json` is no longer produced and that adapter cannot authenticate. Google has also stated that using Gemini CLI OAuth credentials from third-party software is a policy-violating use case that may trigger abuse detection or account restrictions. The adapter remains in the codebase for Code Assist Standard/Enterprise deployments authenticating through their own supported path.
+> **Do not use the legacy `gemini` backend. This is an account-safety issue, not just a dead feature.**
+>
+> That adapter reads `~/.gemini/oauth_creds.json` and reuses the Gemini CLI's own OAuth client to reach the
+> internal Code Assist endpoint. Google's FAQ names this exact pattern: *"Using third-party software, tools,
+> or services to harvest or piggyback on Gemini CLI's OAuth authentication to access our backend services is
+> a direct violation of our applicable terms and policies"*, and says it *"may be grounds for immediate
+> suspension or termination of your account."* Paid subscribers have reportedly lost access over it. This
+> applies regardless of your plan tier — it is the mechanism that is prohibited, not the account type.
+>
+> Separately, Google retired the standalone `gemini` CLI for personal accounts on 2026-06-18, so
+> `oauth_creds.json` is no longer produced and the adapter cannot authenticate there either.
+>
+> The supported way for third-party software to reach Gemini models is a **Vertex AI or Google AI Studio API
+> key**. Use the `agy` backend instead.
 
 > **Core rule:** One bot = one process = one independent agent. Run as many as you need.
 
@@ -469,7 +482,7 @@ Inspect resolved config: `bun run config --backend claude` (secrets redacted).
 **Gemini (legacy, superseded by `agy` — retired for personal accounts):**
 - Runs through the Gemini Code Assist API rather than a real CLI, so capabilities are narrower
 - Requires `~/.gemini/oauth_creds.json`, `oauthClientId`, `oauthClientSecret`
-- **Personal accounts cannot use this path.** The credentials file is written by the standalone `gemini` CLI login, which Google retired on 2026-06-18; using Gemini CLI OAuth credentials from third-party software is also a policy-violating use case per Google. Use `agy` instead.
+- **Do not use this path — see the account-safety note above.** Piggybacking on Gemini CLI OAuth from third-party software is a direct terms violation per Google's FAQ and may be grounds for account suspension or termination, regardless of plan tier. Separately, the credentials file it needs is no longer produced on personal accounts since the 2026-06-18 CLI retirement. Use `agy`, or a Vertex AI / AI Studio API key.
 
 </details>
 
