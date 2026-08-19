@@ -30,6 +30,21 @@ describe("output relay helpers", () => {
     ]);
   });
 
+  test("matches paths whose directory segments contain CJK, without merging neighbouring paths", () => {
+    const home = "/tmp/tg-bridge-home";
+    const cjk = `${home}/Desktop/AI产出/2026-08-19-多端联络图/多端联络图-1-底座.png`;
+    const existingPaths = new Set([cjk, "/tmp/a/b.png", "/tmp/a/c.png"]);
+    const files = [];
+
+    extractFilePathsFromText(
+      `截图在 ~/Desktop/AI产出/2026-08-19-多端联络图/多端联络图-1-底座.png，另外 /tmp/a/b.png 和 /tmp/a/c.png`,
+      files,
+      { home, exists: (path) => existingPaths.has(path) },
+    );
+
+    expect(files.map((f) => f.filePath)).toEqual(["/tmp/a/b.png", "/tmp/a/c.png", cjk]);
+  });
+
   test("detects code-heavy output and normalizes common code block languages", () => {
     const text = "说明\n```typescript\nconst value: string = 'ok';\n```\n";
 
