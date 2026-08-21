@@ -1,3 +1,17 @@
+## 状态：研究结论已实施，行号引用已失效（2026-08-22 核对）
+
+方案已完整落地，实现见 `output-relay.js` 与 `output-relay.test.js`；配套的实施计划
+（`plan-p0-output-relay.md`）已随其他过期计划一并清理。
+
+**本文保留的原因**：第 2 节的 SDK 事件类型清单、第 3 节「被丢弃的数据」分析，
+是仓库里唯一一份该层面的记录，将来要接新事件时仍可参考。
+
+**但正文里的行号引用全部作废**——写作时 `adapters/claude.js` 约 260 行、`bridge.js` 约 1030 行，
+现在分别是 767 行和 1958 行，按第 4、5 节给的行号去定位会读到完全无关的代码。
+以符号名（`sendCapturedOutputs` / `extractFilePathsFromText` 等）搜索，不要按行号。
+
+---
+
 # P0 Research: CC 输出图片/文件回传到 Telegram
 
 ## 1. 当前数据流总览
