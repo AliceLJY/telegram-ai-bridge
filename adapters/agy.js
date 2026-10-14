@@ -83,12 +83,12 @@ export function createAdapter(config = {}) {
       // 菜单以 `agy models` 的实时输出为准——CLI 会下线旧模型，菜单里留着的就成了死选项：
       // 2026-09-03 校对时 gemini-3.5-flash-high 已从 CLI 消失，选中即被拒。改这里之前先跑一次
       // `agy models` 对一遍，别照着记忆写。
+      // 2026-10-14 校对（agy 1.3.4）：gemini-3.1-pro-high / -low 也已从 CLI 消失，选中报
+      // "not recognized as a known model"；Pro 订阅在 Antigravity 里只剩 3.8 Flash 三档。
       models: [
         { id: "gemini-3.8-flash-high", label: "Gemini 3.8 Flash (High)" },
         { id: "gemini-3.8-flash-medium", label: "Gemini 3.8 Flash (Medium)" },
         { id: "gemini-3.8-flash-low", label: "Gemini 3.8 Flash (Low)" },
-        { id: "gemini-3.1-pro-high", label: "Gemini 3.1 Pro (High)" },
-        { id: "gemini-3.1-pro-low", label: "Gemini 3.1 Pro (Low)" },
       ],
 
       // agy 支持逐次指定 --effort（low|medium|high），所以给出真实档位
