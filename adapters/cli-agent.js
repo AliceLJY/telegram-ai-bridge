@@ -29,6 +29,17 @@ const DEFAULT_TIMEOUT_MS = 600_000;
 // 子进程硬杀的额外宽限：让 CLI 自己的 --print-timeout 先触发，拿到它的错误信息更有诊断价值
 const KILL_GRACE_MS = 30_000;
 
+// 子 agent（kimi/agy/gemini）不该继承 `bun run` 塞到 PATH 最前面的 node_modules/.bin：
+// 2026-11-14 实测 Kimi 在子进程里按名字找 codex，撞上本仓 node_modules 里平台二进制缺失的
+// @openai/codex wrapper（ENOENT），冷读与对卡脚本都审不成。只剔这一类目录，其余 PATH 原样保留。
+export function childEnv(env = process.env) {
+  const out = { ...env };
+  if (out.PATH) {
+    out.PATH = out.PATH.split(":").filter((d) => d && !/(^|\/)node_modules\/\.bin\/?$/.test(d)).join(":");
+  }
+  return out;
+}
+
 export function createCliAgentAdapter(spec, config = {}) {
   const defaultModel = config.model || spec.defaultModel || "";
   const cwd = config.cwd || process.env.CC_CWD || process.env.HOME;
@@ -40,7 +51,7 @@ export function createCliAgentAdapter(spec, config = {}) {
       try {
         child = spawn(spec.bin, args, {
           cwd,
-          env: { ...process.env },
+          env: childEnv(),
           stdio: ["ignore", "pipe", "pipe"], // stdin=ignore：CLI 不会等 EOF 挂死
         });
       } catch (err) {
@@ -101,7 +112,7 @@ export function createCliAgentAdapter(spec, config = {}) {
     try {
       child = spawn(spec.bin, args, {
         cwd,
-        env: { ...process.env },
+        env: childEnv(),
         stdio: ["ignore", "pipe", "pipe"],
       });
     } catch (err) {
