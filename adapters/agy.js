@@ -85,7 +85,15 @@ export function createAdapter(config = {}) {
       // `agy models` 对一遍，别照着记忆写。
       // 2026-10-14 校对（agy 1.3.4）：gemini-3.1-pro-high / -low 也已从 CLI 消失，选中报
       // "not recognized as a known model"；Pro 订阅在 Antigravity 里只剩 3.8 Flash 三档。
+      // 2026-11-18 校对（agy 1.5.5）：Gemini 4 Carbon / Argon / Hydrogen 已出现在 `agy models`，
+      // 三个 high 档逐个 -p 实测通过。xhigh 档不进菜单：resolveAgyEffort 只认 low|medium|high，
+      // 带 -xhigh 后缀会落回 defaultEffort=high，与 CLI 的档位校验冲突。
+      // 默认模型保持 Flash：Gemini 4 是否可用取决于账号，自用实例在 config 里指定。
       models: [
+        { id: "gemini-4-carbon-high", label: "Gemini 4 Carbon (High)" },
+        { id: "gemini-4-carbon-medium", label: "Gemini 4 Carbon (Medium)" },
+        { id: "gemini-4-argon-high", label: "Gemini 4 Argon (High)" },
+        { id: "gemini-4-hydrogen-high", label: "Gemini 4 Hydrogen (High)" },
         { id: "gemini-3.8-flash-high", label: "Gemini 3.8 Flash (High)" },
         { id: "gemini-3.8-flash-medium", label: "Gemini 3.8 Flash (Medium)" },
         { id: "gemini-3.8-flash-low", label: "Gemini 3.8 Flash (Low)" },
