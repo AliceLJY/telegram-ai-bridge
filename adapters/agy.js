@@ -89,7 +89,10 @@ export function createAdapter(config = {}) {
       // 三个 high 档逐个 -p 实测通过。xhigh 档不进菜单：resolveAgyEffort 只认 low|medium|high，
       // 带 -xhigh 后缀会落回 defaultEffort=high，与 CLI 的档位校验冲突。
       // 默认模型保持 Flash：Gemini 4 是否可用取决于账号，自用实例在 config 里指定。
+      // 2026-11-19 校对（agy 1.5.12）：Neon 系列出现在 `agy models`，gemini-4-neon-high 当天 -p 实测三题通过。
       models: [
+        { id: "gemini-4-neon-high", label: "Gemini 4 Neon (High)" },
+        { id: "gemini-4-neon-medium", label: "Gemini 4 Neon (Medium)" },
         { id: "gemini-4-carbon-high", label: "Gemini 4 Carbon (High)" },
         { id: "gemini-4-carbon-medium", label: "Gemini 4 Carbon (Medium)" },
         { id: "gemini-4-argon-high", label: "Gemini 4 Argon (High)" },
